@@ -985,20 +985,20 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice || 0;
+        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice || 0;
+        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice || 0;
+        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.currentLeadPrice && job.currentLeadPrice > 0) {
-    leadPrice = job.currentLeadPrice;
+  if (job.leadPrice && job.leadPrice.toNumber() > 0) {
+    leadPrice = job.leadPrice.toNumber();
   }
 
   res.status(200).json({
@@ -1054,9 +1054,6 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
           },
         },
         orderBy: { appliedAt: 'desc' },
-      },
-      milestones: {
-        orderBy: { createdAt: 'asc' },
       },
     },
   });
