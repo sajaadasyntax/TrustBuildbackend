@@ -1,0 +1,446 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  CONTRACTOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ContractorTier {
+  STANDARD
+  PREMIUM
+  ENTERPRISE
+}
+
+enum JobStatus {
+  DRAFT
+  POSTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ContractorStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+  REJECTED
+}
+
+enum JobSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentType {
+  LEAD_ACCESS
+  SUBSCRIPTION
+  JOB_PAYMENT
+  REFUND
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(CUSTOMER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  customer   Customer?
+  contractor Contractor?
+
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  phone     String?
+  address   String?
+  city      String?
+  postcode  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs    Job[]
+  reviews Review[]
+  payments Payment[]
+
+  @@map("customers")
+}
+
+model Contractor {
+  id                    String            @id @default(cuid())
+  userId                String            @unique
+  businessName          String?
+  description           String?           @db.Text
+  businessAddress       String?
+  city                  String?
+  postcode              String?
+  phone                 String?
+  website               String?
+  instagramHandle       String?
+  operatingArea         String?
+  servicesProvided      String?
+  yearsExperience       String?
+  workSetup             String? // "alone" or "team"
+  providesWarranty      Boolean           @default(false)
+  warrantyPeriod        String?
+  unsatisfiedCustomers  String?           @db.Text
+  preferredClients      String?           @db.Text
+  usesContracts         Boolean           @default(false)
+  profileApproved       Boolean           @default(false)
+  status                ContractorStatus  @default(PENDING)
+  tier                  ContractorTier    @default(STANDARD)
+  featuredContractor    Boolean           @default(false)
+  
+  // Payment and subscription
+  stripeCustomerId      String?
+  stripeAccountId       String?
+  
+  // Credit system
+  creditsBalance        Int               @default(0)
+  weeklyCreditsLimit    Int               @default(3)
+  lastCreditReset       DateTime?
+  
+  // Stats
+  jobsCompleted         Int               @default(0)
+  averageRating         Float             @default(0)
+  reviewCount           Int               @default(0)
+  verifiedReviews       Int               @default(0)
+  
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relationships
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services      Service[]         @relation("ContractorToService")
+  portfolio     PortfolioItem[]
+  applications  JobApplication[]
+  reviews       Review[]          @relation("ContractorReviews")
+  documents     ContractorDocument[]
+  subscription  Subscription?
+  payments      Payment[]
+  jobAccess     JobAccess[]
+  creditTransactions CreditTransaction[]
+
+  @@map("contractors")
+}
+
+model ContractorDocument {
+  id              String   @id @default(cuid())
+  contractorId    String
+  documentType    String   // "insurance", "hmrc", "address", "work_photo"
+  fileName        String
+  fileUrl         String
+  cloudinaryId    String?
+  isVerified      Boolean  @default(false)
+  uploadedAt      DateTime @default(now())
+
+  // Relationships
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@map("contractor_documents")
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  category    String?
+  isActive    Boolean  @default(true)
+  
+  // Lead pricing for different job sizes
+  smallJobPrice   Decimal @default(15.00) @db.Decimal(8, 2)
+  mediumJobPrice  Decimal @default(30.00) @db.Decimal(8, 2)
+  largeJobPrice   Decimal @default(50.00) @db.Decimal(8, 2)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  contractors Contractor[] @relation("ContractorToService")
+  jobs        Job[]
+
+  @@map("services")
+}
+
+model PortfolioItem {
+  id           String   @id @default(cuid())
+  contractorId String
+  title        String
+  description  String?  @db.Text
+  imageUrl     String
+  cloudinaryId String?
+  projectDate  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_items")
+}
+
+model Job {
+  id               String       @id @default(cuid())
+  customerId       String
+  serviceId        String
+  title            String
+  description      String       @db.Text
+  budget           Decimal?     @db.Decimal(10, 2)
+  location         String
+  postcode         String?
+  urgency          String? // "flexible", "within_week", "asap"
+  status           JobStatus    @default(DRAFT)
+  startDate        DateTime?
+  completionDate   DateTime?
+  isUrgent         Boolean      @default(false)
+  requiresQuote    Boolean      @default(true)
+  
+  // Lead pricing system
+  jobSize          JobSize      @default(MEDIUM)
+  leadPrice        Decimal?     @db.Decimal(8, 2) // Override price set by admin
+  estimatedValue   Decimal?     @db.Decimal(10, 2) // For determining job size
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Relationships
+  customer     Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service      Service          @relation(fields: [serviceId], references: [id])
+  applications JobApplication[]
+  reviews      Review[]
+  jobAccess    JobAccess[]
+  payments     Payment[]
+  milestones   Milestone[]
+
+  @@map("jobs")
+}
+
+model JobAccess {
+  id           String    @id @default(cuid())
+  jobId        String
+  contractorId String
+  accessMethod String    // "CREDIT" or "PAYMENT"
+  paidAmount   Decimal?  @db.Decimal(8, 2)
+  creditUsed   Boolean   @default(false)
+  accessedAt   DateTime  @default(now())
+  
+  // Relationships
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  payment    Payment?
+
+  @@unique([jobId, contractorId])
+  @@map("job_access")
+}
+
+model JobApplication {
+  id           String            @id @default(cuid())
+  jobId        String
+  contractorId String
+  coverLetter  String?           @db.Text
+  proposedRate Decimal           @db.Decimal(10, 2)
+  timeline     String?
+  status       ApplicationStatus @default(PENDING)
+  appliedAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  // Relationships
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, contractorId])
+  @@map("job_applications")
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  jobId       String
+  title       String
+  description String?         @db.Text
+  status      MilestoneStatus @default(PENDING)
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relationships
+  job         Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("milestones")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("GBP")
+  status          PaymentStatus @default(PENDING)
+  type            PaymentType
+  description     String
+  
+  // Stripe data
+  stripePaymentId String?
+  stripeCustomerId String?
+  
+  // Relationships
+  customerId      String?
+  contractorId    String?
+  jobId           String?
+  jobAccessId     String?       @unique
+  
+  // Invoice
+  invoiceId       String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relationships
+  customer    Customer?   @relation(fields: [customerId], references: [id])
+  contractor  Contractor? @relation(fields: [contractorId], references: [id])
+  job         Job?        @relation(fields: [jobId], references: [id])
+  jobAccess   JobAccess?  @relation(fields: [jobAccessId], references: [id])
+  invoice     Invoice?    @relation(fields: [invoiceId], references: [id])
+
+  @@map("payments")
+}
+
+model Invoice {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique
+  amount        Decimal  @db.Decimal(10, 2)
+  currency      String   @default("GBP")
+  vatRate       Decimal  @default(20.00) @db.Decimal(5, 2)
+  vatAmount     Decimal  @db.Decimal(10, 2)
+  totalAmount   Decimal  @db.Decimal(10, 2)
+  
+  // Invoice details
+  description   String
+  recipientName String
+  recipientEmail String
+  recipientAddress String?
+  
+  // File storage
+  pdfUrl        String?
+  
+  issuedAt      DateTime @default(now())
+  dueAt         DateTime?
+  paidAt        DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relationships
+  payments      Payment[]
+
+  @@map("invoices")
+}
+
+model CreditTransaction {
+  id           String   @id @default(cuid())
+  contractorId String
+  amount       Int      // Credits added (+) or used (-)
+  type         String   // "WEEKLY_ALLOCATION", "ADMIN_ADJUSTMENT", "JOB_ACCESS", "BONUS"
+  description  String
+  jobId        String?
+  adminUserId  String?
+  
+  createdAt    DateTime @default(now())
+  
+  // Relationships
+  contractor   Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@map("credit_transactions")
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  jobId        String
+  customerId   String
+  contractorId String
+  rating       Int      @db.SmallInt
+  comment      String?  @db.Text
+  isVerified   Boolean  @default(false)
+  isExternal   Boolean  @default(false) // For external reviews
+  customerName String? // For external reviews
+  customerEmail String? // For external reviews
+  projectType  String?
+  projectDate  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation("ContractorReviews", fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, customerId])
+  @@map("reviews")
+}
+
+model Subscription {
+  id                 String   @id @default(cuid())
+  contractorId       String   @unique
+  tier               ContractorTier
+  stripeSubscriptionId String? @unique
+  status             String   @default("active") // active, cancelled, past_due, etc.
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relationships
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model AdminSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_settings")
+} 
