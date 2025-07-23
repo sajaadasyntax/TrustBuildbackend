@@ -72,6 +72,16 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           largeJobPrice: true,
         },
       },
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -98,20 +108,20 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice || 0;
+        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice || 0;
+        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice || 0;
+        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.currentLeadPrice && job.currentLeadPrice > 0) {
-    leadPrice = job.currentLeadPrice;
+  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
+    leadPrice = job.leadPrice.toNumber();
   }
 
   await prisma.$transaction(async (tx) => {
@@ -145,9 +155,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       payment = await tx.payment.create({
         data: {
           contractorId: contractor.id,
-          jobId,
-          amount: 0, // Credits don't cost money
-          type: 'CREDIT',
+          amount: 0,
+          type: 'LEAD_ACCESS',
           status: 'COMPLETED',
           description: `Job access purchased with credit for: ${job.title}`,
         },
@@ -156,15 +165,13 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Create invoice
       invoice = await tx.invoice.create({
         data: {
-          contractorId: contractor.id,
-          paymentId: payment.id,
-          jobId,
           amount: 0,
           vatAmount: 0,
           totalAmount: 0,
-          status: 'PAID',
           description: `Job Lead Access - ${job.title}`,
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
+          recipientName: job.customer?.user?.name || 'Unknown',
+          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
         },
       });
     } else if (paymentMethod === 'STRIPE') {
@@ -190,11 +197,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       payment = await tx.payment.create({
         data: {
           contractorId: contractor.id,
-          jobId,
           amount: leadPrice,
-          type: 'STRIPE',
+          type: 'LEAD_ACCESS',
           status: 'COMPLETED',
-          stripePaymentIntentId,
+          stripePaymentId: stripePaymentIntentId,
           description: `Job access purchased for: ${job.title}`,
         },
       });
@@ -202,15 +208,13 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Create invoice
       invoice = await tx.invoice.create({
         data: {
-          contractorId: contractor.id,
-          paymentId: payment.id,
-          jobId,
           amount: leadPrice,
           vatAmount,
           totalAmount,
-          status: 'PAID',
           description: `Job Lead Access - ${job.title}`,
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
+          recipientName: job.customer?.user?.name || 'Unknown',
+          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
         },
       });
     } else {
@@ -222,7 +226,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       data: {
         contractorId: contractor.id,
         jobId,
-        paymentId: payment.id,
+        accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT',
       },
     });
 
@@ -274,20 +278,20 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice || 0;
+        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice || 0;
+        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice || 0;
+        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.currentLeadPrice && job.currentLeadPrice > 0) {
-    leadPrice = job.currentLeadPrice;
+  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
+    leadPrice = job.leadPrice.toNumber();
   }
 
   if (leadPrice <= 0) {
@@ -393,14 +397,6 @@ export const getCreditHistory = catchAsync(async (req: AuthenticatedRequest, res
   // Get credit transactions
   const transactions = await prisma.creditTransaction.findMany({
     where: { contractorId: contractor.id },
-    include: {
-      job: {
-        select: {
-          id: true,
-          title: true,
-        },
-      },
-    },
     orderBy: { createdAt: 'desc' },
     skip,
     take: limit,
