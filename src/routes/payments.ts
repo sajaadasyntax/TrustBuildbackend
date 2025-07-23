@@ -29,9 +29,9 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   // Check if contractor already has access to this job
   const existingAccess = await prisma.jobAccess.findUnique({
     where: {
-      contractorId_jobId: {
-        contractorId: contractor.id,
+      jobId_contractorId: {
         jobId,
+        contractorId: contractor.id,
       },
     },
   });
@@ -82,9 +82,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   // Check if contractor already has access
   const existingAccess = await prisma.jobAccess.findUnique({
     where: {
-      contractorId_jobId: {
-        contractorId: contractor.id,
+      jobId_contractorId: {
         jobId,
+        contractorId: contractor.id,
       },
     },
   });
