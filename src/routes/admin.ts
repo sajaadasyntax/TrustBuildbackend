@@ -1880,6 +1880,56 @@ export const getPaymentOverview = catchAsync(async (req: AuthenticatedRequest, r
   });
 });
 
+// @desc    Get all reviews (Admin only)
+// @route   GET /api/admin/reviews
+// @access  Private/Admin
+export const getAllReviewsAdmin = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 20;
+  const skip = (page - 1) * limit;
+  const { status, rating, search } = req.query;
+
+  const where: any = {};
+  if (status === 'approved') where.isVerified = true;
+  if (status === 'pending') where.isVerified = false;
+  if (rating) where.rating = parseInt(rating as string);
+  if (search) {
+    where.OR = [
+      { comment: { contains: search as string, mode: 'insensitive' } },
+      { customer: { user: { name: { contains: search as string, mode: 'insensitive' } } } },
+      { contractor: { user: { name: { contains: search as string, mode: 'insensitive' } } } },
+    ];
+  }
+
+  const [reviews, total] = await Promise.all([
+    prisma.review.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        customer: { include: { user: true } },
+        contractor: { include: { user: true } },
+        job: { select: { title: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.review.count({ where }),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      reviews,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protect, adminOnly);
 
@@ -1917,5 +1967,6 @@ router.get('/contractors-search', searchContractorsForCredits);
 router.get('/contractors/:id/credits', getContractorCredits);
 router.post('/contractors/:id/adjust-credits', adjustContractorCredits);
 router.get('/payment-overview', getPaymentOverview);
+router.get('/reviews', getAllReviewsAdmin);
 
 export default router; 
