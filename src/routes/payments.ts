@@ -309,28 +309,28 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   try {
     console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
     
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: leadPrice * 100, // Convert to cents
-      currency: 'gbp',
-      automatic_payment_methods: {
-        enabled: true,
-      },
-      metadata: {
-        jobId,
-        contractorId: contractor.id,
-        leadPrice: leadPrice.toString(),
-      },
-    });
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: leadPrice * 100, // Convert to cents
+    currency: 'gbp',
+    automatic_payment_methods: {
+      enabled: true,
+    },
+    metadata: {
+      jobId,
+      contractorId: contractor.id,
+      leadPrice: leadPrice.toString(),
+    },
+  });
 
     console.log('✅ Payment intent created successfully:', paymentIntent.id);
-    
-    res.status(200).json({
-      status: 'success',
-      data: {
-        clientSecret: paymentIntent.client_secret,
-        amount: leadPrice,
-      },
-    });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      clientSecret: paymentIntent.client_secret,
+      amount: leadPrice,
+    },
+  });
   } catch (stripeError: any) {
     console.error('❌ Stripe API Error:', stripeError.message);
     console.error('Stripe Error Type:', stripeError.type);
