@@ -5,7 +5,14 @@ import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
 
 const router = Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+
+// Ensure environment variables are loaded
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('❌ STRIPE_SECRET_KEY not found in environment variables');
+  throw new Error('Stripe configuration missing');
+}
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
@@ -299,26 +306,37 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Create payment intent
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: leadPrice * 100, // Convert to cents
-    currency: 'gbp',
-    automatic_payment_methods: {
-      enabled: true,
-    },
-    metadata: {
-      jobId,
-      contractorId: contractor.id,
-      leadPrice: leadPrice.toString(),
-    },
-  });
+  try {
+    console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
+    
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: leadPrice * 100, // Convert to cents
+      currency: 'gbp',
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      metadata: {
+        jobId,
+        contractorId: contractor.id,
+        leadPrice: leadPrice.toString(),
+      },
+    });
 
-  res.status(200).json({
-    status: 'success',
-    data: {
-      clientSecret: paymentIntent.client_secret,
-      amount: leadPrice,
-    },
-  });
+    console.log('✅ Payment intent created successfully:', paymentIntent.id);
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        clientSecret: paymentIntent.client_secret,
+        amount: leadPrice,
+      },
+    });
+  } catch (stripeError: any) {
+    console.error('❌ Stripe API Error:', stripeError.message);
+    console.error('Stripe Error Type:', stripeError.type);
+    console.error('Full Stripe Error:', stripeError);
+         return next(new AppError(`Stripe payment error: ${stripeError.message}`, 400));
+   }
 });
 
 // @desc    Get contractor's payment history

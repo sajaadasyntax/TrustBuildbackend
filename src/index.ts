@@ -132,6 +132,17 @@ app.use(notFoundHandler);
 // Global error handler
 app.use(errorHandler);
 
+// Validate Stripe configuration
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('❌ FATAL ERROR: STRIPE_SECRET_KEY is not configured!');
+  console.error('   Please set STRIPE_SECRET_KEY in your .env file');
+  process.exit(1);
+}
+
+console.log('🔐 Stripe Configuration:');
+console.log(`   Secret Key: ${process.env.STRIPE_SECRET_KEY.substring(0, 8)}...`);
+console.log(`   Key Type: ${process.env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'LIVE' : 'TEST'}`);
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
