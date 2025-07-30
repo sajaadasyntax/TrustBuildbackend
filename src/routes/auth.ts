@@ -149,7 +149,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       },
     });
   } else if (role === 'CONTRACTOR') {
-    await prisma.contractor.create({
+    const newContractor = await prisma.contractor.create({
       data: {
         userId: newUser.id,
         businessName,
@@ -168,6 +168,18 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         unsatisfiedCustomers,
         preferredClients,
         usesContracts: usesContracts || false,
+        creditsBalance: 3, // Give initial 3 credits
+        lastCreditReset: new Date(), // Set initial reset date
+      },
+    });
+
+    // Create initial credit transaction record
+    await prisma.creditTransaction.create({
+      data: {
+        contractorId: newContractor.id,
+        type: 'WEEKLY_ALLOCATION',
+        amount: 3,
+        description: 'Initial credit allocation',
       },
     });
   }

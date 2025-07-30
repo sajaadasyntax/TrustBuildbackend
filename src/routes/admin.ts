@@ -1465,18 +1465,111 @@ export const getJobStats = catchAsync(async (req: AuthenticatedRequest, res: Res
 // @access  Private/Admin
 export const getPaymentStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    // Mock payment statistics - replace with actual Stripe API calls
+    // Get current month start
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // Fetch real payment statistics from database
+    const [
+      totalPayments,
+      totalRevenue,
+      monthlyPayments,
+      monthlyRevenue,
+      lastMonthRevenue,
+      averageTransaction,
+      statusCounts,
+      typeCounts
+    ] = await Promise.all([
+      // Total payment count
+      prisma.payment.count(),
+      
+      // Total revenue from completed payments
+      prisma.payment.aggregate({
+        where: { status: 'COMPLETED' },
+        _sum: { amount: true }
+      }),
+      
+      // Monthly payment count
+      prisma.payment.count({
+        where: {
+          createdAt: { gte: monthStart }
+        }
+      }),
+      
+      // Monthly revenue
+      prisma.payment.aggregate({
+        where: {
+          status: 'COMPLETED',
+          createdAt: { gte: monthStart }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Last month revenue for growth calculation
+      prisma.payment.aggregate({
+        where: {
+          status: 'COMPLETED',
+          createdAt: {
+            gte: lastMonthStart,
+            lt: monthStart
+          }
+        },
+        _sum: { amount: true }
+      }),
+      
+      // Average transaction value
+      prisma.payment.aggregate({
+        where: { status: 'COMPLETED' },
+        _avg: { amount: true }
+      }),
+      
+      // Payment status counts
+      prisma.payment.groupBy({
+        by: ['status'],
+        _count: { status: true }
+      }),
+      
+      // Payment type counts with revenue
+      prisma.payment.groupBy({
+        by: ['type'],
+        where: { status: 'COMPLETED' },
+        _sum: { amount: true },
+        _count: { type: true }
+      })
+    ]);
+
+    // Calculate growth
+    const currentMonthRevenue = Number(monthlyRevenue._sum.amount || 0);
+    const lastMonthRevenueAmount = Number(lastMonthRevenue._sum.amount || 0);
+    const revenueGrowth = lastMonthRevenueAmount > 0 
+      ? ((currentMonthRevenue - lastMonthRevenueAmount) / lastMonthRevenueAmount) * 100 
+      : 0;
+
+    // Process status counts
+    const statusMap = statusCounts.reduce((acc, item) => {
+      acc[item.status] = item._count.status;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Process type revenue
+    const typeRevenue = typeCounts.reduce((acc, item) => {
+      acc[item.type] = Number(item._sum.amount || 0);
+      return acc;
+    }, {} as Record<string, number>);
+
     const stats = {
-      totalRevenue: 124500.50,
-      monthlyRevenue: 18750.25,
-      totalTransactions: 1247,
-      successfulPayments: 1198,
-      failedPayments: 32,
-      pendingPayments: 17,
-      averageTransactionValue: 99.84,
-      revenueGrowth: 12.5,
-      subscriptionRevenue: 67800.00,
-      jobPaymentRevenue: 56700.50
+      totalRevenue: Number(totalRevenue._sum.amount || 0),
+      monthlyRevenue: currentMonthRevenue,
+      totalTransactions: totalPayments,
+      successfulPayments: statusMap['COMPLETED'] || 0,
+      failedPayments: statusMap['FAILED'] || 0,
+      pendingPayments: statusMap['PENDING'] || 0,
+      averageTransactionValue: Number(averageTransaction._avg.amount || 0),
+      revenueGrowth: Number(revenueGrowth.toFixed(1)),
+      subscriptionRevenue: Number(typeRevenue['SUBSCRIPTION'] || 0),
+      jobPaymentRevenue: Number(typeRevenue['JOB_ACCESS'] || 0)
     };
 
     res.status(200).json({
@@ -1498,61 +1591,106 @@ export const getPaymentTransactions = catchAsync(async (req: AuthenticatedReques
   const { status, type, search } = req.query;
 
   try {
-    // Mock transaction data - replace with actual Stripe API calls
-    const mockTransactions = [
-      {
-        id: '1',
-        amount: 299.99,
-        currency: 'GBP',
-        status: 'succeeded',
-        type: 'subscription',
-        customer: {
-          name: 'John Smith',
-          email: 'john@example.com'
-        },
-        contractor: {
-          businessName: 'Smith Construction',
-          user: { name: 'John Smith' }
-        },
-        description: 'Premium subscription - Monthly',
-        createdAt: new Date().toISOString(),
-        stripePaymentId: 'pi_1234567890'
-      },
-      {
-        id: '2',
-        amount: 150.00,
-        currency: 'GBP',
-        status: 'succeeded',
-        type: 'job_payment',
-        customer: {
-          name: 'Sarah Johnson',
-          email: 'sarah@example.com'
-        },
-        description: 'Job completion payment - Kitchen renovation',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        stripePaymentId: 'pi_0987654321'
-      }
-    ];
-
-    // Apply filters
-    let filteredTransactions = mockTransactions;
+    // Build where clause for filtering
+    const whereClause: any = {};
+    
     if (status && status !== 'all') {
-      filteredTransactions = filteredTransactions.filter(t => t.status === status);
+      whereClause.status = status.toString().toUpperCase();
     }
+    
     if (type && type !== 'all') {
-      filteredTransactions = filteredTransactions.filter(t => t.type === type);
-    }
-    if (search) {
-      filteredTransactions = filteredTransactions.filter(t => 
-        t.customer.name.toLowerCase().includes((search as string).toLowerCase()) ||
-        t.customer.email.toLowerCase().includes((search as string).toLowerCase()) ||
-        t.description.toLowerCase().includes((search as string).toLowerCase())
-      );
+      whereClause.type = type.toString().toUpperCase();
     }
 
-    const total = filteredTransactions.length;
-    const startIndex = (page - 1) * limit;
-    const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + limit);
+    // Search functionality
+    if (search) {
+      whereClause.OR = [
+        {
+          contractor: {
+            user: {
+              name: { contains: search.toString(), mode: 'insensitive' }
+            }
+          }
+        },
+        {
+          contractor: {
+            user: {
+              email: { contains: search.toString(), mode: 'insensitive' }
+            }
+          }
+        },
+        {
+          job: {
+            title: { contains: search.toString(), mode: 'insensitive' }
+          }
+        },
+        {
+          stripePaymentId: { contains: search.toString(), mode: 'insensitive' }
+        },
+        {
+          description: { contains: search.toString(), mode: 'insensitive' }
+        }
+      ];
+    }
+
+    // Get total count for pagination
+    const total = await prisma.payment.count({ where: whereClause });
+
+    // Fetch transactions with relations
+    const payments = await prisma.payment.findMany({
+      where: whereClause,
+      include: {
+        contractor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        job: {
+          include: {
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    name: true,
+                    email: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit
+    });
+
+    // Transform to match frontend interface
+    const paginatedTransactions = payments.map(payment => ({
+      id: payment.id,
+      amount: Number(payment.amount),
+      currency: 'GBP',
+      status: payment.status.toLowerCase(),
+      type: payment.type.toLowerCase().replace('_', '_'),
+      customer: {
+        name: payment.job?.customer?.user?.name || 'Unknown',
+        email: payment.job?.customer?.user?.email || 'unknown@example.com'
+      },
+      contractor: payment.contractor ? {
+        businessName: payment.contractor.businessName || 'Unknown Business',
+        user: {
+          name: payment.contractor.user.name
+        }
+      } : undefined,
+      description: payment.description || `${payment.type} payment`,
+      createdAt: payment.createdAt.toISOString(),
+      stripePaymentId: payment.stripePaymentId || payment.id
+    }));
 
     res.status(200).json({
       status: 'success',
@@ -1737,13 +1875,6 @@ export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest,
         },
       },
       creditTransactions: {
-        include: {
-          job: {
-            select: {
-              title: true,
-            },
-          },
-        },
         orderBy: { createdAt: 'desc' },
         take: 20,
       },

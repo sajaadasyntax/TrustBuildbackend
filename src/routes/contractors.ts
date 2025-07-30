@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { protect, restrictTo, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 
 const router = Router();
@@ -198,6 +198,8 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       unsatisfiedCustomers,
       preferredClients,
       usesContracts,
+      creditsBalance: 3, // Give initial 3 credits
+      lastCreditReset: new Date(), // Set initial reset date
       services: services ? {
         connect: services.map((serviceId: string) => ({ id: serviceId })),
       } : undefined,
@@ -211,6 +213,16 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
         },
       },
       services: true,
+    },
+  });
+
+  // Create initial credit transaction record
+  await prisma.creditTransaction.create({
+    data: {
+      contractorId: contractor.id,
+      type: 'WEEKLY_ALLOCATION',
+      amount: 3,
+      description: 'Initial credit allocation',
     },
   });
 
@@ -775,6 +787,71 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
   }
 });
 
+// @desc    Initialize credits for contractors without proper setup (Admin only)
+// @route   POST /api/contractors/admin/initialize-credits
+// @access  Private (Admin only)
+export const initializeContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Find contractors with 0 credits and no lastCreditReset
+  const contractorsNeedingCredits = await prisma.contractor.findMany({
+    where: {
+      OR: [
+        { creditsBalance: 0 },
+        { lastCreditReset: null }
+      ]
+    },
+    select: {
+      id: true,
+      userId: true,
+      creditsBalance: true,
+      weeklyCreditsLimit: true,
+      lastCreditReset: true,
+      user: {
+        select: {
+          name: true,
+          email: true
+        }
+      }
+    }
+  });
+
+  const updates = [];
+  
+  for (const contractor of contractorsNeedingCredits) {
+    // Update contractor with initial credits
+    await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: {
+        creditsBalance: contractor.weeklyCreditsLimit,
+        lastCreditReset: new Date()
+      }
+    });
+
+    // Create credit transaction record
+    await prisma.creditTransaction.create({
+      data: {
+        contractorId: contractor.id,
+        type: 'WEEKLY_ALLOCATION',
+        amount: contractor.weeklyCreditsLimit,
+        description: 'Credit initialization - admin fix'
+      }
+    });
+
+    updates.push({
+      contractorId: contractor.id,
+      email: contractor.user.email,
+      creditsGiven: contractor.weeklyCreditsLimit
+    });
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      message: `Initialized credits for ${updates.length} contractors`,
+      updates
+    }
+  });
+});
+
 // Routes
 router.get('/', getAllContractors);
 router.get('/me', protect, getMyProfile);
@@ -788,6 +865,7 @@ router.patch('/:id/approve', protect, approveContractor);
 router.get('/:id', getContractor);
 router.post('/reset-weekly-credits', protect, resetWeeklyCredits);
 router.post('/me/check-credit-reset', protect, checkAndResetCredits);
+router.post('/admin/initialize-credits', protect, restrictTo('ADMIN'), initializeContractorCredits);
 router.get('/me/earnings', protect, getMyEarnings);
 
 export default router; 
