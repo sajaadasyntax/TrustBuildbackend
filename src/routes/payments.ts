@@ -131,7 +131,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     leadPrice = job.leadPrice.toNumber();
   }
 
-  await prisma.$transaction(async (tx) => {
+  const transactionResult = await prisma.$transaction(async (tx) => {
     let payment;
     let invoice;
 
@@ -243,6 +243,15 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   res.status(200).json({
     status: 'success',
     message: 'Job access purchased successfully',
+    data: {
+      payment: transactionResult.payment,
+      invoice: transactionResult.invoice,
+      jobAccess: {
+        jobId,
+        contractorId: contractor.id,
+        accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT'
+      }
+    }
   });
 });
 

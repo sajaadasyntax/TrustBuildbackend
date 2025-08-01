@@ -1055,6 +1055,19 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         },
         orderBy: { appliedAt: 'desc' },
       },
+      jobAccess: {
+        include: {
+          contractor: {
+            include: {
+              user: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -1113,6 +1126,12 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     hasAccess,
     leadPrice,
     currentLeadPrice: leadPrice,
+    accessCount: job.jobAccess?.length || 0,
+    purchasedBy: job.jobAccess?.map(access => ({
+      contractorName: access.contractor.user.name,
+      purchasedAt: access.createdAt,
+      method: access.accessMethod
+    })) || []
   };
 
   res.status(200).json({

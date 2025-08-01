@@ -1241,8 +1241,6 @@ export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res:
   const [jobs, total] = await Promise.all([
     prisma.job.findMany({
       where: whereClause,
-      skip,
-      take: limit,
       include: {
         customer: {
           include: {
@@ -1251,6 +1249,7 @@ export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res:
                 id: true,
                 name: true,
                 email: true,
+                createdAt: true,
               },
             },
           },
@@ -1260,6 +1259,9 @@ export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res:
             id: true,
             name: true,
             category: true,
+            smallJobPrice: true,
+            mediumJobPrice: true,
+            largeJobPrice: true,
           },
         },
         applications: {
@@ -1274,25 +1276,47 @@ export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res:
               },
             },
           },
-          where: { status: 'ACCEPTED' },
-          take: 1,
-        },
-        _count: {
-          select: {
-            applications: true,
-            reviews: true,
-          },
         },
       },
       orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
     }),
     prisma.job.count({ where: whereClause }),
   ]);
 
+  // Calculate current lead price for each job
+  const jobsWithPricing = jobs.map(job => {
+    let currentLeadPrice = 0;
+    
+    // Use override price if set
+    if (job.leadPrice && typeof job.leadPrice.toNumber === 'function') {
+      currentLeadPrice = job.leadPrice.toNumber();
+    } else if (job.service) {
+      // Calculate based on job size and service pricing
+      switch (job.jobSize) {
+        case 'SMALL':
+          currentLeadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
+          break;
+        case 'MEDIUM':
+          currentLeadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
+          break;
+        case 'LARGE':
+          currentLeadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
+          break;
+      }
+    }
+
+    return {
+      ...job,
+      currentLeadPrice,
+    };
+  });
+
   res.status(200).json({
     status: 'success',
     data: {
-      jobs,
+      jobs: jobsWithPricing,
       pagination: {
         page,
         limit,
@@ -2061,6 +2085,88 @@ export const getAllReviewsAdmin = catchAsync(async (req: AuthenticatedRequest, r
   });
 });
 
+// @desc    Update job lead price
+// @route   PATCH /api/admin/jobs/:id/lead-price
+// @access  Private/Admin
+export const setJobLeadPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { price, reason } = req.body;
+
+  // Validate price
+  if (price < 0) {
+    return next(new AppError('Lead price cannot be negative', 400));
+  }
+
+  if (!reason || reason.trim().length === 0) {
+    return next(new AppError('Reason for price adjustment is required', 400));
+  }
+
+  // Check if job exists
+  const job = await prisma.job.findUnique({
+    where: { id },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      service: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Update job lead price
+  const updatedJob = await prisma.job.update({
+    where: { id },
+    data: {
+      leadPrice: price,
+      updatedAt: new Date(),
+    },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      service: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+    },
+  });
+
+  // Log the admin action
+  console.log(`Admin ${req.user!.id} updated job ${job.id} lead price to £${price} - Reason: ${reason}`);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      job: updatedJob,
+    },
+    message: `Job lead price updated to £${price} successfully`,
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protect, adminOnly);
 
@@ -2090,6 +2196,7 @@ router.get('/jobs', getAllJobsAdmin);
 router.get('/jobs/stats', getJobStats);
 router.patch('/jobs/:id/status', updateJobStatus);
 router.patch('/jobs/:id/flag', toggleJobFlag);
+router.patch('/jobs/:id/lead-price', setJobLeadPrice);
 
 // Add new admin payment routes
 router.get('/services-pricing', getServicesWithPricing);
