@@ -6,15 +6,17 @@ import Stripe from 'stripe';
 
 const router = Router();
 
-// Ensure environment variables are loaded
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.error('❌ STRIPE_SECRET_KEY not found in environment variables');
-  throw new Error('Stripe configuration missing');
-}
+// Conditional Stripe initialization
+let stripe: Stripe | null = null;
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2023-10-16',
+  });
+  console.log('✅ Stripe initialized successfully');
+} else {
+  console.warn('⚠️ STRIPE_SECRET_KEY not found - Stripe payments will be disabled');
+}
 
 // @desc    Check if contractor has access to a job
 // @route   GET /api/payments/job-access/:jobId
@@ -182,6 +184,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
     } else if (paymentMethod === 'STRIPE') {
+      if (!stripe) {
+        throw new AppError('Stripe is not configured on this server', 503);
+      }
+      
       if (!stripePaymentIntentId) {
         throw new AppError('Stripe payment intent ID is required', 400);
       }
@@ -316,9 +322,13 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
 
   // Create payment intent
   try {
+    if (!stripe) {
+      return next(new AppError('Stripe is not configured on this server', 503));
+    }
+    
     console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
     
-  const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await stripe!.paymentIntents.create({
     amount: leadPrice * 100, // Convert to cents
     currency: 'gbp',
     automatic_payment_methods: {
