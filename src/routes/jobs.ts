@@ -160,6 +160,23 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
 // @route   POST /api/jobs
 // @access  Private (Customer only)
 export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const {
+    title,
+    description,
+    category,
+    location,
+    budget,
+    urgent,
+    serviceId,
+    jobSize,
+    postcode,
+    phone,
+    email,
+    urgency,
+    timeline,
+    requirements,
+  } = req.body;
+
   // Get or create customer profile
   let customer = await prisma.customer.findUnique({
     where: { userId: req.user!.id },
@@ -169,23 +186,26 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     customer = await prisma.customer.create({
       data: {
         userId: req.user!.id,
+        phone: phone,
+      },
+    });
+  } else if (phone) {
+    // Update customer contact info if provided
+    customer = await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        phone: phone,
       },
     });
   }
 
-  const {
-    title,
-    description,
-    category,
-    location,
-    budget,
-    urgent,
-    serviceId,
-    postcode,
-    urgency,
-    timeline,
-    requirements,
-  } = req.body;
+  // Update user email if provided (email is stored in User model)
+  if (email && email !== req.user!.email) {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { email: email },
+    });
+  }
 
   // If serviceId is not provided, try to find a service by category name
   let finalServiceId = serviceId;
@@ -227,9 +247,10 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       budget,
       location,
       postcode,
+      jobSize: jobSize || 'MEDIUM',
       urgency: urgency || 'flexible',
       isUrgent: urgent || false,
-      requiresQuote: true,
+      requiresQuote: !budget || budget === 0,
       status: 'POSTED', // Automatically post the job when created
     },
     include: {
@@ -1129,7 +1150,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     accessCount: job.jobAccess?.length || 0,
     purchasedBy: job.jobAccess?.map(access => ({
       contractorName: access.contractor.user.name,
-      purchasedAt: access.createdAt,
+      purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod
     })) || []
   };
