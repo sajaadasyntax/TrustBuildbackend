@@ -218,6 +218,15 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
 
   // Update user email if provided (email is stored in User model)
   if (email && email !== req.user!.email) {
+    // Check if email is already taken by another user
+    const existingUser = await prisma.user.findUnique({
+      where: { email: email },
+    });
+    
+    if (existingUser && existingUser.id !== req.user!.id) {
+      return next(new AppError('Email address is already in use by another user', 400));
+    }
+    
     await prisma.user.update({
       where: { id: req.user!.id },
       data: { email: email },
