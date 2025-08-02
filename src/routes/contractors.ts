@@ -345,6 +345,13 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
                   },
                 },
               },
+              service: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                },
+              },
             },
           },
         },
@@ -357,10 +364,33 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
     return next(new AppError('Contractor profile not found', 404));
   }
 
+  // Filter location data for applications where contractor doesn't have access
+  const contractorWithFilteredApps = {
+    ...contractor,
+    applications: contractor.applications?.map(app => ({
+      ...app,
+      job: {
+        ...app.job,
+        // Show only postcode for jobs without purchased access
+        location: app.job.postcode ? `${app.job.postcode} area` : 'Area details available after purchase',
+        // Limit description preview
+        description: app.job.description.substring(0, 300) + '...',
+        customer: {
+          ...app.job.customer,
+          user: {
+            name: app.job.customer.user.name,
+          },
+          // Remove sensitive customer data
+          phone: undefined,
+        }
+      }
+    })) || []
+  };
+
   res.status(200).json({
     status: 'success',
     data: {
-      contractor,
+      contractor: contractorWithFilteredApps,
     },
   });
 });

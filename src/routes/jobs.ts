@@ -53,7 +53,7 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
   }
 
   const jobs = await prisma.job.findMany({
-    where,
+    where: where,
     skip,
     take: limit,
     include: {
@@ -89,10 +89,27 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   const total = await prisma.job.count({ where });
 
+  // Filter sensitive data for contractors
+  const filteredJobs = req.user?.role === 'CONTRACTOR' 
+    ? jobs.map(job => ({
+        ...job,
+        location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
+        description: job.description.substring(0, 300) + '...',
+        customer: {
+          ...job.customer,
+          user: {
+            name: job.customer.user.name,
+          },
+          // Remove sensitive customer data
+          phone: undefined,
+        }
+      }))
+    : jobs;
+
   res.status(200).json({
     status: 'success',
     data: {
-      jobs,
+      jobs: filteredJobs,
       pagination: {
         page,
         limit,
@@ -1152,7 +1169,22 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       contractorName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod
-    })) || []
+    })) || [],
+    // Filter sensitive data for contractors without access
+    ...(req.user?.role === 'CONTRACTOR' && !hasAccess && {
+      location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
+      description: job.description.substring(0, 300) + '...',
+      customer: {
+        ...job.customer,
+        user: {
+          id: job.customer.user.id,
+          name: job.customer.user.name,
+          // Remove email and other sensitive customer data
+        },
+        // Remove phone and other sensitive customer data
+        phone: undefined,
+      }
+    })
   };
 
   res.status(200).json({

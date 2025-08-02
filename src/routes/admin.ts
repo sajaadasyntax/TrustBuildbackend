@@ -1179,8 +1179,12 @@ export const getContractorStats = catchAsync(async (req: AuthenticatedRequest, r
       },
     });
 
+    // Get basic job statistics for completion rate
+    const totalJobsCount = await prisma.job.count();
+    const completedJobsCount = await prisma.job.count({ where: { status: 'COMPLETED' } });
+    
     // Calculate basic completion rate (simplified)
-    const completionRate = 85.5; // Placeholder - can be calculated from actual job data later
+    const completionRate = totalJobsCount > 0 ? ((completedJobsCount / totalJobsCount) * 100).toFixed(1) : 0;
     const approvalRate = totalContractors > 0 ? ((verifiedContractors / totalContractors) * 100) : 0;
 
     const stats = {
