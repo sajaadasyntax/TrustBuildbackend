@@ -2167,6 +2167,88 @@ export const setJobLeadPrice = catchAsync(async (req: AuthenticatedRequest, res:
   });
 });
 
+// @desc    Update job budget
+// @route   PATCH /api/admin/jobs/:id/budget
+// @access  Private/Admin
+export const setJobBudget = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { budget, reason } = req.body;
+
+  // Validate budget
+  if (budget < 0) {
+    return next(new AppError('Job budget cannot be negative', 400));
+  }
+
+  if (!reason || reason.trim().length === 0) {
+    return next(new AppError('Reason for budget adjustment is required', 400));
+  }
+
+  // Check if job exists
+  const job = await prisma.job.findUnique({
+    where: { id },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      service: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Update job budget
+  const updatedJob = await prisma.job.update({
+    where: { id },
+    data: {
+      budget: budget,
+      updatedAt: new Date(),
+    },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      service: {
+        select: {
+          name: true,
+          category: true,
+        },
+      },
+    },
+  });
+
+  // Log the admin action
+  console.log(`Admin ${req.user!.id} updated job ${job.id} budget to £${budget} - Reason: ${reason}`);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      job: updatedJob,
+    },
+    message: `Job budget updated to £${budget} successfully`,
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protect, adminOnly);
 
@@ -2197,6 +2279,7 @@ router.get('/jobs/stats', getJobStats);
 router.patch('/jobs/:id/status', updateJobStatus);
 router.patch('/jobs/:id/flag', toggleJobFlag);
 router.patch('/jobs/:id/lead-price', setJobLeadPrice);
+router.patch('/jobs/:id/budget', setJobBudget);
 
 // Add new admin payment routes
 router.get('/services-pricing', getServicesWithPricing);
