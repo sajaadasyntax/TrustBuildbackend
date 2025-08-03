@@ -222,6 +222,10 @@ export const updateMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
 // @route   GET /api/customers/me
 // @access  Private (Customer only)
 export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Check if user is a customer
+  if (req.user!.role !== 'CUSTOMER') {
+    return next(new AppError('Access denied. Customer only.', 403));
+  }
   const customer = await prisma.customer.findUnique({
     where: { userId: req.user!.id },
     include: {
@@ -275,6 +279,11 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
   });
 
   if (!customer) {
+    // Check if user is actually a customer role
+    if (req.user!.role !== 'CUSTOMER') {
+      return next(new AppError('User is not a customer', 400));
+    }
+    
     // Create customer profile if it doesn't exist
     const newCustomer = await prisma.customer.create({
       data: {

@@ -167,9 +167,46 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
     return next(new AppError('Job not found', 404));
   }
 
+  // Apply access control and data filtering based on user role
+  let filteredJob = job;
+
+  // If user is not authenticated or is a contractor, filter sensitive data
+  if (!req.user || req.user.role === 'CONTRACTOR') {
+    // Check if contractor has purchased access to this job
+    const hasAccess = req.user?.role === 'CONTRACTOR' ? await prisma.jobAccess.findUnique({
+      where: {
+        jobId_contractorId: {
+          jobId: job.id,
+          contractorId: req.user.id,
+        },
+      },
+    }) : null;
+
+    if (!hasAccess) {
+      // Filter sensitive data for contractors without access
+      filteredJob = {
+        ...job,
+        location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
+        description: job.description.substring(0, 300) + '...',
+        customer: {
+          ...job.customer,
+          user: {
+            id: job.customer.user.id,
+            name: job.customer.user.name,
+            createdAt: job.customer.user.createdAt,
+          },
+          // Remove sensitive customer data
+          phone: null,
+        },
+        // Hide applications from contractors without access
+        applications: [],
+      };
+    }
+  }
+
   res.status(200).json({
     status: 'success',
-    data: job,
+    data: filteredJob,
   });
 });
 
