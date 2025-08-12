@@ -72,6 +72,9 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
           id: true,
           name: true,
           category: true,
+          smallJobPrice: true,
+          mediumJobPrice: true,
+          largeJobPrice: true,
         },
       },
       applications: {
@@ -143,6 +146,9 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
           id: true,
           name: true,
           category: true,
+          smallJobPrice: true,
+          mediumJobPrice: true,
+          largeJobPrice: true,
         },
       },
       applications: {
@@ -1134,6 +1140,35 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
                   name: true,
                 },
               },
+              portfolio: {
+                take: 3,
+                orderBy: { createdAt: 'desc' },
+              },
+              reviews: {
+                take: 5,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                  customer: {
+                    include: {
+                      user: {
+                        select: {
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { accessedAt: 'desc' },
+      },
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
             },
           },
         },
@@ -1197,10 +1232,22 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     leadPrice,
     currentLeadPrice: leadPrice,
     accessCount: job.jobAccess?.length || 0,
+    contractorsWithAccess: job.jobAccess?.length || 0,
+    spotsRemaining: job.maxContractorsPerJob - (job.jobAccess?.length || 0),
     purchasedBy: job.jobAccess?.map(access => ({
+      contractorId: access.contractor.id,
       contractorName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
-      method: access.accessMethod
+      method: access.accessMethod,
+      paidAmount: access.paidAmount?.toNumber() || 0,
+      // Include contractor details for customers
+      ...(req.user?.role === 'CUSTOMER' && {
+        portfolio: access.contractor.portfolio,
+        reviews: access.contractor.reviews,
+        averageRating: access.contractor.averageRating,
+        reviewCount: access.contractor.reviewCount,
+        jobsCompleted: access.contractor.jobsCompleted,
+      }),
     })) || [],
     // Filter sensitive data for contractors without access
     ...(req.user?.role === 'CONTRACTOR' && !hasAccess && {
@@ -1438,6 +1485,358 @@ export const deleteJobMilestone = catchAsync(async (req: AuthenticatedRequest, r
   });
 });
 
+// @desc    Mark job as won by contractor
+// @route   PATCH /api/jobs/:id/mark-won
+// @access  Private (Customer or Contractor who purchased access)
+export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { contractorId } = req.body;
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      jobAccess: {
+        include: {
+          contractor: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check authorization - either customer or contractor who has access can mark as won
+  const isCustomer = job.customer.userId === userId;
+  const contractorAccess = job.jobAccess.find(access => access.contractor.user.id === userId);
+  
+  if (!isCustomer && !contractorAccess) {
+    return next(new AppError('Not authorized to mark this job as won', 403));
+  }
+
+  // If contractor is marking as won, use their contractor ID
+  let winningContractorId = contractorId;
+  if (contractorAccess && !contractorId) {
+    const contractor = await prisma.contractor.findUnique({
+      where: { userId },
+    });
+    winningContractorId = contractor?.id;
+  }
+
+  // Verify the contractor has purchased access to this job
+  const hasAccess = job.jobAccess.find(access => access.contractorId === winningContractorId);
+  if (!hasAccess) {
+    return next(new AppError('The selected contractor has not purchased access to this job', 400));
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      wonByContractorId: winningContractorId,
+      status: 'IN_PROGRESS',
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job marked as won successfully',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
+// @desc    Complete job with final amount (contractor only)
+// @route   PATCH /api/jobs/:id/complete-with-amount
+// @access  Private (Contractor who won the job)
+export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { finalAmount } = req.body;
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  if (!finalAmount || finalAmount <= 0) {
+    return next(new AppError('Please provide a valid final amount', 400));
+  }
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      wonByContractor: true,
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if this contractor won the job
+  if (job.wonByContractorId !== contractor.id) {
+    return next(new AppError('You are not authorized to complete this job', 403));
+  }
+
+  if (job.status !== 'IN_PROGRESS') {
+    return next(new AppError('Job is not in progress', 400));
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      status: 'COMPLETED',
+      finalAmount: finalAmount,
+      completionDate: new Date(),
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job completed. Waiting for customer confirmation.',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
+// @desc    Customer confirm job completion and amount
+// @route   PATCH /api/jobs/:id/confirm-completion
+// @access  Private (Customer only)
+export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      jobAccess: {
+        where: {
+          contractorId: {
+            not: null,
+          },
+        },
+        include: {
+          contractor: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if user is the customer
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Not authorized to confirm this job', 403));
+  }
+
+  if (job.status !== 'COMPLETED') {
+    return next(new AppError('Job has not been marked as completed by contractor', 400));
+  }
+
+  if (job.customerConfirmed) {
+    return next(new AppError('Job completion already confirmed', 400));
+  }
+
+  if (!job.finalAmount) {
+    return next(new AppError('No final amount has been set by contractor', 400));
+  }
+
+  // Check if the winning contractor used credits for access (for commission calculation)
+  const winningContractorAccess = job.jobAccess.find(
+    access => access.contractorId === job.wonByContractorId
+  );
+
+  let commissionAmount = 0;
+  let commissionPayment = null;
+
+  // Only charge commission if contractor used credits
+  if (winningContractorAccess && winningContractorAccess.creditUsed && !job.commissionPaid) {
+    commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
+    
+    // Create commission payment record
+    commissionPayment = await prisma.payment.create({
+      data: {
+        contractorId: job.wonByContractorId!,
+        amount: commissionAmount,
+        type: 'JOB_PAYMENT',
+        status: 'COMPLETED',
+        description: `5% commission for job: ${job.title} (£${job.finalAmount})`,
+        jobId: job.id,
+      },
+    });
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      customerConfirmed: true,
+      commissionPaid: commissionAmount > 0,
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job completion confirmed successfully',
+    data: {
+      job: updatedJob,
+      commissionCharged: commissionAmount,
+      commissionPayment,
+    },
+  });
+});
+
+// @desc    Request review (contractor only, after customer confirmation)
+// @route   POST /api/jobs/:id/request-review
+// @access  Private (Contractor who won the job)
+export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if this contractor won the job
+  if (job.wonByContractorId !== contractor.id) {
+    return next(new AppError('You are not authorized to request review for this job', 403));
+  }
+
+  if (!job.customerConfirmed) {
+    return next(new AppError('Customer must confirm job completion before requesting review', 400));
+  }
+
+  // Check if review already exists
+  const existingReview = await prisma.review.findUnique({
+    where: {
+      jobId_customerId: {
+        jobId: job.id,
+        customerId: job.customerId,
+      },
+    },
+  });
+
+  if (existingReview) {
+    return next(new AppError('Review has already been submitted for this job', 400));
+  }
+
+  // Here you would typically send a notification to the customer
+  // For now, we'll just return success
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Review request sent to customer',
+    data: {
+      customerEmail: job.customer.user.email,
+      customerName: job.customer.user.name,
+    },
+  });
+});
+
 // Routes
 router.get('/', getAllJobs);
 router.get('/my/posted', protect, getMyPostedJobs);
@@ -1453,6 +1852,10 @@ router.patch('/:id/applications/:applicationId/accept', protect, acceptApplicati
 router.patch('/:id/status', protect, updateJobStatus);
 router.patch('/:id/complete', protect, completeJob);
 router.get('/:id/access', protect, checkJobAccess);
+router.patch('/:id/mark-won', protect, markJobAsWon);
+router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
+router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
+router.post('/:id/request-review', protect, requestReview);
 
 // Milestone routes
 router.get('/:id/milestones', protect, getJobMilestones);

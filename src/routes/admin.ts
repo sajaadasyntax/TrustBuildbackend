@@ -2253,6 +2253,106 @@ export const setJobBudget = catchAsync(async (req: AuthenticatedRequest, res: Re
   });
 });
 
+// @desc    Get admin settings
+// @route   GET /api/admin/settings
+// @access  Private (Admin only)
+export const getAdminSettings = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const settings = await prisma.adminSettings.findMany({
+    orderBy: { key: 'asc' },
+  });
+
+  // Convert to key-value object for easier frontend usage
+  const settingsObject = settings.reduce((acc, setting) => {
+    acc[setting.key] = {
+      value: setting.value,
+      description: setting.description,
+      updatedAt: setting.updatedAt,
+    };
+    return acc;
+  }, {} as Record<string, any>);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      settings: settingsObject,
+    },
+  });
+});
+
+// @desc    Update admin setting
+// @route   PATCH /api/admin/settings/:key
+// @access  Private (Admin only)
+export const updateAdminSetting = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { key } = req.params;
+  const { value, description } = req.body;
+
+  if (!value) {
+    return next(new AppError('Setting value is required', 400));
+  }
+
+  const setting = await prisma.adminSettings.upsert({
+    where: { key },
+    update: {
+      value: value.toString(),
+      ...(description && { description }),
+    },
+    create: {
+      key,
+      value: value.toString(),
+      ...(description && { description }),
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      setting,
+    },
+  });
+});
+
+// @desc    Update job contractor limit
+// @route   PATCH /api/admin/jobs/:id/contractor-limit
+// @access  Private (Admin only)
+export const updateJobContractorLimit = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { maxContractorsPerJob } = req.body;
+
+  if (!maxContractorsPerJob || maxContractorsPerJob < 1) {
+    return next(new AppError('Maximum contractors per job must be at least 1', 400));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id },
+    include: {
+      jobAccess: true,
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if reducing the limit would conflict with existing purchases
+  if (maxContractorsPerJob < job.jobAccess.length) {
+    return next(new AppError(`Cannot set limit to ${maxContractorsPerJob} as ${job.jobAccess.length} contractors have already purchased this job`, 400));
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id },
+    data: {
+      maxContractorsPerJob: parseInt(maxContractorsPerJob),
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protect, adminOnly);
 
@@ -2284,6 +2384,7 @@ router.patch('/jobs/:id/status', updateJobStatus);
 router.patch('/jobs/:id/flag', toggleJobFlag);
 router.patch('/jobs/:id/lead-price', setJobLeadPrice);
 router.patch('/jobs/:id/budget', setJobBudget);
+router.patch('/jobs/:id/contractor-limit', updateJobContractorLimit);
 
 // Add new admin payment routes
 router.get('/services-pricing', getServicesWithPricing);
@@ -2293,5 +2394,7 @@ router.get('/contractors/:id/credits', getContractorCredits);
 router.post('/contractors/:id/adjust-credits', adjustContractorCredits);
 router.get('/payment-overview', getPaymentOverview);
 router.get('/reviews', getAllReviewsAdmin);
+router.get('/settings', getAdminSettings);
+router.patch('/settings/:key', updateAdminSetting);
 
 export default router; 

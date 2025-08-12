@@ -63,7 +63,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get job details with lead price
+  // Get job details with lead price and current access count
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
@@ -84,6 +84,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           },
         },
       },
+      jobAccess: {
+        select: {
+          id: true,
+          contractorId: true,
+        },
+      },
     },
   });
 
@@ -92,17 +98,15 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   }
 
   // Check if contractor already has access
-  const existingAccess = await prisma.jobAccess.findUnique({
-    where: {
-      jobId_contractorId: {
-        jobId,
-        contractorId: contractor.id,
-      },
-    },
-  });
-
+  const existingAccess = job.jobAccess.find(access => access.contractorId === contractor.id);
+  
   if (existingAccess) {
     return next(new AppError('You already have access to this job', 400));
+  }
+
+  // Check if the maximum number of contractors has been reached
+  if (job.jobAccess.length >= job.maxContractorsPerJob) {
+    return next(new AppError(`Maximum number of contractors (${job.maxContractorsPerJob}) has already purchased this job`, 400));
   }
 
   // Calculate lead price based on job size
@@ -227,18 +231,21 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       throw new AppError('Invalid payment method', 400);
     }
 
-    // Grant job access
+    // Grant job access - this will instantly give access to customer contact details
     await tx.jobAccess.create({
       data: {
         contractorId: contractor.id,
         jobId,
         accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT',
+        paidAmount: paymentMethod === 'STRIPE' ? leadPrice : 0,
+        creditUsed: paymentMethod === 'CREDIT',
       },
     });
 
     return { payment, invoice };
   });
 
+  // Return response with customer contact details since access was granted
   res.status(200).json({
     status: 'success',
     message: 'Job access purchased successfully',
@@ -249,7 +256,15 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         jobId,
         contractorId: contractor.id,
         accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT'
-      }
+      },
+      // Instantly provide customer contact details
+      customerContact: {
+        name: job.customer?.user?.name,
+        email: job.customer?.user?.email,
+        phone: job.customer?.phone,
+      },
+      contractorsWithAccess: job.jobAccess.length + 1, // Include the new purchase
+      maxContractors: job.maxContractorsPerJob,
     }
   });
 });

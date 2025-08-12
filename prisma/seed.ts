@@ -311,6 +311,28 @@ async function main() {
     });
   }
 
+  // Create default admin settings
+  await prisma.adminSettings.createMany({
+    data: [
+      {
+        key: 'default_max_contractors_per_job',
+        value: '5',
+        description: 'Default maximum number of contractors that can purchase access to each job',
+      },
+      {
+        key: 'commission_rate',
+        value: '0.05',
+        description: 'Commission rate (5%) charged to contractors who used credits and won jobs',
+      },
+      {
+        key: 'platform_name',
+        value: 'TrustBuild',
+        description: 'Platform name displayed throughout the application',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
   console.log('✅ Database seeding completed successfully!');
 }
 

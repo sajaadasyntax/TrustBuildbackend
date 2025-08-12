@@ -162,6 +162,7 @@ model Contractor {
   payments      Payment[]
   jobAccess     JobAccess[]
   creditTransactions CreditTransaction[]
+  jobsWon       Job[]             @relation("JobWonBy")
 
   @@map("contractors")
 }
@@ -242,6 +243,15 @@ model Job {
   leadPrice        Decimal?     @db.Decimal(8, 2) // Override price set by admin
   estimatedValue   Decimal?     @db.Decimal(10, 2) // For determining job size
   
+  // Job purchase limits
+  maxContractorsPerJob Int      @default(5) // How many contractors can buy this job
+  
+  // Job completion tracking
+  wonByContractorId String?     // Which contractor won the job
+  finalAmount      Decimal?     @db.Decimal(10, 2) // Final job amount entered by contractor
+  customerConfirmed Boolean     @default(false) // Customer confirmed completion and amount
+  commissionPaid   Boolean      @default(false) // Whether 5% commission was charged
+  
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -253,6 +263,7 @@ model Job {
   jobAccess    JobAccess[]
   payments     Payment[]
   milestones   Milestone[]
+  wonByContractor Contractor?  @relation("JobWonBy", fields: [wonByContractorId], references: [id])
 
   @@map("jobs")
 }
@@ -439,6 +450,7 @@ model AdminSettings {
   id        String   @id @default(cuid())
   key       String   @unique
   value     String
+  description String? // Optional description for the setting
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
