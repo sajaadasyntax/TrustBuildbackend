@@ -1524,10 +1524,72 @@ export const deleteJobMilestone = catchAsync(async (req: AuthenticatedRequest, r
   });
 });
 
-// @desc    Mark job as won by contractor
-// @route   PATCH /api/jobs/:id/mark-won
-// @access  Private (Customer or Contractor who purchased access)
-export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// @desc    Express interest in job (contractor)
+// @route   POST /api/jobs/:id/express-interest
+// @access  Private (Contractor who purchased access)
+export const expressInterest = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+  const { message } = req.body;
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      jobAccess: true,
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if contractor has purchased access
+  const hasAccess = job.jobAccess.find(access => access.contractorId === contractor.id);
+  if (!hasAccess) {
+    return next(new AppError('You must purchase access to this job before expressing interest', 403));
+  }
+
+  // Check if contractor already expressed interest
+  const existingInterest = await prisma.jobInterest.findUnique({
+    where: {
+      jobId_contractorId: {
+        jobId,
+        contractorId: contractor.id,
+      },
+    },
+  });
+
+  if (existingInterest) {
+    return next(new AppError('You have already expressed interest in this job', 400));
+  }
+
+  // Create interest record
+  await prisma.jobInterest.create({
+    data: {
+      jobId,
+      contractorId: contractor.id,
+      message: message || 'I am interested in taking on this job.',
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Interest expressed successfully',
+  });
+});
+
+// @desc    Select contractor for job (customer only)
+// @route   PATCH /api/jobs/:id/select-contractor
+// @access  Private (Customer who owns the job)
+export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const { contractorId } = req.body;
   const jobId = req.params.id;
   const userId = req.user!.id;
@@ -1557,25 +1619,17 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
     return next(new AppError('Job not found', 404));
   }
 
-  // Check authorization - either customer or contractor who has access can mark as won
-  const isCustomer = job.customer.userId === userId;
-  const contractorAccess = job.jobAccess.find(access => access.contractor.user.id === userId);
-  
-  if (!isCustomer && !contractorAccess) {
-    return next(new AppError('Not authorized to mark this job as won', 403));
+  // Only customer can select contractor
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Only the job owner can select a contractor', 403));
   }
 
-  // If contractor is marking as won, use their contractor ID
-  let winningContractorId = contractorId;
-  if (contractorAccess && !contractorId) {
-    const contractor = await prisma.contractor.findUnique({
-      where: { userId },
-    });
-    winningContractorId = contractor?.id;
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not available for contractor selection', 400));
   }
 
   // Verify the contractor has purchased access to this job
-  const hasAccess = job.jobAccess.find(access => access.contractorId === winningContractorId);
+  const hasAccess = job.jobAccess.find(access => access.contractorId === contractorId);
   if (!hasAccess) {
     return next(new AppError('The selected contractor has not purchased access to this job', 400));
   }
@@ -1583,7 +1637,7 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
   const updatedJob = await prisma.job.update({
     where: { id: jobId },
     data: {
-      wonByContractorId: winningContractorId,
+      wonByContractorId: contractorId,
       status: 'IN_PROGRESS',
     },
     include: {
@@ -1601,11 +1655,19 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
 
   res.status(200).json({
     status: 'success',
-    message: 'Job marked as won successfully',
+    message: 'Contractor selected successfully',
     data: {
       job: updatedJob,
     },
   });
+});
+
+// @desc    Mark job as won by contractor (DEPRECATED - use selectContractor instead)
+// @route   PATCH /api/jobs/:id/mark-won
+// @access  Private (Customer only)
+export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Redirect to selectContractor for backward compatibility
+  return selectContractor(req, res, next);
 });
 
 // @desc    Complete job with final amount (contractor only)
@@ -1892,6 +1954,8 @@ router.patch('/:id/status', protect, updateJobStatus);
 router.patch('/:id/complete', protect, completeJob);
 router.get('/:id/access', protect, checkJobAccess);
 router.patch('/:id/mark-won', protect, markJobAsWon);
+router.patch('/:id/select-contractor', protect, selectContractor);
+router.post('/:id/express-interest', protect, expressInterest);
 router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
 router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
 router.post('/:id/request-review', protect, requestReview);

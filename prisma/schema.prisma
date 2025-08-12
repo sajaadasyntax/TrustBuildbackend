@@ -163,6 +163,7 @@ model Contractor {
   jobAccess     JobAccess[]
   creditTransactions CreditTransaction[]
   jobsWon       Job[]             @relation("JobWonBy")
+  jobInterests  JobInterest[]
 
   @@map("contractors")
 }
@@ -264,8 +265,24 @@ model Job {
   payments     Payment[]
   milestones   Milestone[]
   wonByContractor Contractor?  @relation("JobWonBy", fields: [wonByContractorId], references: [id])
+  jobInterests JobInterest[]
 
   @@map("jobs")
+}
+
+model JobInterest {
+  id           String    @id @default(cuid())
+  jobId        String
+  contractorId String
+  message      String?   @db.Text
+  createdAt    DateTime  @default(now())
+  
+  // Relationships
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, contractorId])
+  @@map("job_interests")
 }
 
 model JobAccess {
