@@ -1240,6 +1240,46 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     hasAccess = true;
   }
 
+  // For contractors without access, return heavily filtered data
+  if (req.user?.role === 'CONTRACTOR' && !hasAccess) {
+    const filteredJob = {
+      id: job.id,
+      title: 'Job Available',
+      description: 'Full job description available after purchase',
+      postcode: job.postcode,
+      jobSize: job.jobSize,
+      status: job.status,
+      service: job.service ? {
+        id: job.service.id,
+        name: job.service.name,
+        category: job.service.category,
+      } : null,
+      customer: {
+        id: job.customer.id,
+        user: {
+          id: job.customer.user.id,
+        },
+      },
+      hasAccess,
+      leadPrice,
+      currentLeadPrice: leadPrice,
+      accessCount: job.jobAccess?.length || 0,
+      contractorsWithAccess: job.jobAccess?.length || 0,
+      spotsRemaining: job.maxContractorsPerJob - (job.jobAccess?.length || 0),
+      maxContractorsPerJob: job.maxContractorsPerJob,
+      applications: [],
+      reviews: [],
+      milestones: [],
+      jobAccess: [],
+      purchasedBy: [],
+    };
+
+    return res.status(200).json({
+      status: 'success',
+      data: filteredJob,
+    });
+  }
+
   const jobWithAccess = {
     ...job,
     hasAccess,
@@ -1263,21 +1303,6 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         jobsCompleted: access.contractor.jobsCompleted,
       }),
     })) || [],
-    // Filter sensitive data for contractors without access
-    ...(req.user?.role === 'CONTRACTOR' && !hasAccess && {
-      location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
-      description: job.description.substring(0, 300) + '...',
-      customer: {
-        ...job.customer,
-        user: {
-          id: job.customer.user.id,
-          name: job.customer.user.name,
-          // Remove email and other sensitive customer data
-        },
-        // Remove phone and other sensitive customer data
-        phone: undefined,
-      }
-    })
   };
 
   res.status(200).json({
