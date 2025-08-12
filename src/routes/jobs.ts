@@ -487,6 +487,20 @@ export const applyForJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     return next(new AppError('Job is not available for applications', 400));
   }
 
+  // Check if contractor has purchased access to this job
+  const hasAccess = await prisma.jobAccess.findUnique({
+    where: {
+      jobId_contractorId: {
+        jobId: req.params.id,
+        contractorId: contractor.id,
+      },
+    },
+  });
+
+  if (!hasAccess) {
+    return next(new AppError('You must purchase access to this job before applying', 403));
+  }
+
   // Check if already applied
   const existingApplication = await prisma.jobApplication.findFirst({
     where: {
