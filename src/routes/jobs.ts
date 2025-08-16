@@ -823,7 +823,8 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
     estimatedCost = job.budget.toNumber();
   }
 
-  // Create application and immediately accept it
+  // Create application and mark as accepted, but keep job status as POSTED
+  // Customer must still confirm before work can begin
   await prisma.$transaction([
     prisma.jobApplication.create({
       data: {
@@ -835,17 +836,19 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
         status: 'ACCEPTED',
       },
     }),
+    // Set the contractor as winner but keep status POSTED until customer confirms
     prisma.job.update({
       where: { id: req.params.id },
       data: {
-        status: 'IN_PROGRESS',
+        wonByContractorId: contractor.id,
+        // status remains POSTED - customer must confirm to change to IN_PROGRESS
       },
     }),
   ]);
 
   res.status(201).json({
     status: 'success',
-    message: 'Job accepted successfully',
+    message: 'Job accepted successfully. Waiting for customer confirmation to start work.',
   });
 });
 
@@ -969,8 +972,11 @@ export const updateJobStatus = catchAsync(async (req: AuthenticatedRequest, res:
     return next(new AppError('Job not found', 404));
   }
 
-  // Check if contractor is assigned to this job
-  if (!job.applications || job.applications.length === 0) {
+  // Check if contractor is assigned to this job (either through old application system or new wonBy system)
+  const isAssignedViaApplications = job.applications && job.applications.length > 0;
+  const isWonByContractor = job.wonByContractorId === contractor.id;
+  
+  if (!isAssignedViaApplications && !isWonByContractor) {
     return next(new AppError('You are not assigned to this job', 403));
   }
 
@@ -980,6 +986,12 @@ export const updateJobStatus = catchAsync(async (req: AuthenticatedRequest, res:
   const validStatuses = ['IN_PROGRESS', 'COMPLETED'];
   if (!validStatuses.includes(status)) {
     return next(new AppError('Invalid status', 400));
+  }
+
+  // IMPORTANT: Prevent contractors from setting status to IN_PROGRESS unless already IN_PROGRESS
+  // Only customers can transition from POSTED to IN_PROGRESS via confirmContractorStart
+  if (status === 'IN_PROGRESS' && job.status !== 'IN_PROGRESS') {
+    return next(new AppError('Only customers can approve the start of work. Wait for customer confirmation.', 403));
   }
 
   // Update job status
