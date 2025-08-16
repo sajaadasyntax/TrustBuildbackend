@@ -1779,13 +1779,17 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         },
       },
       jobAccess: {
-        where: {
-          contractorId: {
-            not: null,
-          },
-        },
         include: {
-          contractor: true,
+          contractor: {
+            include: {
+              user: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -1824,15 +1828,36 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   if (winningContractorAccess && winningContractorAccess.creditUsed && !job.commissionPaid) {
     commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
     
-    // Create commission payment record
+    // Calculate VAT and total
+    const vatRate = 20.00; // 20% VAT
+    const vatAmount = (commissionAmount * vatRate) / 100;
+    const totalAmount = commissionAmount + vatAmount;
+    
+    // Create invoice first
+    const commissionInvoice = await prisma.invoice.create({
+      data: {
+        amount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        description: `5% commission for completed job: ${job.title}`,
+        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
+        recipientName: winningContractorAccess.contractor?.businessName || winningContractorAccess.contractor?.user?.name || 'Unknown Contractor',
+        recipientEmail: winningContractorAccess.contractor?.user?.email || 'unknown@contractor.com',
+        recipientAddress: winningContractorAccess.contractor?.businessAddress || 'Address not provided',
+        dueAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Due in 30 days
+      },
+    });
+    
+    // Create commission payment record linked to invoice
     commissionPayment = await prisma.payment.create({
       data: {
         contractorId: job.wonByContractorId!,
-        amount: commissionAmount,
+        amount: totalAmount, // Include VAT in payment amount
         type: 'JOB_PAYMENT',
         status: 'COMPLETED',
         description: `5% commission for job: ${job.title} (£${job.finalAmount})`,
         jobId: job.id,
+        invoiceId: commissionInvoice.id,
       },
     });
   }
@@ -1863,6 +1888,89 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       job: updatedJob,
       commissionCharged: commissionAmount,
       commissionPayment,
+    },
+  });
+});
+
+// @desc    Mark job as won by contractor (contractor can mark themselves as winner)
+// @route   PATCH /api/jobs/:id/contractor-mark-won
+// @access  Private (Contractor who has access to the job)
+export const contractorMarkJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      jobAccess: {
+        where: {
+          contractorId: contractor.id,
+        },
+      },
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if contractor has access to this job
+  if (job.jobAccess.length === 0) {
+    return next(new AppError('You must purchase access to this job first', 403));
+  }
+
+  // Check if job is still available for selection
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not available for contractor selection', 400));
+  }
+
+  // Check if job already has a winner
+  if (job.wonByContractorId) {
+    return next(new AppError('This job already has a selected contractor', 400));
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      wonByContractorId: contractor.id,
+      status: 'IN_PROGRESS',
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'You have marked this job as won. The customer will be notified.',
+    data: {
+      job: updatedJob,
     },
   });
 });
@@ -1955,6 +2063,7 @@ router.patch('/:id/complete', protect, completeJob);
 router.get('/:id/access', protect, checkJobAccess);
 router.patch('/:id/mark-won', protect, markJobAsWon);
 router.patch('/:id/select-contractor', protect, selectContractor);
+router.patch('/:id/contractor-mark-won', protect, contractorMarkJobAsWon);
 router.post('/:id/express-interest', protect, expressInterest);
 router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
 router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
