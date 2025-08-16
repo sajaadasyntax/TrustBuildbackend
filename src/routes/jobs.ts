@@ -1638,7 +1638,8 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
     where: { id: jobId },
     data: {
       wonByContractorId: contractorId,
-      status: 'IN_PROGRESS',
+      // Keep status as POSTED until customer explicitly confirms contractor can start
+      // Status will be changed to IN_PROGRESS when customer confirms the selection
     },
     include: {
       wonByContractor: {
@@ -1951,7 +1952,8 @@ export const contractorMarkJobAsWon = catchAsync(async (req: AuthenticatedReques
     where: { id: jobId },
     data: {
       wonByContractorId: contractor.id,
-      status: 'IN_PROGRESS',
+      // Keep status as POSTED until customer explicitly confirms contractor can start
+      // Status will be changed to IN_PROGRESS when customer confirms the selection
     },
     include: {
       wonByContractor: {
@@ -1968,7 +1970,78 @@ export const contractorMarkJobAsWon = catchAsync(async (req: AuthenticatedReques
 
   res.status(200).json({
     status: 'success',
-    message: 'You have marked this job as won. The customer will be notified.',
+    message: 'You have marked this job as won. Waiting for customer confirmation to start work.',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
+// @desc    Customer confirms contractor selection and allows work to start
+// @route   PATCH /api/jobs/:id/confirm-contractor-start
+// @access  Private (Customer who owns the job)
+export const confirmContractorStart = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: true,
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Only customer can confirm contractor start
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Only the job owner can confirm contractor start', 403));
+  }
+
+  // Check if contractor has been selected
+  if (!job.wonByContractorId) {
+    return next(new AppError('No contractor has been selected for this job', 400));
+  }
+
+  // Check if job is still posted (awaiting confirmation)
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not awaiting contractor confirmation', 400));
+  }
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      status: 'IN_PROGRESS',
+      startDate: new Date(),
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Contractor confirmed and work can now begin',
     data: {
       job: updatedJob,
     },
@@ -2064,6 +2137,7 @@ router.get('/:id/access', protect, checkJobAccess);
 router.patch('/:id/mark-won', protect, markJobAsWon);
 router.patch('/:id/select-contractor', protect, selectContractor);
 router.patch('/:id/contractor-mark-won', protect, contractorMarkJobAsWon);
+router.patch('/:id/confirm-contractor-start', protect, confirmContractorStart);
 router.post('/:id/express-interest', protect, expressInterest);
 router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
 router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
