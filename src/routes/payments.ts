@@ -14,7 +14,7 @@ function getStripeInstance(): Stripe {
   if (!stripe) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     
-    if (!stripeKey) {
+  if (!stripeKey) {
       throw new Error('STRIPE_SECRET_KEY is not configured');
     }
     
@@ -827,5 +827,483 @@ router.post('/test-customer-notification', catchAsync(async (req: AuthenticatedR
     return next(new AppError(`Test customer notification failed: ${error.message}`, 500));
   }
 }));
+
+// Commission system functions
+
+// Send commission invoice email
+async function sendCommissionInvoice(recipientEmail: string, invoiceData: {
+  invoiceNumber: string;
+  contractorName: string;
+  jobTitle: string;
+  finalJobAmount: number;
+  commissionAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  dueDate: string;
+}): Promise<boolean> {
+  try {
+    const transporter = getEmailTransporter();
+    
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
+      to: recipientEmail,
+      subject: `TrustBuild Commission Invoice ${invoiceData.invoiceNumber} - Due in 48 Hours`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .header { background-color: #dc2626; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; }
+            .commission-details { background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc2626; }
+            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
+            .urgent { font-weight: bold; color: #dc2626; }
+            .amount { font-size: 1.2em; font-weight: bold; color: #dc2626; }
+            .warning { background-color: #fef3c7; padding: 10px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #f59e0b; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>⚠️ Commission Payment Due</h1>
+          </div>
+          
+          <div class="content">
+            <p>Dear ${invoiceData.contractorName},</p>
+            
+            <p>This is an <span class="urgent">URGENT NOTICE</span> regarding your TrustBuild commission payment.</p>
+            
+            <div class="warning">
+              <h3>⏰ Payment Due: ${invoiceData.dueDate}</h3>
+              <p><strong>You have 48 hours to pay this commission or your account will be suspended.</strong></p>
+            </div>
+            
+            <div class="commission-details">
+              <h3>Commission Invoice Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr><td><strong>Invoice Number:</strong></td><td>${invoiceData.invoiceNumber}</td></tr>
+                <tr><td><strong>Job Title:</strong></td><td>${invoiceData.jobTitle}</td></tr>
+                <tr><td><strong>Final Job Amount:</strong></td><td>£${invoiceData.finalJobAmount.toFixed(2)}</td></tr>
+                <tr><td><strong>Commission (5%):</strong></td><td>£${invoiceData.commissionAmount.toFixed(2)}</td></tr>
+                <tr><td><strong>VAT (20%):</strong></td><td>£${invoiceData.vatAmount.toFixed(2)}</td></tr>
+                <tr class="amount"><td><strong>Total Due:</strong></td><td><strong>£${invoiceData.totalAmount.toFixed(2)}</strong></td></tr>
+                <tr><td><strong>Due Date:</strong></td><td class="urgent">${invoiceData.dueDate}</td></tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h3>💳 How to Pay</h3>
+              <ol>
+                <li>Log into your TrustBuild dashboard</li>
+                <li>Go to "Commission Payments" section</li>
+                <li>Click "Pay Now" next to this invoice</li>
+                <li>Pay using any of our supported methods: Visa, MasterCard, Amex, Apple Pay, Google Pay</li>
+              </ol>
+            </div>
+            
+            <div style="background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h3>🚨 Account Suspension Warning</h3>
+              <p><strong>If payment is not received by ${invoiceData.dueDate}, your account will be automatically suspended and you will:</strong></p>
+              <ul>
+                <li>❌ Lose access to new job opportunities</li>
+                <li>❌ Be unable to purchase job leads</li>
+                <li>❌ Have your profile hidden from customers</li>
+                <li>❌ Need to pay all outstanding commissions plus reactivation fee</li>
+              </ul>
+            </div>
+            
+            <p>This commission is due as per our terms of service for completed jobs where you have an active subscription.</p>
+            
+            <p><strong>Pay now to avoid account suspension!</strong></p>
+            
+            <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
+          </div>
+          
+          <div class="footer">
+            <p>TrustBuild - Connecting Contractors with Customers</p>
+            <p>Login to pay: <a href="https://trustbuild.uk/dashboard">https://trustbuild.uk/dashboard</a></p>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Commission invoice sent successfully to: ${recipientEmail}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send commission invoice:', error);
+    return false;
+  }
+}
+
+// @desc    Mark job as completed with final amount (for commissioned contractors)
+// @route   POST /api/payments/complete-job
+// @access  Private (Contractor only)
+export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { jobId, finalAmount } = req.body;
+  const userId = req.user!.id;
+
+  if (!jobId || !finalAmount || finalAmount <= 0) {
+    return next(new AppError('Job ID and final amount are required', 400));
+  }
+
+  // Get contractor profile with subscription
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    include: {
+      subscription: true,
+      user: true,
+    },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get job details
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if contractor won this job
+  if (job.wonByContractorId !== contractor.id) {
+    return next(new AppError('You are not assigned to this job', 403));
+  }
+
+  // Check if already completed
+  if (job.status === 'COMPLETED' && job.commissionPaid) {
+    return next(new AppError('Job is already completed and commission processed', 400));
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Update job with final amount and completion
+    const updatedJob = await tx.job.update({
+      where: { id: jobId },
+      data: {
+        finalAmount: finalAmount,
+        status: 'COMPLETED',
+        completionDate: new Date(),
+      },
+    });
+
+    let commissionPayment = null;
+
+    // Only create commission if contractor has active subscription
+    if (contractor.subscription && contractor.subscription.isActive && contractor.subscription.status === 'active') {
+      const commissionRate = 5.0; // 5%
+      const commissionAmount = (finalAmount * commissionRate) / 100;
+      const vatAmount = commissionAmount * 0.2; // 20% VAT
+      const totalAmount = commissionAmount + vatAmount;
+      const dueDate = new Date();
+      dueDate.setHours(dueDate.getHours() + 48); // 48 hours from now
+
+      // Create commission payment record
+      commissionPayment = await tx.commissionPayment.create({
+        data: {
+          jobId: job.id,
+          contractorId: contractor.id,
+          customerId: job.customerId,
+          finalJobAmount: finalAmount,
+          commissionRate: commissionRate,
+          commissionAmount: commissionAmount,
+          vatAmount: vatAmount,
+          totalAmount: totalAmount,
+          dueDate: dueDate,
+        },
+      });
+
+      // Create commission invoice
+      const invoiceNumber = `COMM-${Date.now()}-${contractor.id.slice(-6)}`;
+      await tx.commissionInvoice.create({
+        data: {
+          commissionPaymentId: commissionPayment.id,
+          invoiceNumber: invoiceNumber,
+          contractorName: contractor.user.name,
+          contractorEmail: contractor.user.email,
+          jobTitle: job.title,
+          finalJobAmount: finalAmount,
+          commissionAmount: commissionAmount,
+          vatAmount: vatAmount,
+          totalAmount: totalAmount,
+          dueDate: dueDate,
+        },
+      });
+    }
+
+    return { updatedJob, commissionPayment };
+  });
+
+  // Send commission invoice email if commission was created
+  if (result.commissionPayment && contractor.user.email) {
+    try {
+      const invoiceNumber = `COMM-${Date.now()}-${contractor.id.slice(-6)}`;
+      await sendCommissionInvoice(contractor.user.email, {
+        invoiceNumber: invoiceNumber,
+        contractorName: contractor.user.name,
+        jobTitle: job.title,
+        finalJobAmount: finalAmount,
+        commissionAmount: result.commissionPayment.commissionAmount.toNumber(),
+        vatAmount: result.commissionPayment.vatAmount.toNumber(),
+        totalAmount: result.commissionPayment.totalAmount.toNumber(),
+        dueDate: result.commissionPayment.dueDate.toLocaleDateString('en-GB'),
+      });
+    } catch (emailError) {
+      console.error('❌ Error sending commission invoice:', emailError);
+    }
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job marked as completed successfully',
+    data: {
+      job: result.updatedJob,
+      commissionPayment: result.commissionPayment,
+      hasCommission: !!result.commissionPayment,
+    },
+  });
+});
+
+// @desc    Get contractor's commission payments
+// @route   GET /api/payments/commissions
+// @access  Private (Contractor only)
+export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const userId = req.user!.id;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get commission payments
+  const commissions = await prisma.commissionPayment.findMany({
+    where: { contractorId: contractor.id },
+    include: {
+      job: {
+        select: {
+          id: true,
+          title: true,
+          completionDate: true,
+        },
+      },
+      invoice: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: limit,
+  });
+
+  const total = await prisma.commissionPayment.count({
+    where: { contractorId: contractor.id },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      commissions,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
+
+// @desc    Pay commission
+// @route   POST /api/payments/pay-commission
+// @access  Private (Contractor only)
+export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { commissionPaymentId, stripePaymentIntentId } = req.body;
+  const userId = req.user!.id;
+
+  if (!commissionPaymentId || !stripePaymentIntentId) {
+    return next(new AppError('Commission payment ID and Stripe payment intent ID are required', 400));
+  }
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get commission payment
+  const commissionPayment = await prisma.commissionPayment.findFirst({
+    where: {
+      id: commissionPaymentId,
+      contractorId: contractor.id,
+      status: 'PENDING',
+    },
+    include: {
+      job: true,
+      invoice: true,
+    },
+  });
+
+  if (!commissionPayment) {
+    return next(new AppError('Commission payment not found or already paid', 404));
+  }
+
+  // Verify payment with Stripe
+  const stripe = getStripeInstance();
+  const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+  
+  if (paymentIntent.status !== 'succeeded') {
+    return next(new AppError('Payment not completed', 400));
+  }
+
+  if (paymentIntent.amount !== commissionPayment.totalAmount.toNumber() * 100) { // Stripe uses cents
+    return next(new AppError('Payment amount mismatch', 400));
+  }
+
+  // Update commission payment as paid
+  const updatedCommission = await prisma.commissionPayment.update({
+    where: { id: commissionPaymentId },
+    data: {
+      status: 'PAID',
+      paidAt: new Date(),
+      stripePaymentId: stripePaymentIntentId,
+    },
+  });
+
+  // Update job as commission paid
+  await prisma.job.update({
+    where: { id: commissionPayment.jobId },
+    data: { commissionPaid: true },
+  });
+
+  // Create payment record
+  await prisma.payment.create({
+    data: {
+      contractorId: contractor.id,
+      amount: commissionPayment.totalAmount,
+      type: 'COMMISSION',
+      status: 'COMPLETED',
+      stripePaymentId: stripePaymentIntentId,
+      description: `Commission payment for job: ${commissionPayment.job.title}`,
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Commission payment completed successfully',
+    data: {
+      commissionPayment: updatedCommission,
+    },
+  });
+});
+
+// @desc    Create Stripe payment intent for commission payment
+// @route   POST /api/payments/create-commission-payment-intent
+// @access  Private (Contractor only)
+export const createCommissionPaymentIntent = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { commissionPaymentId } = req.body;
+  const userId = req.user!.id;
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get commission payment
+  const commissionPayment = await prisma.commissionPayment.findFirst({
+    where: {
+      id: commissionPaymentId,
+      contractorId: contractor.id,
+      status: 'PENDING',
+    },
+    include: {
+      job: true,
+    },
+  });
+
+  if (!commissionPayment) {
+    return next(new AppError('Commission payment not found or already paid', 404));
+  }
+
+  // Check if payment is overdue
+  if (new Date() > commissionPayment.dueDate) {
+    // Mark as overdue
+    await prisma.commissionPayment.update({
+      where: { id: commissionPaymentId },
+      data: { status: 'OVERDUE' },
+    });
+    
+    // Suspend contractor account
+    await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: { status: 'SUSPENDED' },
+    });
+
+    return next(new AppError('Commission payment is overdue. Your account has been suspended. Please contact support.', 403));
+  }
+
+  // Create payment intent
+  try {
+    const stripe = getStripeInstance();
+    
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: commissionPayment.totalAmount.toNumber() * 100, // Convert to cents
+      currency: 'gbp',
+      payment_method_types: ['card'],
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: 'never'
+      },
+      metadata: {
+        commissionPaymentId: commissionPayment.id,
+        contractorId: contractor.id,
+        jobId: commissionPayment.jobId,
+        type: 'commission_payment'
+      },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        clientSecret: paymentIntent.client_secret,
+        amount: commissionPayment.totalAmount.toNumber(),
+        dueDate: commissionPayment.dueDate,
+        jobTitle: commissionPayment.job.title,
+      },
+    });
+  } catch (stripeError: any) {
+    console.error('❌ Stripe API Error:', stripeError.message);
+    return next(new AppError(`Stripe payment error: ${stripeError.message}`, 400));
+  }
+});
+
+// Add commission routes
+router.post('/complete-job', completeJob);
+router.get('/commissions', getCommissionPayments);
+router.post('/pay-commission', payCommission);
+router.post('/create-commission-payment-intent', createCommissionPaymentIntent);
 
 export default router; 

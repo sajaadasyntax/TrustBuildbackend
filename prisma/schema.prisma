@@ -69,7 +69,21 @@ enum PaymentType {
   LEAD_ACCESS
   SUBSCRIPTION
   JOB_PAYMENT
+  COMMISSION
   REFUND
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  SIX_MONTHS
+  YEARLY
+}
+
+enum CommissionStatus {
+  PENDING
+  PAID
+  OVERDUE
+  WAIVED
 }
 
 model User {
@@ -104,6 +118,7 @@ model Customer {
   jobs    Job[]
   reviews Review[]
   payments Payment[]
+  commissionPayments CommissionPayment[]
 
   @@map("customers")
 }
@@ -164,6 +179,7 @@ model Contractor {
   creditTransactions CreditTransaction[]
   jobsWon       Job[]             @relation("JobWonBy")
   jobInterests  JobInterest[]
+  commissionPayments CommissionPayment[]
 
   @@map("contractors")
 }
@@ -266,6 +282,7 @@ model Job {
   milestones   Milestone[]
   wonByContractor Contractor?  @relation("JobWonBy", fields: [wonByContractorId], references: [id])
   jobInterests JobInterest[]
+  commissionPayment CommissionPayment?
 
   @@map("jobs")
 }
@@ -447,20 +464,73 @@ model Review {
 }
 
 model Subscription {
-  id                 String   @id @default(cuid())
-  contractorId       String   @unique
+  id                 String           @id @default(cuid())
+  contractorId       String           @unique
   tier               ContractorTier
-  stripeSubscriptionId String? @unique
-  status             String   @default("active") // active, cancelled, past_due, etc.
+  plan               SubscriptionPlan @default(MONTHLY)
+  monthlyPrice       Decimal          @default(0.00) @db.Decimal(8, 2)
+  stripeSubscriptionId String?        @unique
+  status             String           @default("active") // active, cancelled, past_due, etc.
+  isActive           Boolean          @default(true)
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   // Relationships
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+model CommissionPayment {
+  id              String           @id @default(cuid())
+  jobId           String           @unique
+  contractorId    String
+  customerId      String
+  finalJobAmount  Decimal          @db.Decimal(10, 2)
+  commissionRate  Decimal          @default(5.00) @db.Decimal(4, 2)
+  commissionAmount Decimal         @db.Decimal(10, 2)
+  vatAmount       Decimal          @db.Decimal(10, 2)
+  totalAmount     Decimal          @db.Decimal(10, 2)
+  status          CommissionStatus @default(PENDING)
+  dueDate         DateTime
+  paidAt          DateTime?
+  stripePaymentId String?
+  remindersSent   Int              @default(0)
+  lastReminderSent DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relationships
+  job        Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor          @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  customer   Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoice    CommissionInvoice?
+
+  @@map("commission_payments")
+}
+
+model CommissionInvoice {
+  id                  String    @id @default(cuid())
+  commissionPaymentId String    @unique
+  invoiceNumber       String    @unique
+  contractorName      String
+  contractorEmail     String
+  jobTitle            String
+  finalJobAmount      Decimal   @db.Decimal(10, 2)
+  commissionAmount    Decimal   @db.Decimal(10, 2)
+  vatAmount           Decimal   @db.Decimal(10, 2)
+  totalAmount         Decimal   @db.Decimal(10, 2)
+  dueDate             DateTime
+  emailSent           Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relationships
+  commissionPayment CommissionPayment @relation(fields: [commissionPaymentId], references: [id], onDelete: Cascade)
+
+  @@map("commission_invoices")
 }
 
 model AdminSettings {
