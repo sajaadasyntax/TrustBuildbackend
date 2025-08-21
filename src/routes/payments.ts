@@ -7,55 +7,30 @@ import Stripe from 'stripe';
 
 const router = Router();
 
-// Initialize Stripe with comprehensive debugging
+// Initialize Stripe lazily when needed
 let stripe: Stripe | null = null;
 
-function initializeStripe() {
-  console.log('🔄 Initializing Stripe...');
-  
-  // Debug environment variable loading
-  const envStripeKey = process.env.STRIPE_SECRET_KEY;
-  console.log('🔍 Environment Debug:');
-  console.log(`   STRIPE_SECRET_KEY exists: ${!!envStripeKey}`);
-  console.log(`   STRIPE_SECRET_KEY length: ${envStripeKey ? envStripeKey.length : 0}`);
-  console.log(`   STRIPE_SECRET_KEY preview: ${envStripeKey ? envStripeKey.substring(0, 12) + '...' : 'NOT SET'}`);
-  
-  // Use test key as fallback if environment key is missing or invalid
-  const fallbackTestKey = process.env.STRIPE_FALLBACK_TEST_KEY || 'sk_test_FALLBACK_KEY_NOT_SET';
-  let stripeKey = envStripeKey;
-  let usingFallback = false;
-  
-  // Check if environment key is valid
-  if (!stripeKey) {
-    console.log('⚠️ STRIPE_SECRET_KEY not found in environment. Using fallback test key.');
-    stripeKey = fallbackTestKey;
-    usingFallback = true;
-  } else if (!stripeKey.startsWith('sk_test_') && !stripeKey.startsWith('sk_live_')) {
-    console.log('⚠️ Invalid Stripe key format in environment. Using fallback test key.');
-    stripeKey = fallbackTestKey;
-    usingFallback = true;
-  }
-  
-  try {
+function getStripeInstance(): Stripe {
+  if (!stripe) {
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    
+    if (!stripeKey) {
+      throw new Error('STRIPE_SECRET_KEY is not configured');
+    }
+    
+    if (!stripeKey.startsWith('sk_test_') && !stripeKey.startsWith('sk_live_')) {
+      throw new Error('Invalid Stripe API key format');
+    }
+    
     stripe = new Stripe(stripeKey, {
       apiVersion: '2023-10-16',
     });
     
-    const keyType = stripeKey.startsWith('sk_test_') ? 'TEST' : 'LIVE';
-    console.log(`✅ Stripe initialized successfully`);
-    console.log(`   Key type: ${keyType}`);
-    console.log(`   Using fallback: ${usingFallback ? 'YES' : 'NO'}`);
-    console.log(`   Key preview: ${stripeKey.substring(0, 12)}...`);
-    
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to initialize Stripe:', error);
-    return false;
+    console.log(`✅ Stripe initialized with ${stripeKey.startsWith('sk_live_') ? 'LIVE' : 'TEST'} key`);
   }
+  
+  return stripe;
 }
-
-// Initialize Stripe
-const stripeInitialized = initializeStripe();
 
 // @desc    Check if contractor has access to a job
 // @route   GET /api/payments/job-access/:jobId
@@ -227,15 +202,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
     } else if (paymentMethod === 'STRIPE') {
-      if (!stripe) {
-        throw new AppError('Stripe is not configured on this server', 503);
-      }
-      
       if (!stripePaymentIntentId) {
         throw new AppError('Stripe payment intent ID is required', 400);
       }
 
       // Verify payment with Stripe
+      const stripe = getStripeInstance();
       const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
       
       if (paymentIntent.status !== 'succeeded') {
@@ -396,18 +368,9 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
 
   // Create payment intent
   try {
-    if (!stripe) {
-      console.error('❌ Stripe instance is null/undefined');
-      return next(new AppError('Stripe is not configured on this server', 503));
-    }
-    
     console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
-    console.log('🔍 Stripe instance check:', {
-      stripeExists: !!stripe,
-      stripeConstructor: stripe.constructor.name,
-      apiVersion: '2023-10-16'
-    });
     
+    const stripe = getStripeInstance();
     const paymentIntent = await stripe.paymentIntents.create({
       amount: leadPrice * 100, // Convert to cents
       currency: 'gbp',
