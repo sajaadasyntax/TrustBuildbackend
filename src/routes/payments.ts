@@ -3,13 +3,59 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
+import { sendInvoiceEmail } from '../services/emailService';
 
 const router = Router();
 
+// Initialize Stripe with comprehensive debugging
+let stripe: Stripe | null = null;
+
+function initializeStripe() {
+  console.log('🔄 Initializing Stripe...');
+  
+  // Debug environment variable loading
+  const envStripeKey = process.env.STRIPE_SECRET_KEY;
+  console.log('🔍 Environment Debug:');
+  console.log(`   STRIPE_SECRET_KEY exists: ${!!envStripeKey}`);
+  console.log(`   STRIPE_SECRET_KEY length: ${envStripeKey ? envStripeKey.length : 0}`);
+  console.log(`   STRIPE_SECRET_KEY preview: ${envStripeKey ? envStripeKey.substring(0, 12) + '...' : 'NOT SET'}`);
+  
+  // Use test key as fallback if environment key is missing or invalid
+  const fallbackTestKey = process.env.STRIPE_FALLBACK_TEST_KEY || 'sk_test_FALLBACK_KEY_NOT_SET';
+  let stripeKey = envStripeKey;
+  let usingFallback = false;
+  
+  // Check if environment key is valid
+  if (!stripeKey) {
+    console.log('⚠️ STRIPE_SECRET_KEY not found in environment. Using fallback test key.');
+    stripeKey = fallbackTestKey;
+    usingFallback = true;
+  } else if (!stripeKey.startsWith('sk_test_') && !stripeKey.startsWith('sk_live_')) {
+    console.log('⚠️ Invalid Stripe key format in environment. Using fallback test key.');
+    stripeKey = fallbackTestKey;
+    usingFallback = true;
+  }
+  
+  try {
+    stripe = new Stripe(stripeKey, {
+      apiVersion: '2023-10-16',
+    });
+    
+    const keyType = stripeKey.startsWith('sk_test_') ? 'TEST' : 'LIVE';
+    console.log(`✅ Stripe initialized successfully`);
+    console.log(`   Key type: ${keyType}`);
+    console.log(`   Using fallback: ${usingFallback ? 'YES' : 'NO'}`);
+    console.log(`   Key preview: ${stripeKey.substring(0, 12)}...`);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to initialize Stripe:', error);
+    return false;
+  }
+}
+
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16',
-});
+const stripeInitialized = initializeStripe();
 
 // @desc    Check if contractor has access to a job
 // @route   GET /api/payments/job-access/:jobId
@@ -245,6 +291,37 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return { payment, invoice };
   });
 
+  // Send invoice email to contractor
+  try {
+    const contractorUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true }
+    });
+
+    if (contractorUser && contractorUser.email) {
+      const emailSent = await sendInvoiceEmail(contractorUser.email, {
+        invoiceNumber: transactionResult.invoice.invoiceNumber,
+        contractorName: contractorUser.name || 'Contractor',
+        amount: transactionResult.invoice.amount?.toNumber() || 0,
+        vatAmount: transactionResult.invoice.vatAmount?.toNumber() || 0,
+        totalAmount: transactionResult.invoice.totalAmount?.toNumber() || 0,
+        description: transactionResult.invoice.description,
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB'),
+        jobTitle: job.title,
+        jobId: job.id,
+      });
+
+      if (emailSent) {
+        console.log(`✅ Invoice email sent to contractor: ${contractorUser.email}`);
+      } else {
+        console.log(`⚠️ Failed to send invoice email to contractor: ${contractorUser.email}`);
+      }
+    }
+  } catch (emailError) {
+    console.error('❌ Error sending invoice email:', emailError);
+    // Don't fail the payment if email fails
+  }
+
   // Return response with customer contact details since access was granted
   res.status(200).json({
     status: 'success',
@@ -331,23 +408,29 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   // Create payment intent
   try {
     if (!stripe) {
+      console.error('❌ Stripe instance is null/undefined');
       return next(new AppError('Stripe is not configured on this server', 503));
     }
     
     console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
+    console.log('🔍 Stripe instance check:', {
+      stripeExists: !!stripe,
+      stripeConstructor: stripe.constructor.name,
+      apiVersion: '2023-10-16'
+    });
     
     const paymentIntent = await stripe.paymentIntents.create({
-    amount: leadPrice * 100, // Convert to cents
-    currency: 'gbp',
-    automatic_payment_methods: {
-      enabled: true,
-    },
-    metadata: {
-      jobId,
-      contractorId: contractor.id,
-      leadPrice: leadPrice.toString(),
-    },
-  });
+      amount: leadPrice * 100, // Convert to cents
+      currency: 'gbp',
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      metadata: {
+        jobId,
+        contractorId: contractor.id,
+        leadPrice: leadPrice.toString(),
+      },
+    });
 
     console.log('✅ Payment intent created successfully:', paymentIntent.id);
 

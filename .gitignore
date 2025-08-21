@@ -155,4 +155,15 @@ ecosystem.config.js
 
 # Test files (optional - uncomment if you want to ignore test outputs)
 # test-results/
-# coverage/ 
+# coverage/
+
+# Debug and test files (prevent accidental secret exposure)
+debug-*.js
+test-*.js
+*-debug.*
+*-test.*
+*.debug
+*.test
+secret*
+keys*
+config-local* 
