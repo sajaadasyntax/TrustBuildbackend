@@ -223,9 +223,10 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
     return next(new AppError('Valid subscription plan is required', 400));
   }
 
-  // Get contractor profile
+  // Get contractor profile with user data
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: { user: true },
   });
 
   if (!contractor) {
@@ -282,9 +283,10 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     return next(new AppError('Payment intent ID and plan are required', 400));
   }
 
-  // Get contractor profile
+  // Get contractor profile with user data
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: { user: true },
   });
 
   if (!contractor) {
@@ -367,7 +369,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   // Create invoice
   await prisma.invoice.create({
     data: {
-      paymentId: payment.id,
+      payments: { connect: { id: payment.id } },
       invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
       recipientName: contractor.businessName || contractor.user.name,
       recipientEmail: contractor.user.email,
@@ -375,7 +377,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       amount: getSubscriptionPricing(plan).total,
       vatAmount: getSubscriptionPricing(plan).total * 0.2,
       totalAmount: getSubscriptionPricing(plan).total * 1.2,
-      dueDate: now,
+      dueAt: now,
       paidAt: now,
     },
   });
@@ -417,11 +419,12 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const userId = req.user!.id;
 
-  // Get contractor profile with subscription
+  // Get contractor profile with subscription and user data
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
     include: {
       subscription: true,
+      user: true,
     },
   });
 
