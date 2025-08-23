@@ -20,7 +20,7 @@ import adminRoutes from './routes/admin';
 import uploadRoutes from './routes/upload';
 import paymentRoutes from './routes/payments';
 import invoiceRoutes from './routes/invoices';
-
+import subscriptionRoutes from './routes/subscriptions';
 import notificationRoutes from './routes/notifications';
 import adminInvoiceRoutes from './routes/admin-invoices';
 import contractorDashboardRoutes from './routes/contractor-dashboard';
@@ -125,6 +125,7 @@ app.use('/api/admin/invoices', adminInvoiceRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contractor', contractorDashboardRoutes);
 
