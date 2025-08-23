@@ -127,10 +127,20 @@ export const getDashboardSummary = catchAsync(async (req: AuthenticatedRequest, 
     const plan = contractor.subscription.plan;
     const pricing = getSubscriptionPricing(plan);
     
+    // Format the next billing date
+    const nextBillingDate = contractor.subscription.currentPeriodEnd;
+    const formattedNextBillingDate = nextBillingDate.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    
     subscriptionDetails = {
       ...contractor.subscription,
       pricing,
       daysRemaining: Math.max(0, Math.floor((contractor.subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
+      nextBillingDate: formattedNextBillingDate,
+      nextBillingTimestamp: nextBillingDate.getTime()
     };
   }
 
@@ -215,6 +225,14 @@ export const getSubscriptionDetails = catchAsync(async (req: AuthenticatedReques
     const plan = contractor.subscription.plan;
     const pricing = getSubscriptionPricing(plan);
     
+    // Format the next billing date
+    const nextBillingDate = contractor.subscription.currentPeriodEnd;
+    const formattedNextBillingDate = nextBillingDate.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    
     // Get Stripe subscription if available
     let stripeSubscription = null;
     if (contractor.subscription.stripeSubscriptionId) {
@@ -232,6 +250,8 @@ export const getSubscriptionDetails = catchAsync(async (req: AuthenticatedReques
       ...contractor.subscription,
       pricing,
       daysRemaining: Math.max(0, Math.floor((contractor.subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
+      nextBillingDate: formattedNextBillingDate,
+      nextBillingTimestamp: nextBillingDate.getTime(),
       stripeDetails: stripeSubscription,
     };
   }
