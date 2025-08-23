@@ -21,6 +21,10 @@ import uploadRoutes from './routes/upload';
 import paymentRoutes from './routes/payments';
 import invoiceRoutes from './routes/invoices';
 
+import notificationRoutes from './routes/notifications';
+import adminInvoiceRoutes from './routes/admin-invoices';
+import contractorDashboardRoutes from './routes/contractor-dashboard';
+
 // Load environment variables
 dotenv.config();
 
@@ -117,9 +121,12 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/invoices', adminInvoiceRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/contractor', contractorDashboardRoutes);
 
 // Basic test routes
 app.get('/api/test', (req, res) => {

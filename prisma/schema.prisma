@@ -86,19 +86,34 @@ enum CommissionStatus {
   WAIVED
 }
 
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+  COMMISSION_DUE
+  COMMISSION_OVERDUE
+  SUBSCRIPTION_EXPIRING
+  JOB_PURCHASED
+  REVIEW_RECEIVED
+  ACCOUNT_SUSPENDED
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  role      UserRole @default(CUSTOMER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  password            String
+  name                String
+  role                UserRole @default(CUSTOMER)
+  isActive            Boolean  @default(true)
+  notificationSettings Json     @default("{\"email\": true, \"inApp\": true, \"commission\": true, \"subscription\": true, \"jobs\": true, \"reviews\": true}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   // Relationships
-  customer   Customer?
-  contractor Contractor?
+  customer      Customer?
+  contractor    Contractor?
+  notifications Notification[]
 
   @@map("users")
 }
@@ -533,13 +548,48 @@ model CommissionInvoice {
   @@map("commission_invoices")
 }
 
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  title      String
+  message    String
+  type       NotificationType @default(INFO)
+  isRead     Boolean          @default(false)
+  actionLink String?
+  actionText String?
+  metadata   Json?
+  expiresAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  // Relationships
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([type])
+  @@map("notifications")
+}
+
+model AdminAction {
+  id          String   @id @default(cuid())
+  action      String
+  description String
+  performedBy String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@map("admin_actions")
+}
+
 model AdminSettings {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     String
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
   description String? // Optional description for the setting
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("admin_settings")
 } 

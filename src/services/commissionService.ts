@@ -1,5 +1,9 @@
 import { prisma } from '../config/database';
 import nodemailer from 'nodemailer';
+import { 
+  createCommissionDueNotification, 
+  createAccountSuspendedNotification 
+} from './notificationService';
 
 // Email transporter configuration
 const getEmailTransporter = () => {
@@ -164,11 +168,18 @@ export async function processCommissionReminders(): Promise<void> {
           data: { status: 'OVERDUE' },
         });
         
-        // Suspend contractor account
-        await tx.contractor.update({
-          where: { id: commission.contractorId },
-          data: { status: 'SUSPENDED' },
-        });
+              // Suspend contractor account
+      await tx.contractor.update({
+        where: { id: commission.contractorId },
+        data: { status: 'SUSPENDED' },
+      });
+      
+      // Send account suspension notification
+      await createAccountSuspendedNotification(
+        commission.contractor.user.id,
+        'Overdue commission payment',
+        commission.id
+      );
       });
       
       continue;
@@ -204,16 +215,25 @@ export async function processCommissionReminders(): Promise<void> {
         reminderNumber: reminderNumber,
       });
       
-      if (reminderSent) {
-        // Update reminder count and last sent time
-        await prisma.commissionPayment.update({
-          where: { id: commission.id },
-          data: {
-            remindersSent: reminderNumber,
-            lastReminderSent: now,
-          },
-        });
-      }
+          if (reminderSent) {
+      // Update reminder count and last sent time
+      await prisma.commissionPayment.update({
+        where: { id: commission.id },
+        data: {
+          remindersSent: reminderNumber,
+          lastReminderSent: now,
+        },
+      });
+      
+      // Also send in-app notification
+      await createCommissionDueNotification(
+        commission.contractor.user.id,
+        commission.id,
+        commission.job.title,
+        commission.totalAmount.toNumber(),
+        commission.dueDate
+      );
+    }
     }
   }
   
