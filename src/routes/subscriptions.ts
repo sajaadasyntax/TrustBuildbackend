@@ -243,7 +243,7 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
       currency: 'gbp',
-      payment_method_types: ['card'],
+      // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
         enabled: true,
         allow_redirects: 'never'

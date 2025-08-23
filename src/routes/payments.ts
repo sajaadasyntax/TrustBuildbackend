@@ -622,7 +622,7 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: leadPrice * 100, // Convert to cents
       currency: 'gbp',
-      payment_method_types: ['card'], // Required for Apple Pay/Google Pay
+      // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
         enabled: true,
         allow_redirects: 'never' // Prevent redirect payment methods for better UX
@@ -1272,7 +1272,7 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
     const paymentIntent = await stripe.paymentIntents.create({
       amount: commissionPayment.totalAmount.toNumber() * 100, // Convert to cents
       currency: 'gbp',
-      payment_method_types: ['card'],
+      // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
         enabled: true,
         allow_redirects: 'never'
