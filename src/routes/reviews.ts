@@ -347,10 +347,106 @@ async function updateContractorRating(contractorId: string) {
   });
 }
 
+// @desc    Get reviews that I've received as a contractor
+// @route   GET /api/reviews/my/received
+// @access  Private (Contractor only)
+export const getMyReceivedReviews = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const userId = req.user!.id;
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get reviews
+  const reviews = await prisma.review.findMany({
+    where: { contractorId: contractor.id },
+    include: {
+      job: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      customer: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      reviews,
+    },
+  });
+});
+
+// @desc    Get reviews that I've given as a customer
+// @route   GET /api/reviews/my/given
+// @access  Private (Customer only)
+export const getMyGivenReviews = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const userId = req.user!.id;
+
+  // Get customer profile
+  const customer = await prisma.customer.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!customer) {
+    return next(new AppError('Customer profile not found', 404));
+  }
+
+  // Get reviews
+  const reviews = await prisma.review.findMany({
+    where: { customerId: customer.id },
+    include: {
+      job: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      contractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      reviews,
+    },
+  });
+});
+
 // Routes
 router.use(protect);
 
 router.get('/contractor/:contractorId', getContractorReviews);
+router.get('/my/received', restrictTo('CONTRACTOR'), getMyReceivedReviews);
+router.get('/my/given', restrictTo('CUSTOMER'), getMyGivenReviews);
 router.post('/', restrictTo('CUSTOMER'), createReview);
 router.post('/external', restrictTo('CONTRACTOR'), addExternalReview);
 router.put('/:id', updateReview);
