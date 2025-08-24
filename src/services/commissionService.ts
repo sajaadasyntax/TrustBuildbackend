@@ -15,6 +15,12 @@ const getEmailTransporter = () => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    // Fix for connection timeout issues
+    connectionTimeout: 10000, // 10 seconds
+    socketTimeout: 20000, // 20 seconds
+    tls: {
+      rejectUnauthorized: process.env.NODE_ENV === 'production',
+    },
   });
 };
 
