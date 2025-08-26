@@ -1,28 +1,9 @@
 import { prisma } from '../config/database';
-import nodemailer from 'nodemailer';
+import { createEmailService } from './emailService';
 import { 
   createCommissionDueNotification, 
   createAccountSuspendedNotification 
 } from './notificationService';
-
-// Email transporter configuration
-const getEmailTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.mailersend.net',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    // Fix for connection timeout issues
-    connectionTimeout: 10000, // 10 seconds
-    socketTimeout: 20000, // 20 seconds
-    tls: {
-      rejectUnauthorized: process.env.NODE_ENV === 'production',
-    },
-  });
-};
 
 // Send commission reminder email
 async function sendCommissionReminder(recipientEmail: string, reminderData: {
@@ -35,7 +16,7 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
   reminderNumber: number;
 }): Promise<boolean> {
   try {
-    const transporter = getEmailTransporter();
+    const emailService = createEmailService();
     
     const urgencyLevel = reminderData.hoursRemaining <= 12 ? 'FINAL' : 'URGENT';
     const headerColor = urgencyLevel === 'FINAL' ? '#dc2626' : '#f59e0b';
@@ -125,7 +106,7 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await emailService.sendMail(mailOptions);
     console.log(`✅ Commission reminder #${reminderData.reminderNumber} sent to: ${recipientEmail}`);
     return true;
   } catch (error) {

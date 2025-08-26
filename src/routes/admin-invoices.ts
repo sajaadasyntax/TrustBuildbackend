@@ -2,28 +2,9 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
-import nodemailer from 'nodemailer';
+import { createEmailService } from '../services/emailService';
 
 const router = Router();
-
-// Email transporter configuration
-const getEmailTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.mailersend.net',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    // Fix for connection timeout issues
-    connectionTimeout: 10000, // 10 seconds
-    socketTimeout: 20000, // 20 seconds
-    tls: {
-      rejectUnauthorized: process.env.NODE_ENV === 'production',
-    },
-  });
-};
 
 // @desc    Get all invoices with filters and pagination
 // @route   GET /api/admin/invoices
@@ -439,8 +420,8 @@ export const sendCommissionReminder = catchAsync(async (req: AuthenticatedReques
     return next(new AppError('Commission has already been paid', 400));
   }
 
-  // Send reminder email
-  const transporter = getEmailTransporter();
+  // Send reminder email using email service
+  const emailService = createEmailService();
   
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
@@ -527,7 +508,7 @@ export const sendCommissionReminder = catchAsync(async (req: AuthenticatedReques
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    await emailService.sendMail(mailOptions);
     
     // Update reminder count
     await prisma.commissionPayment.update({

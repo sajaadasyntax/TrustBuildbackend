@@ -2,26 +2,9 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
-import nodemailer from 'nodemailer';
+import { createEmailService, createServiceEmail } from '../services/emailService';
 
 const router = Router();
-
-// Email transporter configuration
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  // Fix for connection timeout issues
-  connectionTimeout: 10000, // 10 seconds
-  socketTimeout: 20000, // 20 seconds
-  tls: {
-    rejectUnauthorized: process.env.NODE_ENV === 'production',
-  },
-});
 
 // @desc    Get contractor's invoices
 // @route   GET /api/invoices
@@ -200,39 +183,40 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
     return next(new AppError('Invoice not found', 404));
   }
 
-  // Send email
-  const mailOptions = {
-    from: process.env.SMTP_FROM || 'noreply@trustbuild.com',
-    to: invoice.contractor.user.email,
-    subject: `TrustBuild Invoice ${invoice.invoiceNumber}`,
-    html: `
-      <h2>Invoice from TrustBuild</h2>
-      <p>Dear ${invoice.contractor.user.name},</p>
-      <p>Please find your invoice details for the job lead access.</p>
-      
-      <h3>Invoice Details:</h3>
-      <ul>
-        <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
-        <li><strong>Date:</strong> ${invoice.createdAt.toLocaleDateString()}</li>
-        <li><strong>Amount:</strong> £${invoice.totalAmount.toFixed(2)}</li>
-        <li><strong>Status:</strong> ${invoice.status}</li>
-      </ul>
-      
-      ${invoice.job ? `
-      <h3>Job Details:</h3>
-      <ul>
-        <li><strong>Job:</strong> ${invoice.job.title}</li>
-        <li><strong>Location:</strong> ${invoice.job.location}</li>
-      </ul>
-      ` : ''}
-      
-      <p>Thank you for using TrustBuild!</p>
-      <p>Best regards,<br>The TrustBuild Team</p>
-    `,
-  };
-
   try {
-    await transporter.sendMail(mailOptions);
+    // Create email service
+    const emailService = createEmailService();
+    
+    // Create mail options with proper template
+    const mailOptions = createServiceEmail({
+      to: invoice.contractor.user.email,
+      subject: `TrustBuild Invoice ${invoice.invoiceNumber}`,
+      heading: 'Invoice from TrustBuild',
+      body: `
+        <p>Dear ${invoice.contractor.user.name},</p>
+        <p>Please find your invoice details for the job lead access.</p>
+        
+        <h3>Invoice Details:</h3>
+        <ul>
+          <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
+          <li><strong>Date:</strong> ${invoice.createdAt.toLocaleDateString()}</li>
+          <li><strong>Amount:</strong> £${invoice.totalAmount.toFixed(2)}</li>
+          <li><strong>Status:</strong> ${invoice.status}</li>
+        </ul>
+        
+        ${invoice.job ? `
+        <h3>Job Details:</h3>
+        <ul>
+          <li><strong>Job:</strong> ${invoice.job.title}</li>
+          <li><strong>Location:</strong> ${invoice.job.location}</li>
+        </ul>
+        ` : ''}
+      `
+    });
+    
+    // Send email with retry logic
+    console.log(`📧 Sending invoice email to: ${mailOptions.to}`);
+    await emailService.sendMail(mailOptions);
     
     // Update invoice to mark as sent
     await prisma.invoice.update({
@@ -245,7 +229,7 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
       message: 'Invoice sent successfully',
     });
   } catch (error) {
-    console.error('Email sending failed:', error);
+    console.error('❌ Failed to send invoice email:', error);
     return next(new AppError('Failed to send invoice email', 500));
   }
 });

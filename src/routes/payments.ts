@@ -32,24 +32,8 @@ function getStripeInstance(): Stripe {
   return stripe;
 }
 
-// Email transporter configuration
-const getEmailTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.mailersend.net',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    // Fix for connection timeout issues
-    connectionTimeout: 10000, // 10 seconds
-    socketTimeout: 20000, // 20 seconds
-    tls: {
-      rejectUnauthorized: process.env.NODE_ENV === 'production',
-    },
-  });
-};
+// Use email service instead of direct transporter
+import { createEmailService } from '../services/emailService';
 
 // Send customer notification when contractor purchases their job
 async function sendCustomerNotification(customerEmail: string, notificationData: {
@@ -63,7 +47,7 @@ async function sendCustomerNotification(customerEmail: string, notificationData:
   maxContractors: number;
 }): Promise<boolean> {
   try {
-    const transporter = getEmailTransporter();
+    const emailService = createEmailService();
     
     const mailOptions = {
       from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
@@ -148,7 +132,7 @@ async function sendCustomerNotification(customerEmail: string, notificationData:
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await emailService.sendMail(mailOptions);
     console.log(`✅ Customer notification sent successfully to: ${customerEmail}`);
     return true;
   } catch (error) {
@@ -171,7 +155,7 @@ async function sendInvoiceNotification(recipientEmail: string, invoiceData: {
   paymentMethod?: string;
 }): Promise<boolean> {
   try {
-    const transporter = getEmailTransporter();
+    const emailService = createEmailService();
     
     const mailOptions = {
       from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
@@ -244,7 +228,7 @@ async function sendInvoiceNotification(recipientEmail: string, invoiceData: {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await emailService.sendMail(mailOptions);
     console.log(`✅ Invoice email sent successfully to: ${recipientEmail}`);
     return true;
   } catch (error) {
@@ -848,7 +832,7 @@ async function sendCommissionInvoice(recipientEmail: string, invoiceData: {
   dueDate: string;
 }): Promise<boolean> {
   try {
-    const transporter = getEmailTransporter();
+    const emailService = createEmailService();
     
     const mailOptions = {
       from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
@@ -934,7 +918,7 @@ async function sendCommissionInvoice(recipientEmail: string, invoiceData: {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await emailService.sendMail(mailOptions);
     console.log(`✅ Commission invoice sent successfully to: ${recipientEmail}`);
     return true;
   } catch (error) {

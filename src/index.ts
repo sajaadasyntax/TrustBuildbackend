@@ -151,53 +151,8 @@ console.log('🔐 Stripe Configuration:');
 console.log(`   Secret Key: ${process.env.STRIPE_SECRET_KEY.substring(0, 8)}...`);
 console.log(`   Key Type: ${process.env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'LIVE' : 'TEST'}`);
 
-// Function to send test email on server startup
-const sendTestEmail = async () => {
-  try {
-    // Import nodemailer
-    const nodemailer = require('nodemailer');
-    
-    // Create transporter with timeout settings
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.mailersend.net',
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      // Fix for connection timeout issues
-      connectionTimeout: 10000, // 10 seconds
-      socketTimeout: 20000, // 20 seconds
-      tls: {
-        rejectUnauthorized: process.env.NODE_ENV === 'production',
-      },
-    });
-    
-    // Mail options
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: 'sajaadammar@gmail.com',
-      subject: 'TrustBuild Server Started',
-      html: `
-        <h2>TrustBuild Server Status</h2>
-        <p>The TrustBuild server has started successfully.</p>
-        <ul>
-          <li><strong>Environment:</strong> ${process.env.NODE_ENV || 'development'}</li>
-          <li><strong>Timestamp:</strong> ${new Date().toISOString()}</li>
-          <li><strong>Server:</strong> ${process.env.SERVER_NAME || 'Not specified'}</li>
-        </ul>
-        <p>This is an automated message sent on server startup.</p>
-      `
-    };
-    
-    // Send mail
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✉️ Test email sent on startup:', info.messageId);
-  } catch (error) {
-    console.error('❌ Failed to send test email on startup:', error);
-  }
-};
+// Import the new email service
+import { sendTestEmail } from './services/emailService';
 
 // Start server
 app.listen(PORT, () => {
