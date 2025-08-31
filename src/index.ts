@@ -23,6 +23,8 @@ import invoiceRoutes from './routes/invoices';
 import subscriptionRoutes from './routes/subscriptions';
 import notificationRoutes from './routes/notifications';
 import adminInvoiceRoutes from './routes/admin-invoices';
+import customerInvoiceRoutes from './routes/customer-invoices';
+import adminInvoiceRoutesNew from './routes/admin-invoice-routes';
 import contractorDashboardRoutes from './routes/contractor-dashboard';
 
 // Load environment variables
@@ -117,11 +119,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contractors', contractorRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/customers/me/invoices', customerInvoiceRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/admin/invoices', adminInvoiceRoutes);
+app.use('/api/admin/invoices', adminInvoiceRoutesNew);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/invoices', invoiceRoutes);

@@ -9,8 +9,22 @@ export const createEmailService = () => {
   
   // Send email with retry logic and fallbacks
   const sendMail = async (options: nodemailer.SendMailOptions, retries = 2) => {
-    // Always use nodemailer with Gmail configuration
-    return await sendWithNodemailer(options, retries);
+    try {
+      // Always use nodemailer with Gmail configuration
+      return await sendWithNodemailer(options, retries);
+    } catch (error: any) {
+      // If we get here, all email sending attempts have failed
+      console.error(`
+      ❌ ALL EMAIL SENDING ATTEMPTS FAILED ❌
+      For production environments, consider implementing one of these more reliable email services:
+      - SendGrid: https://www.npmjs.com/package/@sendgrid/mail
+      - Mailgun: https://www.npmjs.com/package/mailgun-js
+      - AWS SES: https://www.npmjs.com/package/@aws-sdk/client-ses
+      
+      These services use HTTP APIs instead of SMTP and are more reliable in hosted environments.
+      `);
+      throw error;
+    }
   };
   
   // Send using MailerSend API (deprecated but kept for reference)
@@ -125,12 +139,29 @@ export const createEmailService = () => {
         
         // First try Gmail if configured
         if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-          console.log(`✅ Using Gmail for email`);
+          console.log(`✅ Using Gmail for email: ${process.env.GMAIL_USER}`);
+          console.log(`✅ App password length: ${process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.length : 0} chars`);
+          
+          // For production environments, try alternative port configuration
+          const isProduction = process.env.NODE_ENV === 'production';
+          const port = isProduction ? 465 : 587;
+          const secure = isProduction ? true : false;
+          
+          console.log(`📧 Using SMTP config: port ${port}, secure: ${secure}, environment: ${process.env.NODE_ENV}`);
+          
           const transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: port,
+            secure: secure, // Use SSL for port 465
             auth: {
               user: process.env.GMAIL_USER,
               pass: process.env.GMAIL_APP_PASSWORD,
+            },
+            connectionTimeout: 60000, // 60 seconds
+            socketTimeout: 60000, // 60 seconds
+            debug: true, // Enable debug logging
+            tls: {
+              rejectUnauthorized: false // Less strict SSL
             }
           });
           
@@ -161,6 +192,26 @@ export const createEmailService = () => {
       } catch (error: any) {
         lastError = error;
         console.error(`❌ Email fallback send attempt ${attempt + 1} failed:`, error.message);
+        console.error(`❌ Error details:`, {
+          code: error.code,
+          command: error.command,
+          name: error.name,
+          host: 'smtp.gmail.com',
+          port: process.env.NODE_ENV === 'production' ? 465 : 587
+        });
+        
+        // Special handling for connection errors - add helpful suggestions
+        if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+          console.error(`
+          ⚠️ IMPORTANT NETWORK ISSUES DETECTED ⚠️
+          This is likely due to firewall or network restrictions blocking SMTP traffic.
+          Possible solutions:
+          1. Check if your hosting provider blocks outbound SMTP traffic
+          2. Ask your provider to whitelist smtp.gmail.com on ports 465/587
+          3. Consider using an email API service like SendGrid, Mailgun, or AWS SES 
+             that uses HTTP requests (port 443) instead of SMTP
+          `);
+        }
         
         // Wait before retry (exponential backoff)
         if (attempt < retries) {

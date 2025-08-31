@@ -468,58 +468,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return { payment, invoice };
   });
 
-  // Send invoice email to contractor and notification to customer
-  try {
-    const contractorUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { name: true, email: true }
-    });
-
-    // 1. Send invoice email to contractor (ALWAYS for all payment types)
-    if (contractorUser && contractorUser.email) {
-      const emailSent = await sendInvoiceNotification(contractorUser.email, {
-        invoiceNumber: transactionResult.invoice.invoiceNumber,
-        contractorName: contractorUser.name || 'Contractor',
-        amount: transactionResult.invoice.amount?.toNumber() || 0,
-        vatAmount: transactionResult.invoice.vatAmount?.toNumber() || 0,
-        totalAmount: transactionResult.invoice.totalAmount?.toNumber() || 0,
-        description: transactionResult.invoice.description,
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB'),
-        jobTitle: job.title,
-        jobId: job.id,
-        paymentMethod: paymentMethod,
-      });
-
-      if (emailSent) {
-        console.log(`✅ Invoice email sent to contractor: ${contractorUser.email}`);
-      } else {
-        console.log(`⚠️ Failed to send invoice email to contractor: ${contractorUser.email}`);
-      }
-    }
-
-    // 2. Send notification email to customer (ALWAYS for all payment types)
-    if (job.customer?.user?.email) {
-      const customerNotificationSent = await sendCustomerNotification(job.customer.user.email, {
-        customerName: job.customer.user.name || 'Customer',
-        contractorName: contractorUser?.name || 'Contractor',
-        jobTitle: job.title,
-        jobId: job.id,
-        purchaseAmount: paymentMethod === 'CREDIT' ? 0 : leadPrice, // Credits show as £0
-        purchaseDate: new Date().toLocaleDateString('en-GB'),
-        totalContractorsWithAccess: job.jobAccess.length + 1, // Include the new purchase
-        maxContractors: job.maxContractorsPerJob,
-      });
-
-      if (customerNotificationSent) {
-        console.log(`✅ Customer notification sent to: ${job.customer.user.email}`);
-      } else {
-        console.log(`⚠️ Failed to send customer notification to: ${job.customer.user.email}`);
-      }
-    }
-  } catch (emailError) {
-    console.error('❌ Error sending emails:', emailError);
-    // Don't fail the payment if email fails
-  }
+  // Email sending part removed - invoices and notifications are now accessible in-app only
 
   // Return response with customer contact details since access was granted
   res.status(200).json({
