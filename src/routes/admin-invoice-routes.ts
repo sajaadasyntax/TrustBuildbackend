@@ -44,8 +44,10 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
 
   // Filter by payment type
   if (type) {
-    where.payment = {
-      type
+    where.payments = {
+      some: {
+        type
+      }
     };
   }
 
@@ -64,7 +66,7 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
     prisma.invoice.findMany({
       where,
       include: {
-        payment: {
+        payments: {
           select: {
             id: true,
             type: true,
@@ -74,7 +76,8 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
             jobId: true,
             amount: true,
             createdAt: true,
-          }
+          },
+          take: 1 // Take just the first payment for display
         },
         contractor: {
           select: {
@@ -125,7 +128,7 @@ export const getInvoiceById = catchAsync(async (req: AuthenticatedRequest, res: 
   const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           type: true,
@@ -136,7 +139,8 @@ export const getInvoiceById = catchAsync(async (req: AuthenticatedRequest, res: 
           contractorId: true,
           jobId: true,
           createdAt: true,
-        }
+        },
+        take: 1 // Take just the first payment for display
       },
       contractor: {
         select: {
