@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import { rawBodyMiddleware } from './routes/webhooks';
 
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
@@ -27,6 +28,7 @@ import customerInvoiceRoutes from './routes/customer-invoices';
 import adminInvoiceRoutesNew from './routes/admin-invoice-routes';
 import adminSubscriptionRoutes from './routes/admin-subscriptions';
 import contractorDashboardRoutes from './routes/contractor-dashboard';
+import webhookRoutes from './routes/webhooks';
 
 // Load environment variables
 dotenv.config();
@@ -91,6 +93,9 @@ app.use(cors(corsOptions));
 // Compression middleware
 app.use(compression());
 
+// Raw body middleware for Stripe webhooks
+app.use(rawBodyMiddleware);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -133,6 +138,7 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contractor', contractorDashboardRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Basic test routes
 app.get('/api/test', (req, res) => {
