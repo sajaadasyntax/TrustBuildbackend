@@ -458,12 +458,9 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
             },
           });
           
-          // Send notification email
-          await sendSubscriptionNotification(contractor, 'created', {
-            plan,
-            status: subscription.status,
-            current_period_end: subscription.current_period_end
-          });
+          // Email notifications disabled - subscription info will be available in dashboard
+          // User can view invoice and subscription details in dashboard
+          console.log(`✅ Subscription created for contractor: ${contractorId}, plan: ${plan}`);
         }
       }
       break;

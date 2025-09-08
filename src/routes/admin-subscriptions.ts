@@ -614,6 +614,22 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
       description: `${plan} subscription payment (admin created)`,
     },
   });
+  
+  // Create invoice for the subscription
+  const invoice = await prisma.invoice.create({
+    data: {
+      payments: { connect: { id: payment.id } },
+      invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
+      recipientName: contractor.businessName || contractor.user.name,
+      recipientEmail: contractor.user.email,
+      description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription`,
+      amount: getSubscriptionPricing(plan).total,
+      vatAmount: getSubscriptionPricing(plan).total * 0.2,
+      totalAmount: getSubscriptionPricing(plan).total * 1.2,
+      dueAt: now,
+      paidAt: now,
+    },
+  });
 
   // Log admin action
   await prisma.adminAction.create({
@@ -636,6 +652,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
     data: {
       subscription,
       payment,
+      invoice,
     },
   });
 });
