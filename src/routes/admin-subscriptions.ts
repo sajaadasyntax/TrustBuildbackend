@@ -3,7 +3,7 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
-import { getSubscriptionPricing } from './subscriptions';
+import { getSubscriptionPricing } from './subscriptions.js';
 
 const router = Router();
 
