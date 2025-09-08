@@ -76,26 +76,26 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
             jobId: true,
             amount: true,
             createdAt: true,
-          },
-          take: 1 // Take just the first payment for display
-        },
-        contractor: {
-          select: {
-            businessName: true,
-            user: {
+            contractor: {
               select: {
-                name: true,
-                email: true
+                businessName: true,
+                user: {
+                  select: {
+                    name: true,
+                    email: true
+                  }
+                }
+              }
+            },
+            job: {
+              select: {
+                id: true,
+                title: true,
+                description: true
               }
             }
-          }
-        },
-        job: {
-          select: {
-            id: true,
-            title: true,
-            description: true
-          }
+          },
+          take: 1 // Take just the first payment for display
         }
       },
       orderBy: { createdAt: 'desc' },
@@ -139,28 +139,28 @@ export const getInvoiceById = catchAsync(async (req: AuthenticatedRequest, res: 
           contractorId: true,
           jobId: true,
           createdAt: true,
+          contractor: {
+            select: {
+              id: true,
+              businessName: true,
+              user: {
+                select: {
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          job: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              location: true
+              }
+            }
         },
         take: 1 // Take just the first payment for display
-      },
-      contractor: {
-        select: {
-          id: true,
-          businessName: true,
-          user: {
-            select: {
-              name: true,
-              email: true
-            }
-          }
-        }
-      },
-      job: {
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          location: true,
-        }
       }
     }
   });
@@ -208,14 +208,16 @@ export const updateInvoiceStatus = catchAsync(async (req: AuthenticatedRequest, 
     where: { id },
     data: updateData,
     include: {
-      payment: true
+      payments: {
+        take: 1
+      }
     }
   });
 
   // If invoice status is updated to paid, also update related payment if it exists
-  if (status === 'PAID' && invoice.payment) {
+  if (status === 'PAID' && invoice.payments && invoice.payments.length > 0) {
     await prisma.payment.update({
-      where: { id: invoice.payment.id },
+      where: { id: invoice.payments[0].id },
       data: { status: 'COMPLETED' }
     });
   }
@@ -255,19 +257,20 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
         createdAt: { gte: startDate },
       },
       include: {
-        contractor: {
-          include: {
-            user: {
-              select: {
-                name: true,
+        payments: {
+          select: {
+            type: true,
+            contractor: {
+              include: {
+                user: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
-        },
-        payment: {
-          select: {
-            type: true,
-          },
+          take: 1,
         },
       },
       orderBy: { createdAt: 'desc' },
