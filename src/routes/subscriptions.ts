@@ -401,7 +401,24 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     throw err;
   }
 
-  // Removed email sending part - invoices are now only accessible in-app
+  // No email sending is needed - subscription is fully active now
+  
+  // Create in-app notification (non-blocking)
+  try {
+    import('../services/notificationService').then(({ createNotification }) => {
+      createNotification({
+        userId: contractor.userId,
+        title: 'Subscription Activated',
+        message: `Your ${plan} subscription has been successfully activated.`,
+        type: 'SUCCESS',
+        actionLink: '/dashboard/contractor/payments',
+        actionText: 'View Subscription',
+      }).catch(err => console.log('Failed to create notification (non-critical):', err));
+    }).catch(err => console.log('Failed to import notification service:', err));
+  } catch (err) {
+    // Ignore notification errors - they should not block subscription activation
+    console.log('Error creating notification (non-critical):', err);
+  }
 
   res.status(200).json({
     status: 'success',
@@ -455,7 +472,24 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
     },
   });
 
-  // Removed email sending part - subscription status is now only accessible in-app
+  // No email sending is needed - subscription status now only accessible in-app
+  
+  // Create in-app notification (non-blocking)
+  try {
+    import('../services/notificationService').then(({ createNotification }) => {
+      createNotification({
+        userId: contractor.userId,
+        title: 'Subscription Cancelled',
+        message: `Your subscription has been cancelled. You will have access until ${new Date(contractor.subscription.currentPeriodEnd).toLocaleDateString()}.`,
+        type: 'INFO',
+        actionLink: '/dashboard/contractor/payments',
+        actionText: 'View Details',
+      }).catch(err => console.log('Failed to create notification (non-critical):', err));
+    }).catch(err => console.log('Failed to import notification service:', err));
+  } catch (err) {
+    // Ignore notification errors - they should not block subscription cancellation
+    console.log('Error creating notification (non-critical):', err);
+  }
 
   res.status(200).json({
     status: 'success',

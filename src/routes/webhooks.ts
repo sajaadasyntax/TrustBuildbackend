@@ -54,6 +54,27 @@ export const rawBodyMiddleware = async (req: Request, res: Response, next: NextF
 async function sendSubscriptionNotification(contractor: any, eventType: string, subscriptionDetails: any): Promise<boolean> {
   // Disabled email sending - subscription info will be available in dashboard only
   console.log(`✅ Email sending disabled - Subscription ${eventType} for: ${contractor?.user?.email || 'unknown'}`);
+  // Create an in-app notification instead
+  if (contractor?.userId) {
+    try {
+      // Don't await this to keep the process non-blocking
+      const notificationType = eventType.includes('created') ? 'SUCCESS' : eventType.includes('updated') ? 'INFO' : 'WARNING';
+      
+      import('../services/notificationService').then(({ createNotification }) => {
+        createNotification({
+          userId: contractor.userId,
+          title: `Subscription ${eventType}`,
+          message: `Your subscription has been ${eventType}. Check your dashboard for details.`,
+          type: notificationType as any,
+          actionLink: '/dashboard/contractor/payments',
+          actionText: 'View Subscription',
+        }).catch(err => console.error('Failed to create notification:', err));
+      }).catch(err => console.error('Failed to import notification service:', err));
+    } catch (err) {
+      console.error('Error creating subscription notification:', err);
+      // Don't throw - this shouldn't block the subscription process
+    }
+  }
   return true;
 }
 
@@ -64,6 +85,26 @@ async function sendSubscriptionNotification(contractor: any, eventType: string, 
 async function sendPaymentFailedNotification(user: any, paymentDetails: any): Promise<boolean> {
   // Disabled email sending - payment failure info will be available in dashboard only
   console.log(`✅ Email sending disabled - Payment failed notification for: ${user?.email || 'unknown'}`);
+  
+  // Create an in-app notification instead
+  if (user?.id) {
+    try {
+      // Don't await this to keep the process non-blocking
+      import('../services/notificationService').then(({ createNotification }) => {
+        createNotification({
+          userId: user.id,
+          title: 'Payment Failed',
+          message: 'Your recent payment attempt failed. Please check your payment details and try again.',
+          type: 'WARNING',
+          actionLink: '/dashboard/contractor/payments',
+          actionText: 'Update Payment',
+        }).catch(err => console.error('Failed to create payment notification:', err));
+      }).catch(err => console.error('Failed to import notification service:', err));
+    } catch (err) {
+      console.error('Error creating payment notification:', err);
+      // Don't throw - this shouldn't block the process
+    }
+  }
   return true;
 }
 
