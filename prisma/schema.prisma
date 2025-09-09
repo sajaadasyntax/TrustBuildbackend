@@ -318,14 +318,21 @@ model JobInterest {
   @@map("job_interests")
 }
 
+// Define access method enum
+enum AccessMethod {
+  CREDIT
+  PAYMENT
+  SUBSCRIPTION
+}
+
 model JobAccess {
-  id           String    @id @default(cuid())
+  id           String        @id @default(cuid())
   jobId        String
   contractorId String
-  accessMethod String    // "CREDIT" or "PAYMENT"
-  paidAmount   Decimal?  @db.Decimal(8, 2)
-  creditUsed   Boolean   @default(false)
-  accessedAt   DateTime  @default(now())
+  accessMethod AccessMethod  @default(PAYMENT)
+  paidAmount   Decimal?      @db.Decimal(8, 2)
+  creditUsed   Boolean       @default(false)
+  accessedAt   DateTime      @default(now())
   
   // Relationships
   job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)

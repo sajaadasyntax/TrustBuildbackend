@@ -38,44 +38,56 @@ function getStripeInstance(): Stripe | null {
   return stripe;
 }
 
-// Subscription pricing helper
+// Subscription pricing helper (prices include 20% VAT)
 export function getSubscriptionPricing(plan: string) {
   switch (plan) {
     case 'MONTHLY':
       return {
         monthly: 49.99,
         total: 49.99,
+        basePrice: 41.66, // Price before VAT (49.99 / 1.2)
+        vatAmount: 8.33,  // VAT portion (49.99 - 41.66)
         discount: 0,
         discountPercentage: 0,
         duration: 1,
         durationUnit: 'month',
+        includesVAT: true,
       };
     case 'SIX_MONTHS':
       return {
         monthly: 44.99,
         total: 269.94,
+        basePrice: 224.95, // Price before VAT (269.94 / 1.2)
+        vatAmount: 44.99,  // VAT portion (269.94 - 224.95)
         discount: 30.00,
         discountPercentage: 10,
         duration: 6,
         durationUnit: 'months',
+        includesVAT: true,
       };
     case 'YEARLY':
       return {
         monthly: 39.99,
         total: 479.88,
+        basePrice: 399.90, // Price before VAT (479.88 / 1.2)
+        vatAmount: 79.98,  // VAT portion (479.88 - 399.90)
         discount: 119.88,
         discountPercentage: 20,
         duration: 12,
         durationUnit: 'months',
+        includesVAT: true,
       };
     default:
       return {
         monthly: 49.99,
         total: 49.99,
+        basePrice: 41.66, // Price before VAT
+        vatAmount: 8.33,  // VAT portion
         discount: 0,
         discountPercentage: 0,
         duration: 1,
         durationUnit: 'month',
+        includesVAT: true,
       };
   }
 }
@@ -521,21 +533,22 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   // Create invoice
   console.log(`📄 Creating invoice for subscription payment`);
   try {
+    const pricing = getSubscriptionPricing(plan);
     const invoice = await prisma.invoice.create({
       data: {
         payments: { connect: { id: payment.id } },
         invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
         recipientName: contractor.businessName || contractor.user.name,
         recipientEmail: contractor.user.email,
-        description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription`,
-        amount: getSubscriptionPricing(plan).total,
-        vatAmount: getSubscriptionPricing(plan).total * 0.2,
-        totalAmount: getSubscriptionPricing(plan).total * 1.2,
+        description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription (VAT Included)`,
+        amount: pricing.basePrice,  // Base price without VAT
+        vatAmount: pricing.vatAmount, // Pre-calculated VAT amount
+        totalAmount: pricing.total,  // Total price with VAT included
         dueAt: now,
         paidAt: now,
       },
     });
-    console.log(`✅ Invoice created: ${invoice.id}`);
+    console.log(`✅ Invoice created: ${invoice.id} (VAT included in price)`);
   } catch (err) {
     console.error(`❌ Error creating invoice: ${err.message}`);
     throw err;

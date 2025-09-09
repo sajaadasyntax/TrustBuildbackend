@@ -112,9 +112,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const { jobId, paymentMethod, stripePaymentIntentId } = req.body;
   const userId = req.user!.id;
 
-  // Get contractor profile
+  // Get contractor profile with subscription
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: {
+      subscription: true
+    }
   });
 
   if (!contractor) {
@@ -167,9 +170,20 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError(`Maximum number of contractors (${job.maxContractorsPerJob}) has already purchased this job`, 400));
   }
 
-  // Calculate lead price based on job size
+  // Check if contractor has an active subscription (gets free access to all jobs)
+  const hasActiveSubscription = contractor.subscription && 
+                              contractor.subscription.isActive && 
+                              contractor.subscription.status === 'active';
+
+  // If contractor has an active subscription, override payment method to "SUBSCRIPTION"
+  if (hasActiveSubscription && paymentMethod !== 'SUBSCRIPTION') {
+    console.log(`✅ Contractor ${contractor.id} has an active subscription. Granting free access.`);
+    paymentMethod = 'SUBSCRIPTION';
+  }
+
+  // Calculate lead price based on job size (will be 0 for subscribers)
   let leadPrice = 0;
-  if (job.service) {
+  if (!hasActiveSubscription && job.service) {
     switch (job.jobSize) {
       case 'SMALL':
         leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
@@ -183,8 +197,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     }
   }
 
-  // Use override price if set
-  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
+  // Use override price if set (but only for non-subscribers)
+  if (!hasActiveSubscription && job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
     leadPrice = job.leadPrice.toNumber();
   }
 
@@ -238,6 +252,33 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
         },
       });
+    } else if (paymentMethod === 'SUBSCRIPTION') {
+      // Subscription-based access (free for subscribers)
+      console.log(`✅ Granting free job access to subscriber - Contractor ID: ${contractor.id}, Job ID: ${job.id}`);
+      
+      // Create payment record (amount = 0)
+      payment = await tx.payment.create({
+        data: {
+          contractorId: contractor.id,
+          amount: 0,
+          type: 'LEAD_ACCESS',
+          status: 'COMPLETED',
+          description: `Job access included with subscription for: ${job.title}`,
+        },
+      });
+
+      // Create invoice (amount = 0)
+      invoice = await tx.invoice.create({
+        data: {
+          amount: 0,
+          vatAmount: 0,
+          totalAmount: 0,
+          description: `Job Lead Access (Subscription Benefit) - ${job.title}`,
+          invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
+          recipientName: job.customer?.user?.name || 'Unknown',
+          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+        },
+      });
     } else if (paymentMethod === 'STRIPE') {
       if (!stripePaymentIntentId) {
         throw new AppError('Stripe payment intent ID is required', 400);
@@ -255,8 +296,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Payment amount mismatch', 400);
       }
 
-      const vatAmount = leadPrice * 0.2; // 20% VAT
-      const totalAmount = leadPrice + vatAmount;
+      // Calculate VAT (already included in price)
+      const basePrice = leadPrice / 1.2; // Price without VAT
+      const vatAmount = leadPrice - basePrice; // VAT portion (20% of base price)
 
       // Create payment record
       payment = await tx.payment.create({
@@ -273,10 +315,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Create invoice
       invoice = await tx.invoice.create({
         data: {
-          amount: leadPrice,
-          vatAmount,
-          totalAmount,
-          description: `Job Lead Access - ${job.title}`,
+          amount: basePrice,  // Price without VAT
+          vatAmount,          // VAT amount
+          totalAmount: leadPrice, // Total price (VAT included)
+          description: `Job Lead Access - ${job.title} (VAT included)`,
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: job.customer?.user?.name || 'Unknown',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
@@ -291,10 +333,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       data: {
         contractorId: contractor.id,
         jobId,
-        accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT',
+        accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 
+                      paymentMethod === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'PAYMENT',
         paidAmount: paymentMethod === 'STRIPE' ? leadPrice : 0,
         creditUsed: paymentMethod === 'CREDIT',
-      },
+      } as any, // Type cast to avoid TypeScript errors until migration is applied
     });
 
     return { payment, invoice };

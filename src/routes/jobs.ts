@@ -1044,10 +1044,20 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   const jobId = req.params.id;
   const userId = req.user!.id;
 
-  // Get contractor profile
+  // Get contractor profile with subscription
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
-    select: { id: true, creditsBalance: true },
+    select: { 
+      id: true, 
+      creditsBalance: true,
+      subscription: {
+        select: {
+          isActive: true,
+          status: true,
+          plan: true
+        }
+      }
+    },
   });
 
   if (!contractor) {
@@ -1063,6 +1073,11 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
       },
     },
   });
+  
+  // Check if contractor has active subscription (gives unlimited access)
+  const hasActiveSubscription = contractor.subscription && 
+                               contractor.subscription.isActive && 
+                               contractor.subscription.status === 'active';
 
   // Get job with pricing info
   const job = await prisma.job.findUnique({
@@ -1106,9 +1121,12 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   res.status(200).json({
     status: 'success',
     data: {
-      hasAccess: !!existingAccess,
+      // Access is granted if contractor either has existing access or an active subscription
+      hasAccess: !!existingAccess || hasActiveSubscription,
+      hasSubscription: hasActiveSubscription,
+      subscriptionPlan: hasActiveSubscription ? contractor.subscription.plan : null,
       creditsBalance: contractor.creditsBalance,
-      leadPrice,
+      leadPrice: hasActiveSubscription ? 0 : leadPrice, // Free for subscribers
       jobSize: job.jobSize,
       estimatedValue: job.estimatedValue,
     },
@@ -1209,11 +1227,22 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
   // Check if user is a contractor and has access
   let hasAccess = false;
   let leadPrice = 0;
+  let hasSubscription = false;
+  let subscriptionPlan = null;
   
   if (req.user && req.user.role === 'CONTRACTOR') {
     const contractor = await prisma.contractor.findUnique({
       where: { userId: req.user.id },
-      select: { id: true },
+      select: { 
+        id: true,
+        subscription: {
+          select: {
+            isActive: true,
+            status: true,
+            plan: true
+          }
+        }
+      },
     });
 
     if (contractor) {
@@ -1225,7 +1254,18 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
           },
         },
       });
-      hasAccess = !!existingAccess;
+      
+      // Check for active subscription (gives unlimited access to jobs)
+      hasSubscription = contractor.subscription && 
+                        contractor.subscription.isActive && 
+                        contractor.subscription.status === 'active';
+      
+      if (hasSubscription) {
+        subscriptionPlan = contractor.subscription.plan;
+      }
+      
+      // Access is granted if the contractor either purchased access or has an active subscription
+      hasAccess = !!existingAccess || hasSubscription;
 
       // Calculate lead price
       if (job.service) {
@@ -1245,6 +1285,11 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       // Use override price if set
       if (job.leadPrice && job.leadPrice.toNumber() > 0) {
         leadPrice = job.leadPrice.toNumber();
+      }
+      
+      // Price is 0 for subscribers
+      if (hasSubscription) {
+        leadPrice = 0;
       }
     }
   } else {
