@@ -28,26 +28,26 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   // Get invoices where payment is related to the contractor
   const invoices = await prisma.invoice.findMany({
     where: {
-      payment: {
+      payments: {
         some: {
           contractorId: contractor.id
         }
       }
     },
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           type: true,
           status: true,
           createdAt: true,
-        },
-      },
-      job: {
-        select: {
-          id: true,
-          title: true,
-          location: true,
+          job: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+            },
+          },
         },
       },
     },
@@ -58,7 +58,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
 
   const total = await prisma.invoice.count({
     where: {
-      payment: {
+      payments: {
         some: {
           contractorId: contractor.id
         }
@@ -98,28 +98,28 @@ export const getInvoice = catchAsync(async (req: AuthenticatedRequest, res: Resp
   const invoice = await prisma.invoice.findFirst({
     where: {
       id,
-      payment: {
+      payments: {
         some: {
           contractorId: contractor.id
         }
       }
     },
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           type: true,
           status: true,
           amount: true,
           createdAt: true,
-        },
-      },
-      job: {
-        select: {
-          id: true,
-          title: true,
-          location: true,
-          description: true,
+          job: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+              description: true,
+            },
+          },
         },
       },
     },
@@ -155,27 +155,32 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
   const invoice = await prisma.invoice.findFirst({
     where: {
       id,
-      contractorId: contractor.id,
+      payments: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
     },
     include: {
-      payment: {
+      payments: {
         select: {
           type: true,
+          status: true,
           createdAt: true,
-        },
-      },
-      job: {
-        select: {
-          title: true,
-          location: true,
-        },
-      },
-      contractor: {
-        include: {
-          user: {
+          contractor: {
+            include: {
+              user: {
+                select: {
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          job: {
             select: {
-              name: true,
-              email: true,
+              title: true,
+              location: true,
             },
           },
         },
@@ -191,13 +196,21 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
     // Create email service
     const emailService = createEmailService();
     
+    // Get the first payment with its associated contractor and job
+    const payment = invoice.payments[0];
+    const recipientEmail = payment?.contractor?.user?.email || invoice.recipientEmail;
+    const recipientName = payment?.contractor?.user?.name || invoice.recipientName;
+    const jobTitle = payment?.job?.title || 'Job lead access';
+    const jobLocation = payment?.job?.location || 'Unknown location';
+    const paymentStatus = payment?.status || 'PENDING';
+    
     // Create mail options with proper template
     const mailOptions = createServiceEmail({
-      to: invoice.contractor.user.email,
+      to: recipientEmail,
       subject: `TrustBuild Invoice ${invoice.invoiceNumber}`,
       heading: 'Invoice from TrustBuild',
       body: `
-        <p>Dear ${invoice.contractor.user.name},</p>
+        <p>Dear ${recipientName},</p>
         <p>Please find your invoice details for the job lead access.</p>
         
         <h3>Invoice Details:</h3>
@@ -205,16 +218,14 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
           <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
           <li><strong>Date:</strong> ${invoice.createdAt.toLocaleDateString()}</li>
           <li><strong>Amount:</strong> £${invoice.totalAmount.toFixed(2)}</li>
-          <li><strong>Status:</strong> ${invoice.status}</li>
+          <li><strong>Status:</strong> ${paymentStatus}</li>
         </ul>
         
-        ${invoice.job ? `
         <h3>Job Details:</h3>
         <ul>
-          <li><strong>Job:</strong> ${invoice.job.title}</li>
-          <li><strong>Location:</strong> ${invoice.job.location}</li>
+          <li><strong>Job:</strong> ${jobTitle}</li>
+          <li><strong>Location:</strong> ${jobLocation}</li>
         </ul>
-        ` : ''}
       `
     });
     
@@ -224,7 +235,7 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
     // Update invoice to mark as sent
     await prisma.invoice.update({
       where: { id },
-      data: { emailSent: true },
+      data: { emailSent: true } as any,
     });
 
     res.status(200).json({
@@ -259,10 +270,22 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
   ] = await Promise.all([
     prisma.invoice.count(),
     prisma.invoice.count({
-      where: { status: 'PAID' },
+      where: { 
+        payments: {
+          some: {
+            status: 'COMPLETED'
+          }
+        }
+      },
     }),
     prisma.invoice.aggregate({
-      where: { status: 'PAID' },
+      where: { 
+        payments: {
+          some: {
+            status: 'COMPLETED'
+          }
+        }
+      },
       _sum: { totalAmount: true },
     }),
     prisma.invoice.findMany({
@@ -270,19 +293,19 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
         createdAt: { gte: startDate },
       },
       include: {
-        contractor: {
-          include: {
-            user: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-        payment: {
+        payments: {
           select: {
             type: true,
-          },
+            contractor: {
+              include: {
+                user: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          }
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -299,7 +322,7 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
     total: totalInvoices,
     paid: paidInvoices,
     pending: totalInvoices - paidInvoices,
-    revenue: totalRevenue._sum.totalAmount || 0,
+    revenue: totalRevenue._sum?.totalAmount ?? 0,
     recent: recentInvoices,
     byType: invoicesByType,
   };
@@ -338,7 +361,7 @@ export const getMyInvoices = catchAsync(async (req: AuthenticatedRequest, res: R
     
     // Query invoices related to this contractor
     whereCondition = {
-      payment: {
+      payments: {
         some: {
           contractorId: contractor.id
         }
@@ -357,7 +380,7 @@ export const getMyInvoices = catchAsync(async (req: AuthenticatedRequest, res: R
     
     // Query invoices related to this customer
     whereCondition = {
-      payment: {
+      payments: {
         some: {
           customerId: customer.id
         }
@@ -371,20 +394,20 @@ export const getMyInvoices = catchAsync(async (req: AuthenticatedRequest, res: R
   invoices = await prisma.invoice.findMany({
     where: whereCondition,
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           type: true,
           status: true,
           amount: true,
           createdAt: true,
-        },
-      },
-      job: {
-        select: {
-          id: true,
-          title: true,
-          location: true,
+          job: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+            },
+          },
         },
       },
     },
