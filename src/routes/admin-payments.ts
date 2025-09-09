@@ -370,7 +370,7 @@ export const overrideJobPrice = catchAsync(async (req: AuthenticatedRequest, res
 
   await prisma.job.update({
     where: { id: jobId },
-    data: { currentLeadPrice },
+    data: { leadPrice: parseFloat(currentLeadPrice) },
   });
 
   res.status(200).json({

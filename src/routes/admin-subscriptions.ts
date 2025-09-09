@@ -242,19 +242,31 @@ export const getSubscriptionStats = catchAsync(async (req: AuthenticatedRequest,
     revenue: Number(item._sum.monthlyPrice || 0),
   }));
   
+  // Ensure we handle null values properly in statistics
+  const stats = {
+    activeSubscriptions: activeSubscriptions || 0,
+    pendingSubscriptions: pendingSubscriptions || 0,
+    trialSubscriptions: trialSubscriptions || 0,
+    cancelledSubscriptions: cancelledSubscriptions || 0,
+    totalRevenue: Number(subscriptionRevenue._sum?.amount || 0),
+    monthlyRevenue: Number(monthlyRevenue._sum?.monthlyPrice || 0),
+    averageSubscriptionValue: averageSubscriptionValue || 0,
+    subscriptionByPlan: subscriptionByPlan || [],
+    recentSubscriptions: recentSubscriptions || [],
+  };
+  
+  // Log subscription stats for debugging
+  console.log("📊 Subscription stats calculated:", {
+    activeCount: stats.activeSubscriptions,
+    pendingCount: stats.pendingSubscriptions,
+    cancelledCount: stats.cancelledSubscriptions,
+    totalRevenue: stats.totalRevenue,
+    monthlyRevenue: stats.monthlyRevenue,
+  });
+
   res.status(200).json({
     status: 'success',
-    data: {
-      activeSubscriptions,
-      pendingSubscriptions,
-      trialSubscriptions,
-      cancelledSubscriptions,
-      totalRevenue: Number(subscriptionRevenue._sum.amount || 0),
-      monthlyRevenue: Number(monthlyRevenue._sum.monthlyPrice || 0),
-      averageSubscriptionValue,
-      subscriptionByPlan,
-      recentSubscriptions,
-    },
+    data: stats,
   });
 });
 

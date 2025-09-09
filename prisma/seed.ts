@@ -260,8 +260,9 @@ async function main() {
   console.log('🔨 Sample contractor created:', contractorUser.email);
 
   // Create sample job
+  let job;
   if (kitchenService) {
-    const job = await prisma.job.create({
+    job = await prisma.job.create({
       data: {
         customerId: (await prisma.customer.findFirst({ where: { userId: customerUser.id } }))!.id,
         serviceId: kitchenService.id,
@@ -291,6 +292,343 @@ async function main() {
     });
 
     console.log('📝 Sample job application created');
+  } else {
+    console.log('⚠️ Kitchen service not found - creating basic sample job');
+    // Create a basic job with any available service
+    const anyService = await prisma.service.findFirst();
+    if (anyService) {
+      job = await prisma.job.create({
+        data: {
+          customerId: (await prisma.customer.findFirst({ where: { userId: customerUser.id } }))!.id,
+          serviceId: anyService.id,
+          title: 'Basic Home Improvement',
+          description: 'Looking for general home improvements.',
+          budget: 5000.00,
+          location: 'London, SW1A 1AA',
+          postcode: 'SW1A 1AA',
+          urgency: 'flexible',
+          status: 'POSTED',
+          requiresQuote: true,
+        },
+      });
+      console.log('💼 Basic sample job created:', job.title);
+    } else {
+      console.log('❌ No services available to create sample job');
+    }
+  }
+  
+  // Get customer for payments
+  const customer = await prisma.customer.findFirst({
+    where: { userId: customerUser.id },
+  });
+
+  if (!customer) {
+    throw new Error('Customer not found');
+  }
+
+  // Create sample payments
+  console.log('💰 Creating sample payment data...');
+  
+  // Create a few payments for different purposes
+  const paymentTypes = ['LEAD_ACCESS', 'SUBSCRIPTION', 'JOB_PAYMENT', 'COMMISSION'];
+  const paymentStatuses = ['PENDING', 'COMPLETED', 'FAILED'];
+  
+  // Create more sample jobs for testing
+  const additionalJobs = [];
+  for (let i = 0; i < 3; i++) {
+    // Make sure we have a valid service
+    const service = await prisma.service.findFirst({
+      orderBy: { id: 'asc' },
+      skip: i % services.length
+    });
+    
+    if (!service) {
+      console.log(`⚠️ No service found for job ${i+1}, skipping`);
+      continue;
+    }
+    
+    const newJob = await prisma.job.create({
+      data: {
+        customer: { connect: { id: customer.id } },
+        service: { connect: { id: service.id } },
+        title: `Sample Job ${i+1}`,
+        description: `This is a sample job for testing job access.`,
+        budget: 2000.00 + (i * 500),
+        location: 'Manchester, UK',
+        postcode: 'M1 1AA',
+        urgency: 'flexible',
+        status: 'POSTED',
+        jobSize: ['SMALL', 'MEDIUM', 'LARGE'][i % 3],
+      }
+    });
+    additionalJobs.push(newJob);
+    console.log(`📋 Created additional job: ${newJob.title}`);
+  }
+  
+  // Create an array of payment data
+  const paymentData = [
+    {
+      contractorId: contractor.id,
+      amount: 49.99,
+      type: 'SUBSCRIPTION',
+      status: 'COMPLETED',
+      description: 'Monthly subscription payment',
+    },
+    {
+      contractorId: contractor.id,
+      jobId: job?.id,
+      amount: 15.00,
+      type: 'LEAD_ACCESS',
+      status: 'COMPLETED',
+      description: 'Job lead access payment',
+    },
+    {
+      customerId: customer.id,
+      amount: 500.00,
+      type: 'JOB_PAYMENT',
+      status: 'COMPLETED',
+      description: 'Milestone payment for kitchen renovation',
+    },
+    {
+      contractorId: contractor.id,
+      amount: 25.00,
+      type: 'COMMISSION',
+      status: 'PENDING',
+      description: 'Commission payment for completed job',
+    },
+    {
+      contractorId: contractor.id,
+      amount: 29.99,
+      type: 'LEAD_ACCESS',
+      status: 'COMPLETED',
+      description: 'Job lead access payment bundle',
+    }
+  ];
+  
+  // Create each payment
+  for (const payment of paymentData) {
+    // Skip payments that require a job if job is undefined
+    if (payment.jobId && !job) {
+      console.log(`⚠️ Skipping payment requiring job: ${payment.description}`);
+      continue;
+    }
+    
+    const createdPayment = await prisma.payment.create({
+      data: payment,
+    });
+    console.log(`💵 Created ${payment.type} payment: £${payment.amount}`);
+    
+    // Create an invoice for completed payments
+    if (payment.status === 'COMPLETED') {
+      const invoice = await prisma.invoice.create({
+        data: {
+          payments: { connect: { id: createdPayment.id } },
+          invoiceNumber: `INV-${Date.now().toString().substring(0, 10)}-${Math.floor(Math.random() * 1000)}`,
+          amount: payment.amount,
+          vatAmount: payment.amount * 0.2,
+          totalAmount: payment.amount * 1.2,
+          currency: 'GBP',
+          recipientName: 'Sample Recipient',
+          recipientEmail: 'recipient@example.com',
+          description: payment.description,
+          emailSent: true,
+          issuedAt: new Date(),
+          paidAt: payment.status === 'COMPLETED' ? new Date() : null,
+        }
+      });
+      console.log(`📄 Created invoice: ${invoice.invoiceNumber}`);
+      
+      // Create job access record for LEAD_ACCESS payments
+      if (payment.type === 'LEAD_ACCESS' && payment.jobId) {
+        await prisma.jobAccess.create({
+          data: {
+            jobId: payment.jobId,
+            contractorId: payment.contractorId,
+            accessMethod: 'PAYMENT',
+            paidAmount: payment.amount,
+            creditUsed: false,
+          }
+        });
+        console.log(`🔑 Created job access record for job: ${payment.jobId}`);
+      }
+    }
+  }
+  
+  // Create subscriptions for testing
+  console.log('🔄 Creating sample subscription data...');
+  
+  // Create multiple contractors with various subscription types
+  const additionalContractors = [];
+  
+  // Create 5 more contractors with different subscriptions
+  for (let i = 0; i < 5; i++) {
+    // Create user
+    const newUser = await prisma.user.create({
+      data: {
+        name: `Test Contractor ${i+1}`,
+        email: `contractor${i+1}@example.com`,
+        password: await bcrypt.hash('contractor123', 10),
+        role: 'CONTRACTOR',
+      },
+    });
+    
+    // Create contractor profile
+    const newContractor = await prisma.contractor.create({
+      data: {
+        userId: newUser.id,
+        businessName: `Test Business ${i+1}`,
+        description: 'A test contractor business',
+        phone: `+44712345678${i}`,
+        yearsExperience: `${5 + i}`,
+        creditsBalance: 3,
+      },
+    });
+    
+    additionalContractors.push(newContractor);
+    console.log(`👷 Created test contractor: ${newContractor.businessName}`);
+  }
+  
+  // Calculate subscription dates
+  const now = new Date();
+  
+  // Different subscription plans and statuses to create
+  const subscriptionConfigs = [
+    {
+      contractor: contractor,
+      plan: 'MONTHLY',
+      status: 'active',
+      isActive: true,
+      monthsToAdd: 1,
+      monthlyPrice: 49.99
+    },
+    {
+      contractor: additionalContractors[0],
+      plan: 'SIX_MONTHS',
+      status: 'active',
+      isActive: true,
+      monthsToAdd: 6,
+      monthlyPrice: 44.99
+    },
+    {
+      contractor: additionalContractors[1],
+      plan: 'YEARLY',
+      status: 'active',
+      isActive: true,
+      monthsToAdd: 12,
+      monthlyPrice: 39.99
+    },
+    {
+      contractor: additionalContractors[2],
+      plan: 'MONTHLY',
+      status: 'cancelled',
+      isActive: false,
+      monthsToAdd: 1,
+      monthlyPrice: 49.99
+    },
+    {
+      contractor: additionalContractors[3],
+      plan: 'MONTHLY',
+      status: 'pending',
+      isActive: false,
+      monthsToAdd: 1,
+      monthlyPrice: 49.99
+    }
+  ];
+  
+  // Create each subscription
+  for (const config of subscriptionConfigs) {
+    const endDate = new Date(now);
+    endDate.setMonth(now.getMonth() + config.monthsToAdd);
+    
+    const subscription = await prisma.subscription.create({
+      data: {
+        contractorId: config.contractor.id,
+        plan: config.plan,
+        tier: 'STANDARD',
+        status: config.status,
+        isActive: config.isActive,
+        monthlyPrice: config.monthlyPrice,
+        currentPeriodStart: now,
+        currentPeriodEnd: endDate,
+      }
+    });
+    
+    // Create payment for active subscriptions
+    if (config.isActive) {
+      const paymentAmount = config.monthlyPrice * config.monthsToAdd;
+      
+      const payment = await prisma.payment.create({
+        data: {
+          contractorId: config.contractor.id,
+          amount: paymentAmount,
+          type: 'SUBSCRIPTION',
+          status: 'COMPLETED',
+          description: `${config.plan} subscription payment`,
+        }
+      });
+      
+      // Create invoice for the payment
+      await prisma.invoice.create({
+        data: {
+          payments: { connect: { id: payment.id } },
+          invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}-${Math.floor(Math.random() * 1000)}`,
+          amount: paymentAmount,
+          vatAmount: paymentAmount * 0.2,
+          totalAmount: paymentAmount * 1.2,
+          currency: 'GBP',
+          recipientName: config.contractor.businessName || 'Contractor',
+          recipientEmail: `contractor-${config.contractor.id}@example.com`,
+          description: `${config.plan} subscription payment`,
+          emailSent: true,
+          issuedAt: now,
+          paidAt: now,
+        }
+      });
+    }
+    
+    console.log(`✅ Created ${config.plan} subscription (${config.status}) for contractor: ${config.contractor.id}`);
+  }
+  
+  // Create job access records using credits
+  console.log('🎫 Creating job access records with credits...');
+  
+  // Create job access using credits for the additional contractors
+  for (let i = 0; i < Math.min(additionalJobs.length, additionalContractors.length); i++) {
+    const jobId = additionalJobs[i].id;
+    const contractorId = additionalContractors[i].id;
+    
+    // Create job access record
+    await prisma.jobAccess.create({
+      data: {
+        jobId,
+        contractorId,
+        accessMethod: 'CREDIT',
+        creditUsed: true,
+      }
+    });
+    
+    // Create credit transaction record
+    await prisma.creditTransaction.create({
+      data: {
+        contractorId,
+        amount: -1, // Use 1 credit
+        type: 'JOB_ACCESS',
+        description: `Credit used to access job ${additionalJobs[i].title}`,
+        jobId,
+      }
+    });
+    
+    // Update contractor's credit balance
+    await prisma.contractor.update({
+      where: { id: contractorId },
+      data: {
+        creditsBalance: {
+          decrement: 1
+        }
+      }
+    });
+    
+    console.log(`✅ Created job access with credits for job ${additionalJobs[i].title} by contractor ${contractorId}`);
   }
 
   // Create admin settings
@@ -343,4 +681,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-  }); 
+  });
