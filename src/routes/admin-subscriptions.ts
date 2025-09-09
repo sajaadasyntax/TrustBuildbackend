@@ -628,16 +628,17 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
   });
   
   // Create invoice for the subscription
+  const pricing = getSubscriptionPricing(plan);
   const invoice = await prisma.invoice.create({
     data: {
       payments: { connect: { id: payment.id } },
       invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
       recipientName: contractor.businessName || contractor.user.name,
       recipientEmail: contractor.user.email,
-      description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription`,
-      amount: getSubscriptionPricing(plan).total,
-      vatAmount: getSubscriptionPricing(plan).total * 0.2,
-      totalAmount: getSubscriptionPricing(plan).total * 1.2,
+      description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription (VAT Included)`,
+      amount: pricing.basePrice,  // Price without VAT
+      vatAmount: pricing.vatAmount, // Pre-calculated VAT amount
+      totalAmount: pricing.total,  // Total price with VAT included
       dueAt: now,
       paidAt: now,
     },
