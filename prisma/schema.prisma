@@ -195,6 +195,7 @@ model Contractor {
   jobsWon       Job[]             @relation("JobWonBy")
   jobInterests  JobInterest[]
   commissionPayments CommissionPayment[]
+  stripeCustomerInfo StripeCustomer?
 
   @@map("contractors")
 }
@@ -497,6 +498,19 @@ model Subscription {
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
+}
+
+model StripeCustomer {
+  id                String     @id @default(cuid())
+  contractorId      String     @unique
+  stripeCustomerId  String     @unique
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // Relationships
+  contractor        Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@map("stripe_customers")
 }
 
 model CommissionPayment {

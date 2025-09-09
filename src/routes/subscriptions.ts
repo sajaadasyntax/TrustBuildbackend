@@ -305,6 +305,8 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   // Verify payment with Stripe (or handle mock payment)
   let paymentSucceeded = false;
+  let paymentIntent;
+  let stripeCustomerId = null;
   
   // Check if it's a mock payment intent ID (for environments without Stripe)
   if (stripePaymentIntentId.startsWith('mock_pi_')) {
@@ -319,9 +321,44 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     
     console.log(`🔍 Retrieving payment intent: ${stripePaymentIntentId}`);
     try {
-      const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+      paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
       console.log(`✅ Payment intent status: ${paymentIntent.status}`);
       paymentSucceeded = paymentIntent.status === 'succeeded';
+      
+      // Get customer ID or create a Stripe customer if not exists
+      if (paymentSucceeded) {
+        // Try to get existing Stripe customer
+        const existingCustomer = await prisma.stripeCustomer.findFirst({
+          where: { contractorId: contractor.id }
+        });
+        
+        if (existingCustomer) {
+          console.log(`🔍 Found existing Stripe customer: ${existingCustomer.stripeCustomerId}`);
+          stripeCustomerId = existingCustomer.stripeCustomerId;
+        } else {
+          // Create a new Stripe customer
+          console.log(`➕ Creating new Stripe customer for contractor: ${contractor.id}`);
+          const customer = await stripe.customers.create({
+            email: contractor.user.email,
+            name: contractor.businessName || contractor.user.name,
+            metadata: {
+              contractorId: contractor.id,
+              userId: contractor.userId
+            }
+          });
+          
+          // Save the Stripe customer ID to the database
+          await prisma.stripeCustomer.create({
+            data: {
+              contractorId: contractor.id,
+              stripeCustomerId: customer.id,
+            }
+          });
+          
+          console.log(`✅ Created new Stripe customer: ${customer.id}`);
+          stripeCustomerId = customer.id;
+        }
+      }
     } catch (error) {
       console.error('❌ Error retrieving payment intent:', error);
       return next(new AppError(`Failed to verify payment: ${error.message}`, 400));
@@ -358,6 +395,64 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   console.log(`📊 Existing subscription: ${existingSubscription ? 'Found' : 'Not found'}`);
 
   let subscription;
+  let stripeSubscriptionId = null;
+  
+  // If we have a real Stripe instance and customer ID, create a Stripe subscription
+  if (!stripePaymentIntentId.startsWith('mock_pi_') && stripeCustomerId) {
+    const stripe = getStripeInstance();
+    if (stripe) {
+      try {
+        console.log(`🔄 Creating Stripe subscription for customer: ${stripeCustomerId}`);
+        
+        // Get the appropriate price ID based on plan
+        // These should be created in your Stripe dashboard
+        let priceId;
+        switch (plan) {
+          case 'MONTHLY':
+            priceId = process.env.STRIPE_PRICE_MONTHLY;
+            break;
+          case 'SIX_MONTHS':
+            priceId = process.env.STRIPE_PRICE_SIX_MONTHS;
+            break;
+          case 'YEARLY':
+            priceId = process.env.STRIPE_PRICE_YEARLY;
+            break;
+        }
+        
+        if (!priceId) {
+          console.warn(`⚠️ No Stripe price ID found for plan: ${plan}, using test price`);
+          // Fallback to test price - replace with your actual test price ID
+          priceId = 'price_test123'; // Replace with a real test price ID
+        }
+        
+        // Create the subscription in Stripe
+        const stripeSubscription = await stripe.subscriptions.create({
+          customer: stripeCustomerId,
+          items: [{
+            price: priceId,
+          }],
+          metadata: {
+            contractorId: contractor.id,
+            userId: contractor.userId,
+            plan,
+            type: 'contractor_subscription'
+          },
+          payment_behavior: 'default_incomplete',
+          payment_settings: {
+            save_default_payment_method: 'on_subscription',
+          },
+          expand: ['latest_invoice.payment_intent'],
+        });
+        
+        console.log(`✅ Stripe subscription created: ${stripeSubscription.id}`);
+        stripeSubscriptionId = stripeSubscription.id;
+      } catch (error) {
+        console.error(`❌ Failed to create Stripe subscription: ${error.message}`);
+        // Continue anyway to update our database
+      }
+    }
+  }
+  
   if (existingSubscription) {
     // Update existing subscription
     console.log(`🔄 Updating existing subscription ID: ${existingSubscription.id}`);
@@ -371,6 +466,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           currentPeriodStart: now,
           currentPeriodEnd: endDate,
           monthlyPrice: getSubscriptionPricing(plan).monthly,
+          ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
       console.log(`✅ Subscription updated successfully: ${subscription.id}`);
@@ -392,6 +488,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           currentPeriodStart: now,
           currentPeriodEnd: endDate,
           monthlyPrice: getSubscriptionPricing(plan).monthly,
+          ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
       console.log(`✅ New subscription created successfully: ${subscription.id}`);
