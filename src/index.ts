@@ -53,9 +53,11 @@ const limiter = rateLimit({
 // Apply rate limiting to all requests
 app.use(limiter);
 
-// Security middleware
+// Security middleware with CORS-friendly settings
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  // Disable contentSecurityPolicy for CORS compatibility
+  contentSecurityPolicy: false
 }));
 
 // CORS configuration
@@ -67,25 +69,30 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:3000',
       'https://trustbuild.uk',
-      'https://www.trustbuild.uk'
-    ];
+      'https://www.trustbuild.uk',
+      'https://api.trustbuild.uk',
+      process.env.FRONTEND_URL,
+      process.env.API_URL
+    ].filter(Boolean); // Remove undefined values
+    
+    console.log(`🔒 CORS request from origin: ${origin}`);
     
     // Check if the origin is in our allowed list
     if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed for origin: ${origin}`);
       return callback(null, true);
     }
     
-    // For production, also allow the FRONTEND_URL from environment
-    if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
-      return callback(null, true);
-    }
-    
+    console.log(`❌ CORS blocked for origin: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type', 'Set-Cookie'],
+  preflightContinue: false,
+  maxAge: 86400, // 24 hours
 };
 
 app.use(cors(corsOptions));
@@ -117,6 +124,18 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
+  });
+});
+
+// Handle preflight OPTIONS requests for all routes
+app.options('*', cors(corsOptions));
+
+// Add a debug route to test CORS
+app.get('/api/cors-test', (req, res) => {
+  res.status(200).json({
+    message: 'CORS is working correctly',
+    origin: req.headers.origin || 'No origin header',
+    timestamp: new Date().toISOString()
   });
 });
 
