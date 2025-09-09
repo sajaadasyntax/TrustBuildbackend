@@ -281,7 +281,9 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   // Verify payment with Stripe
   const stripe = getStripeInstance();
+  console.log(`🔍 Retrieving payment intent: ${stripePaymentIntentId}`);
   const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+  console.log(`✅ Payment intent status: ${paymentIntent.status}`);
   
   if (paymentIntent.status !== 'succeeded') {
     return next(new AppError('Payment not completed', 400));
@@ -306,67 +308,98 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Check if contractor already has a subscription
+  console.log(`🔍 Checking for existing subscription for contractor: ${contractor.id}`);
   const existingSubscription = await prisma.subscription.findUnique({
     where: { contractorId: contractor.id },
   });
+  console.log(`📊 Existing subscription: ${existingSubscription ? 'Found' : 'Not found'}`);
 
   let subscription;
   if (existingSubscription) {
     // Update existing subscription
-    subscription = await prisma.subscription.update({
-      where: { id: existingSubscription.id },
-      data: {
-        plan,
-        status: 'active',
-        isActive: true,
-        currentPeriodStart: now,
-        currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
-      },
-    });
+    console.log(`🔄 Updating existing subscription ID: ${existingSubscription.id}`);
+    try {
+      subscription = await prisma.subscription.update({
+        where: { id: existingSubscription.id },
+        data: {
+          plan,
+          status: 'active',
+          isActive: true,
+          currentPeriodStart: now,
+          currentPeriodEnd: endDate,
+          monthlyPrice: getSubscriptionPricing(plan).monthly,
+        },
+      });
+      console.log(`✅ Subscription updated successfully: ${subscription.id}`);
+    } catch (err) {
+      console.error(`❌ Error updating subscription: ${err.message}`);
+      throw err;
+    }
   } else {
     // Create new subscription
-    subscription = await prisma.subscription.create({
-      data: {
-        contractorId: contractor.id,
-        tier: contractor.tier,
-        plan,
-        status: 'active',
-        isActive: true,
-        currentPeriodStart: now,
-        currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
-      },
-    });
+    console.log(`➕ Creating new subscription for contractor: ${contractor.id}`);
+    try {
+      subscription = await prisma.subscription.create({
+        data: {
+          contractorId: contractor.id,
+          tier: contractor.tier,
+          plan,
+          status: 'active',
+          isActive: true,
+          currentPeriodStart: now,
+          currentPeriodEnd: endDate,
+          monthlyPrice: getSubscriptionPricing(plan).monthly,
+        },
+      });
+      console.log(`✅ New subscription created successfully: ${subscription.id}`);
+    } catch (err) {
+      console.error(`❌ Error creating subscription: ${err.message}`);
+      throw err;
+    }
   }
 
   // Create payment record
-  const payment = await prisma.payment.create({
-    data: {
-      contractorId: contractor.id,
-      amount: getSubscriptionPricing(plan).total,
-      type: 'SUBSCRIPTION',
-      status: 'COMPLETED',
-      stripePaymentId: stripePaymentIntentId,
-      description: `${plan} subscription payment`,
-    },
-  });
+  console.log(`💰 Creating payment record for subscription`);
+  let payment;
+  try {
+    payment = await prisma.payment.create({
+      data: {
+        contractorId: contractor.id,
+        amount: getSubscriptionPricing(plan).total,
+        type: 'SUBSCRIPTION',
+        status: 'COMPLETED',
+        stripePaymentId: stripePaymentIntentId,
+        description: `${plan} subscription payment`,
+      },
+    });
+    console.log(`✅ Payment record created: ${payment.id}`);
+  } catch (err) {
+    console.error(`❌ Error creating payment record: ${err.message}`);
+    throw err;
+  }
 
   // Create invoice
-  await prisma.invoice.create({
-    data: {
-      payments: { connect: { id: payment.id } },
-      invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
-      recipientName: contractor.businessName || contractor.user.name,
-      recipientEmail: contractor.user.email,
-      description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription`,
-      amount: getSubscriptionPricing(plan).total,
-      vatAmount: getSubscriptionPricing(plan).total * 0.2,
-      totalAmount: getSubscriptionPricing(plan).total * 1.2,
-      dueAt: now,
-      paidAt: now,
-    },
-  });
+  console.log(`📄 Creating invoice for subscription payment`);
+  try {
+    const invoice = await prisma.invoice.create({
+      data: {
+        payments: { connect: { id: payment.id } },
+        invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
+        recipientName: contractor.businessName || contractor.user.name,
+        recipientEmail: contractor.user.email,
+        description: `${plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly'} Subscription`,
+        amount: getSubscriptionPricing(plan).total,
+        vatAmount: getSubscriptionPricing(plan).total * 0.2,
+        totalAmount: getSubscriptionPricing(plan).total * 1.2,
+        dueAt: now,
+        paidAt: now,
+      },
+    });
+    console.log(`✅ Invoice created: ${invoice.id}`);
+  } catch (err) {
+    console.error(`❌ Error creating invoice: ${err.message}`);
+    throw err;
+  }
 
   // Removed email sending part - invoices are now only accessible in-app
 

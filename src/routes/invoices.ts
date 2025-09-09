@@ -25,9 +25,15 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get invoices
+  // Get invoices where payment is related to the contractor
   const invoices = await prisma.invoice.findMany({
-    where: { contractorId: contractor.id },
+    where: {
+      payment: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
+    },
     include: {
       payment: {
         select: {
@@ -51,19 +57,23 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   });
 
   const total = await prisma.invoice.count({
-    where: { contractorId: contractor.id },
+    where: {
+      payment: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
+    },
   });
 
   res.status(200).json({
     status: 'success',
-    data: {
-      invoices,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+    data: invoices,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
     },
   });
 });
@@ -88,7 +98,11 @@ export const getInvoice = catchAsync(async (req: AuthenticatedRequest, res: Resp
   const invoice = await prisma.invoice.findFirst({
     where: {
       id,
-      contractorId: contractor.id,
+      payment: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
     },
     include: {
       payment: {
@@ -106,16 +120,6 @@ export const getInvoice = catchAsync(async (req: AuthenticatedRequest, res: Resp
           title: true,
           location: true,
           description: true,
-        },
-      },
-      contractor: {
-        include: {
-          user: {
-            select: {
-              name: true,
-              email: true,
-            },
-          },
         },
       },
     },
@@ -214,9 +218,8 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
       `
     });
     
-    // Send email with retry logic
-    console.log(`📧 Sending invoice email to: ${mailOptions.to}`);
-    await emailService.sendMail(mailOptions);
+    // Email notifications disabled - invoices are now only accessible in-app
+    console.log(`✅ Email sending disabled - Invoice ${invoice.invoiceNumber} for recipient: ${mailOptions.to}`);
     
     // Update invoice to mark as sent
     await prisma.invoice.update({
@@ -307,10 +310,111 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
   });
 });
 
+// @desc    Get user's invoices (contractor or customer)
+// @route   GET /api/invoices/my
+// @access  Private
+export const getMyInvoices = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const userId = req.user!.id;
+  const userRole = req.user!.role;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+  
+  let whereCondition = {};
+  let invoices = [];
+  let total = 0;
+  
+  // Different logic based on user role
+  if (userRole === 'CONTRACTOR') {
+    // Get contractor profile
+    const contractor = await prisma.contractor.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!contractor) {
+      return next(new AppError('Contractor profile not found', 404));
+    }
+    
+    // Query invoices related to this contractor
+    whereCondition = {
+      payment: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
+    };
+  } else if (userRole === 'CUSTOMER') {
+    // Get customer profile
+    const customer = await prisma.customer.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      return next(new AppError('Customer profile not found', 404));
+    }
+    
+    // Query invoices related to this customer
+    whereCondition = {
+      payment: {
+        some: {
+          customerId: customer.id
+        }
+      }
+    };
+  } else {
+    return next(new AppError('Unauthorized', 403));
+  }
+  
+  // Get invoices
+  invoices = await prisma.invoice.findMany({
+    where: whereCondition,
+    include: {
+      payment: {
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          amount: true,
+          createdAt: true,
+        },
+      },
+      job: {
+        select: {
+          id: true,
+          title: true,
+          location: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: limit,
+  });
+  
+  // Get total count
+  total = await prisma.invoice.count({
+    where: whereCondition,
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: invoices,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+});
+
 // Routes
 router.use(protect); // All routes require authentication
 
 router.get('/', getInvoices);
+router.get('/my', getMyInvoices); // Add the /my endpoint with the new handler
 router.get('/stats', getInvoiceStats);
 router.get('/:id', getInvoice);
 router.post('/:id/send', sendInvoiceEmail);

@@ -49,237 +49,22 @@ export const rawBodyMiddleware = async (req: Request, res: Response, next: NextF
 
 /**
  * Helper function to send email notifications for subscription events
+ * (No emails should be sent after purchase/subscription)
  */
 async function sendSubscriptionNotification(contractor: any, eventType: string, subscriptionDetails: any): Promise<boolean> {
-  try {
-    if (!contractor?.user?.email) return false;
-    
-    const emailService = createEmailService();
-    
-    let subject, emailHtml;
-    
-    switch(eventType) {
-      case 'created':
-        subject = 'Your TrustBuild Subscription is Active';
-        emailHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
-              .content { padding: 20px; }
-              .subscription-details { background-color: #f0fdf4; padding: 15px; border-radius: 5px; margin: 20px 0; }
-              .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>Subscription Confirmed!</h1>
-            </div>
-            
-            <div class="content">
-              <p>Dear ${contractor.user.name},</p>
-              
-              <p>Thank you for subscribing to TrustBuild. Your subscription is now active!</p>
-              
-              <div class="subscription-details">
-                <h3>Subscription Details</h3>
-                <p><strong>Plan:</strong> ${subscriptionDetails.plan}</p>
-                <p><strong>Status:</strong> Active</p>
-                <p><strong>Next billing date:</strong> ${new Date(subscriptionDetails.current_period_end * 1000).toLocaleDateString()}</p>
-              </div>
-              
-              <p>You now have full access to all subscription features.</p>
-              
-              <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-            </div>
-            
-            <div class="footer">
-              <p>TrustBuild - Connecting Contractors with Customers</p>
-            </div>
-          </body>
-          </html>
-        `;
-        break;
-      
-      case 'updated':
-        subject = 'Your TrustBuild Subscription Has Been Updated';
-        emailHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .header { background-color: #3b82f6; color: white; padding: 20px; text-align: center; }
-              .content { padding: 20px; }
-              .subscription-details { background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0; }
-              .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>Subscription Updated</h1>
-            </div>
-            
-            <div class="content">
-              <p>Dear ${contractor.user.name},</p>
-              
-              <p>Your TrustBuild subscription has been updated.</p>
-              
-              <div class="subscription-details">
-                <h3>Subscription Details</h3>
-                <p><strong>Plan:</strong> ${subscriptionDetails.plan}</p>
-                <p><strong>Status:</strong> ${subscriptionDetails.status}</p>
-                <p><strong>Next billing date:</strong> ${new Date(subscriptionDetails.current_period_end * 1000).toLocaleDateString()}</p>
-              </div>
-              
-              <p>If you did not initiate this change, please contact our support team immediately.</p>
-              
-              <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-            </div>
-            
-            <div class="footer">
-              <p>TrustBuild - Connecting Contractors with Customers</p>
-            </div>
-          </body>
-          </html>
-        `;
-        break;
-      
-      case 'cancelled':
-        subject = 'Your TrustBuild Subscription Has Been Cancelled';
-        emailHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .header { background-color: #6b7280; color: white; padding: 20px; text-align: center; }
-              .content { padding: 20px; }
-              .subscription-details { background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 20px 0; }
-              .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>Subscription Cancelled</h1>
-            </div>
-            
-            <div class="content">
-              <p>Dear ${contractor.user.name},</p>
-              
-              <p>Your TrustBuild subscription has been cancelled.</p>
-              
-              <div class="subscription-details">
-                <h3>Subscription Details</h3>
-                <p><strong>Plan:</strong> ${subscriptionDetails.plan}</p>
-                <p><strong>End date:</strong> ${new Date(subscriptionDetails.current_period_end * 1000).toLocaleDateString()}</p>
-              </div>
-              
-              <p>Your access to subscription features will remain until the end of your current billing period.</p>
-              <p>We're sorry to see you go. If you'd like to reactivate your subscription, simply log in to your dashboard.</p>
-              
-              <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-            </div>
-            
-            <div class="footer">
-              <p>TrustBuild - Connecting Contractors with Customers</p>
-            </div>
-          </body>
-          </html>
-        `;
-        break;
-      
-      default:
-        return false;
-    }
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: contractor.user.email,
-      subject,
-      html: emailHtml,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Subscription ${eventType} notification sent to: ${contractor.user.email}`);
-    return true;
-  } catch (error) {
-    console.error(`❌ Failed to send subscription ${eventType} notification:`, error);
-    return false;
-  }
+  // Disabled email sending - subscription info will be available in dashboard only
+  console.log(`✅ Email sending disabled - Subscription ${eventType} for: ${contractor?.user?.email || 'unknown'}`);
+  return true;
 }
 
 /**
  * Helper function to send payment failed notifications
+ * (No emails should be sent after purchase/subscription)
  */
 async function sendPaymentFailedNotification(user: any, paymentDetails: any): Promise<boolean> {
-  try {
-    if (!user?.email) return false;
-    
-    const emailService = createEmailService();
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: user.email,
-      subject: 'Payment Failed - Action Required',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .header { background-color: #ef4444; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .payment-details { background-color: #fee2e2; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            .action-button { background-color: #3b82f6; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Payment Failed</h1>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${user.name},</p>
-            
-            <p>We were unable to process your recent payment.</p>
-            
-            <div class="payment-details">
-              <h3>Payment Details</h3>
-              <p><strong>Amount:</strong> £${(paymentDetails.amount / 100).toFixed(2)}</p>
-              <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-              <p><strong>Reason:</strong> ${paymentDetails.last_payment_error?.message || 'Card declined'}</p>
-            </div>
-            
-            <p>Please update your payment method or contact your bank to resolve this issue.</p>
-            
-            <p style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL}/dashboard/billing" class="action-button">Update Payment Method</a>
-            </p>
-            
-            <p>If you need assistance, please contact our support team.</p>
-            
-            <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p>TrustBuild - Connecting Contractors with Customers</p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Payment failed notification sent to: ${user.email}`);
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to send payment failed notification:', error);
-    return false;
-  }
+  // Disabled email sending - payment failure info will be available in dashboard only
+  console.log(`✅ Email sending disabled - Payment failed notification for: ${user?.email || 'unknown'}`);
+  return true;
 }
 
 // @desc    Handle Stripe webhooks
@@ -490,23 +275,8 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
           },
         });
         
-        // If status changed from active to past_due, send notification
-        if (dbSubscription.status === 'active' && subscription.status === 'past_due') {
-          await sendPaymentFailedNotification(
-            dbSubscription.contractor.user,
-            {
-              amount: subscription.items.data[0]?.price.unit_amount || 0,
-              last_payment_error: { message: 'Your automatic renewal payment failed.' }
-            }
-          );
-        } else {
-          // Otherwise send a general update notification
-          await sendSubscriptionNotification(dbSubscription.contractor, 'updated', {
-            plan: dbSubscription.plan,
-            status: subscription.status,
-            current_period_end: subscription.current_period_end
-          });
-        }
+        // Email notifications disabled - subscription status updates visible in dashboard
+        console.log(`✅ Subscription status update - ${dbSubscription.contractor.user?.email || 'unknown'}, status: ${subscription.status}`);
       }
       break;
     }
@@ -531,11 +301,8 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
           },
         });
         
-        // Send notification email
-        await sendSubscriptionNotification(dbSubscription.contractor, 'cancelled', {
-          plan: dbSubscription.plan,
-          current_period_end: subscription.current_period_end
-        });
+        // Email notifications disabled - subscription cancellation visible in dashboard
+        console.log(`✅ Subscription cancelled - ${dbSubscription.contractor.user?.email || 'unknown'}`);
       }
       break;
     }

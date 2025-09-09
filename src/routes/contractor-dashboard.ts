@@ -391,51 +391,74 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Check if contractor already has a subscription
+  console.log(`🔍 Checking for existing subscription for contractor: ${contractor.id}`);
   const existingSubscription = await prisma.subscription.findUnique({
     where: { contractorId: contractor.id },
   });
+  console.log(`📊 Existing subscription: ${existingSubscription ? 'Found' : 'Not found'}`);
 
   let subscription;
   if (existingSubscription) {
     // Update existing subscription
-    subscription = await prisma.subscription.update({
-      where: { id: existingSubscription.id },
-      data: {
-        plan,
-        status: 'active',
-        isActive: true,
-        currentPeriodStart: now,
-        currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
-      },
-    });
+    console.log(`🔄 Updating existing subscription ID: ${existingSubscription.id}`);
+    try {
+      subscription = await prisma.subscription.update({
+        where: { id: existingSubscription.id },
+        data: {
+          plan,
+          status: 'active',
+          isActive: true,
+          currentPeriodStart: now,
+          currentPeriodEnd: endDate,
+          monthlyPrice: getSubscriptionPricing(plan).monthly,
+        },
+      });
+      console.log(`✅ Subscription updated successfully: ${subscription.id}`);
+    } catch (err) {
+      console.error(`❌ Error updating subscription: ${err.message}`);
+      throw err;
+    }
   } else {
     // Create new subscription
-    subscription = await prisma.subscription.create({
-      data: {
-        contractorId: contractor.id,
-        tier: contractor.tier,
-        plan,
-        status: 'active',
-        isActive: true,
-        currentPeriodStart: now,
-        currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
-      },
-    });
+    console.log(`➕ Creating new subscription for contractor: ${contractor.id}`);
+    try {
+      subscription = await prisma.subscription.create({
+        data: {
+          contractorId: contractor.id,
+          tier: contractor.tier,
+          plan,
+          status: 'active',
+          isActive: true,
+          currentPeriodStart: now,
+          currentPeriodEnd: endDate,
+          monthlyPrice: getSubscriptionPricing(plan).monthly,
+        },
+      });
+      console.log(`✅ New subscription created successfully: ${subscription.id}`);
+    } catch (err) {
+      console.error(`❌ Error creating subscription: ${err.message}`);
+      throw err;
+    }
   }
 
   // Create payment record
-  await prisma.payment.create({
-    data: {
-      contractorId: contractor.id,
-      amount: getSubscriptionPricing(plan).total,
-      type: 'SUBSCRIPTION',
-      status: 'COMPLETED',
-      stripePaymentId: stripePaymentIntentId,
-      description: `${plan} subscription payment`,
-    },
-  });
+  console.log(`💰 Creating payment record for subscription`);
+  try {
+    const payment = await prisma.payment.create({
+      data: {
+        contractorId: contractor.id,
+        amount: getSubscriptionPricing(plan).total,
+        type: 'SUBSCRIPTION',
+        status: 'COMPLETED',
+        stripePaymentId: stripePaymentIntentId,
+        description: `${plan} subscription payment`,
+      },
+    });
+    console.log(`✅ Payment record created: ${payment.id}`);
+  } catch (err) {
+    console.error(`❌ Error creating payment record: ${err.message}`);
+    throw err;
+  }
 
   res.status(200).json({
     status: 'success',

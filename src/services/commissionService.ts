@@ -5,7 +5,7 @@ import {
   createAccountSuspendedNotification 
 } from './notificationService';
 
-// Send commission reminder email
+// Send commission reminder email (Email sending is disabled)
 async function sendCommissionReminder(recipientEmail: string, reminderData: {
   invoiceNumber: string;
   contractorName: string;
@@ -15,104 +15,10 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
   hoursRemaining: number;
   reminderNumber: number;
 }): Promise<boolean> {
-  try {
-    const emailService = createEmailService();
-    
-    const urgencyLevel = reminderData.hoursRemaining <= 12 ? 'FINAL' : 'URGENT';
-    const headerColor = urgencyLevel === 'FINAL' ? '#dc2626' : '#f59e0b';
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: recipientEmail,
-      subject: `${urgencyLevel} REMINDER: Commission Payment Due in ${reminderData.hoursRemaining} Hours - ${reminderData.invoiceNumber}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .header { background-color: ${headerColor}; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .reminder-details { background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${headerColor}; }
-            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            .urgent { font-weight: bold; color: ${headerColor}; }
-            .countdown { font-size: 1.3em; font-weight: bold; color: ${headerColor}; text-align: center; padding: 15px; background-color: #fef2f2; border-radius: 5px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>🚨 ${urgencyLevel} REMINDER - Commission Payment Due</h1>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${reminderData.contractorName},</p>
-            
-            <div class="countdown">
-              ⏰ ONLY ${reminderData.hoursRemaining} HOURS REMAINING
-            </div>
-            
-            <p>This is reminder #${reminderData.reminderNumber} for your <span class="urgent">OVERDUE commission payment</span>.</p>
-            
-            <div class="reminder-details">
-              <h3>Payment Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td><strong>Invoice Number:</strong></td><td>${reminderData.invoiceNumber}</td></tr>
-                <tr><td><strong>Job Title:</strong></td><td>${reminderData.jobTitle}</td></tr>
-                <tr><td><strong>Amount Due:</strong></td><td class="urgent">£${reminderData.totalAmount.toFixed(2)}</td></tr>
-                <tr><td><strong>Due Date:</strong></td><td class="urgent">${reminderData.dueDate}</td></tr>
-              </table>
-            </div>
-            
-            ${urgencyLevel === 'FINAL' ? `
-              <div style="background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border: 2px solid #dc2626;">
-                <h3 style="color: #dc2626;">🚨 FINAL WARNING - Account Suspension Imminent</h3>
-                <p><strong>Your account will be automatically suspended in ${reminderData.hoursRemaining} hours if payment is not received.</strong></p>
-                <p>Once suspended, you will lose access to:</p>
-                <ul>
-                  <li>❌ All job opportunities</li>
-                  <li>❌ Customer contact details</li>
-                  <li>❌ Platform features</li>
-                  <li>❌ Your contractor profile visibility</li>
-                </ul>
-              </div>
-            ` : `
-              <div style="background-color: #fef3c7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <h3>⚠️ Account Suspension Warning</h3>
-                <p>If payment is not received by ${reminderData.dueDate}, your account will be suspended.</p>
-              </div>
-            `}
-            
-            <div style="background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3>💳 Pay Now - It Takes Less Than 2 Minutes</h3>
-              <ol>
-                <li>Click: <a href="https://trustbuild.uk/dashboard/commissions" style="color: #2563eb; font-weight: bold;">Pay Commission Now</a></li>
-                <li>Select the invoice: ${reminderData.invoiceNumber}</li>
-                <li>Pay with any card, Apple Pay, or Google Pay</li>
-                <li>Get instant confirmation</li>
-              </ol>
-            </div>
-            
-            <p><strong>PAY IMMEDIATELY to avoid account suspension and maintain your contractor status.</strong></p>
-            
-            <p>TrustBuild Support Team</p>
-          </div>
-          
-          <div class="footer">
-            <p>TrustBuild - Professional Contractor Platform</p>
-            <p>Pay now: <a href="https://trustbuild.uk/dashboard/commissions">https://trustbuild.uk/dashboard/commissions</a></p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Commission reminder #${reminderData.reminderNumber} sent to: ${recipientEmail}`);
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to send commission reminder:', error);
-    return false;
-  }
+  // Email notifications disabled - commission reminders are now only accessible in-app
+  const urgencyLevel = reminderData.hoursRemaining <= 12 ? 'FINAL' : 'URGENT';
+  console.log(`✅ Email sending disabled - ${urgencyLevel} commission reminder #${reminderData.reminderNumber} for: ${recipientEmail}, invoice: ${reminderData.invoiceNumber}`);
+  return true;
 }
 
 // Check for overdue commission payments and send reminders

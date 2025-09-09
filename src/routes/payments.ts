@@ -46,99 +46,9 @@ async function sendCustomerNotification(customerEmail: string, notificationData:
   totalContractorsWithAccess: number;
   maxContractors: number;
 }): Promise<boolean> {
-  try {
-    const emailService = createEmailService();
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: customerEmail,
-      subject: `New Contractor Interest - ${notificationData.jobTitle}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .notification-details { background-color: #f0fdf4; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #10b981; }
-            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            .highlight { font-weight: bold; color: #10b981; }
-            .progress-bar { background-color: #e5e7eb; height: 10px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
-            .progress-fill { background-color: #10b981; height: 100%; transition: width 0.3s ease; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>🎉 Great News! New Contractor Interest</h1>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${notificationData.customerName},</p>
-            
-            <p>Exciting news! A contractor has just purchased access to your job listing on TrustBuild.</p>
-            
-            <div class="notification-details">
-              <h3>📋 Job Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td><strong>Job Title:</strong></td><td>${notificationData.jobTitle}</td></tr>
-                <tr><td><strong>Job ID:</strong></td><td>${notificationData.jobId}</td></tr>
-                <tr><td><strong>Purchase Date:</strong></td><td>${notificationData.purchaseDate}</td></tr>
-                <tr><td><strong>Purchase Amount:</strong></td><td>£${notificationData.purchaseAmount.toFixed(2)}</td></tr>
-              </table>
-            </div>
-            
-            <div class="notification-details">
-              <h3>👷 Contractor Information</h3>
-              <p><strong>Contractor Name:</strong> ${notificationData.contractorName}</p>
-              <p><em>The contractor now has access to your contact details and may reach out to you soon!</em></p>
-            </div>
-            
-            <div class="notification-details">
-              <h3>📊 Interest Progress</h3>
-              <p><span class="highlight">${notificationData.totalContractorsWithAccess}</span> out of <span class="highlight">${notificationData.maxContractors}</span> contractors have purchased access to this job.</p>
-              
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: ${(notificationData.totalContractorsWithAccess / notificationData.maxContractors) * 100}%"></div>
-              </div>
-              
-              ${notificationData.totalContractorsWithAccess >= notificationData.maxContractors 
-                ? '<p style="color: #dc2626; font-weight: bold;">🔴 Maximum contractors reached! No more contractors can purchase this job.</p>'
-                : `<p style="color: #059669;">🟢 ${notificationData.maxContractors - notificationData.totalContractorsWithAccess} more contractor${notificationData.maxContractors - notificationData.totalContractorsWithAccess > 1 ? 's' : ''} can still purchase access.</p>`
-              }
-            </div>
-            
-            <div style="background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3>💡 What happens next?</h3>
-              <ul>
-                <li>The contractor can now see your contact details</li>
-                <li>They may contact you directly to discuss your project</li>
-                <li>You can review and compare multiple contractors before making a decision</li>
-                <li>All communication and hiring happens directly between you and the contractors</li>
-              </ul>
-            </div>
-            
-            <p>Thank you for trusting TrustBuild to connect you with quality contractors!</p>
-            
-            <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p>TrustBuild - Connecting Contractors with Customers</p>
-            <p>Login to your dashboard: <a href="https://trustbuild.uk/dashboard">https://trustbuild.uk/dashboard</a></p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Customer notification sent successfully to: ${customerEmail}`);
+  // Email notifications disabled - purchase notifications will be available in dashboard only
+  console.log(`✅ Email sending disabled - Customer notification for job: ${notificationData.jobTitle}, customer: ${customerEmail}`);
     return true;
-  } catch (error) {
-    console.error('❌ Failed to send customer notification:', error);
-    return false;
-  }
 }
 
 // Send invoice email function
@@ -154,87 +64,9 @@ async function sendInvoiceNotification(recipientEmail: string, invoiceData: {
   jobId: string;
   paymentMethod?: string;
 }): Promise<boolean> {
-  try {
-    const emailService = createEmailService();
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: recipientEmail,
-      subject: `TrustBuild Invoice ${invoiceData.invoiceNumber}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .header { background-color: #2563eb; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .invoice-details { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            .total { font-weight: bold; font-size: 1.1em; color: #2563eb; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>TrustBuild Invoice</h1>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${invoiceData.contractorName},</p>
-            
-            <p>Thank you for purchasing job lead access through TrustBuild. Please find your invoice details below:</p>
-            
-            <div class="invoice-details">
-              <h3>Invoice Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td><strong>Invoice Number:</strong></td><td>${invoiceData.invoiceNumber}</td></tr>
-                <tr><td><strong>Issue Date:</strong></td><td>${new Date().toLocaleDateString('en-GB')}</td></tr>
-                <tr><td><strong>Due Date:</strong></td><td>${invoiceData.dueDate}</td></tr>
-                <tr><td><strong>Description:</strong></td><td>${invoiceData.description}</td></tr>
-              </table>
-            </div>
-            
-            <div class="invoice-details">
-              <h3>Job Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td><strong>Job Title:</strong></td><td>${invoiceData.jobTitle}</td></tr>
-                <tr><td><strong>Job ID:</strong></td><td>${invoiceData.jobId}</td></tr>
-              </table>
-            </div>
-            
-            <div class="invoice-details">
-              <h3>Payment Summary</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                ${invoiceData.paymentMethod === 'CREDIT' 
-                  ? '<tr><td>Payment Method:</td><td><strong>TrustBuild Credit</strong> 🎉</td></tr><tr><td>Credits Used:</td><td>1 Credit</td></tr><tr class="total"><td><strong>Total Paid:</strong></td><td><strong>£0.00 (Credit)</strong></td></tr>'
-                  : `<tr><td>Subtotal:</td><td>£${invoiceData.amount.toFixed(2)}</td></tr><tr><td>VAT (20%):</td><td>£${invoiceData.vatAmount.toFixed(2)}</td></tr><tr><td>Payment Method:</td><td>Card Payment 💳</td></tr><tr class="total"><td><strong>Total Amount:</strong></td><td><strong>£${invoiceData.totalAmount.toFixed(2)}</strong></td></tr>`
-                }
-              </table>
-            </div>
-            
-            <p>You now have access to the customer contact details for this job. Please log into your TrustBuild dashboard to view them.</p>
-            
-            <p>If you have any questions about this invoice, please contact our support team.</p>
-            
-            <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p>TrustBuild - Connecting Contractors with Customers</p>
-            <p>This is an automated email. Please do not reply directly to this message.</p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Invoice email sent successfully to: ${recipientEmail}`);
+  // Email notifications disabled - invoices are now only accessible in-app
+  console.log(`✅ Email sending disabled - Invoice ${invoiceData.invoiceNumber} for recipient: ${recipientEmail}`);
     return true;
-  } catch (error) {
-    console.error('❌ Failed to send invoice email:', error);
-    return false;
-  }
 }
 
 // @desc    Check if contractor has access to a job
@@ -700,7 +532,7 @@ router.post('/create-payment-intent', createPaymentIntent);
 router.get('/history', getPaymentHistory);
 router.get('/credit-history', getCreditHistory);
 
-// Test email endpoints (for development/testing)
+// Test email endpoints (for development/testing) - currently disabled
 router.post('/test-invoice-email', catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const { email, paymentMethod = 'STRIPE' } = req.body;
   
@@ -722,11 +554,13 @@ router.post('/test-invoice-email', catchAsync(async (req: AuthenticatedRequest, 
       paymentMethod: paymentMethod,
     };
     
-    const emailSent = await sendInvoiceNotification(email, testData);
+    // Email notifications are disabled - email sending would normally occur here
+    console.log(`✅ Email sending disabled - Test invoice notification to: ${email}`);
+    const emailSent = true; // Always return true since emails are disabled
     
     res.status(200).json({
       status: 'success',
-      message: emailSent ? 'Test invoice email sent successfully' : 'Failed to send test invoice email',
+      message: 'Email notifications are disabled - would have sent test invoice email',
       emailSent,
     });
   } catch (error: any) {
@@ -754,11 +588,13 @@ router.post('/test-customer-notification', catchAsync(async (req: AuthenticatedR
       maxContractors: 5,
     };
     
-    const emailSent = await sendCustomerNotification(email, testData);
+    // Email notifications are disabled - email sending would normally occur here
+    console.log(`✅ Email sending disabled - Test customer notification to: ${email}`);
+    const emailSent = true; // Always return true since emails are disabled
     
     res.status(200).json({
       status: 'success',
-      message: emailSent ? 'Test customer notification sent successfully' : 'Failed to send test customer notification',
+      message: 'Email notifications are disabled - would have sent test customer notification',
       emailSent,
     });
   } catch (error: any) {
@@ -780,100 +616,9 @@ async function sendCommissionInvoice(recipientEmail: string, invoiceData: {
   totalAmount: number;
   dueDate: string;
 }): Promise<boolean> {
-  try {
-    const emailService = createEmailService();
-    
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
-      to: recipientEmail,
-      subject: `TrustBuild Commission Invoice ${invoiceData.invoiceNumber} - Due in 48 Hours`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .header { background-color: #dc2626; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .commission-details { background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc2626; }
-            .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
-            .urgent { font-weight: bold; color: #dc2626; }
-            .amount { font-size: 1.2em; font-weight: bold; color: #dc2626; }
-            .warning { background-color: #fef3c7; padding: 10px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #f59e0b; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>⚠️ Commission Payment Due</h1>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${invoiceData.contractorName},</p>
-            
-            <p>This is an <span class="urgent">URGENT NOTICE</span> regarding your TrustBuild commission payment.</p>
-            
-            <div class="warning">
-              <h3>⏰ Payment Due: ${invoiceData.dueDate}</h3>
-              <p><strong>You have 48 hours to pay this commission or your account will be suspended.</strong></p>
-            </div>
-            
-            <div class="commission-details">
-              <h3>Commission Invoice Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td><strong>Invoice Number:</strong></td><td>${invoiceData.invoiceNumber}</td></tr>
-                <tr><td><strong>Job Title:</strong></td><td>${invoiceData.jobTitle}</td></tr>
-                <tr><td><strong>Final Job Amount:</strong></td><td>£${invoiceData.finalJobAmount.toFixed(2)}</td></tr>
-                <tr><td><strong>Commission (5%):</strong></td><td>£${invoiceData.commissionAmount.toFixed(2)}</td></tr>
-                <tr><td><strong>VAT (20%):</strong></td><td>£${invoiceData.vatAmount.toFixed(2)}</td></tr>
-                <tr class="amount"><td><strong>Total Due:</strong></td><td><strong>£${invoiceData.totalAmount.toFixed(2)}</strong></td></tr>
-                <tr><td><strong>Due Date:</strong></td><td class="urgent">${invoiceData.dueDate}</td></tr>
-              </table>
-            </div>
-            
-            <div style="background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3>💳 How to Pay</h3>
-              <ol>
-                <li>Log into your TrustBuild dashboard</li>
-                <li>Go to "Commission Payments" section</li>
-                <li>Click "Pay Now" next to this invoice</li>
-                <li>Pay using any of our supported methods: Visa, MasterCard, Amex, Apple Pay, Google Pay</li>
-              </ol>
-            </div>
-            
-            <div style="background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3>🚨 Account Suspension Warning</h3>
-              <p><strong>If payment is not received by ${invoiceData.dueDate}, your account will be automatically suspended and you will:</strong></p>
-              <ul>
-                <li>❌ Lose access to new job opportunities</li>
-                <li>❌ Be unable to purchase job leads</li>
-                <li>❌ Have your profile hidden from customers</li>
-                <li>❌ Need to pay all outstanding commissions plus reactivation fee</li>
-              </ul>
-            </div>
-            
-            <p>This commission is due as per our terms of service for completed jobs where you have an active subscription.</p>
-            
-            <p><strong>Pay now to avoid account suspension!</strong></p>
-            
-            <p>Best regards,<br><strong>The TrustBuild Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p>TrustBuild - Connecting Contractors with Customers</p>
-            <p>Login to pay: <a href="https://trustbuild.uk/dashboard">https://trustbuild.uk/dashboard</a></p>
-          </div>
-        </body>
-        </html>
-      `,
-    };
-
-    await emailService.sendMail(mailOptions);
-    console.log(`✅ Commission invoice sent successfully to: ${recipientEmail}`);
+  // Email notifications disabled - commission invoices are now only accessible in-app
+  console.log(`✅ Email sending disabled - Commission invoice ${invoiceData.invoiceNumber} for recipient: ${recipientEmail}`);
     return true;
-  } catch (error) {
-    console.error('❌ Failed to send commission invoice:', error);
-    return false;
-  }
 }
 
 // @desc    Mark job as completed with final amount (for commissioned contractors)
@@ -984,23 +729,9 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     return { updatedJob, commissionPayment };
   });
 
-  // Send commission invoice email if commission was created
-  if (result.commissionPayment && contractor.user.email) {
-    try {
-      const invoiceNumber = `COMM-${Date.now()}-${contractor.id.slice(-6)}`;
-      await sendCommissionInvoice(contractor.user.email, {
-        invoiceNumber: invoiceNumber,
-        contractorName: contractor.user.name,
-        jobTitle: job.title,
-        finalJobAmount: finalAmount,
-        commissionAmount: result.commissionPayment.commissionAmount.toNumber(),
-        vatAmount: result.commissionPayment.vatAmount.toNumber(),
-        totalAmount: result.commissionPayment.totalAmount.toNumber(),
-        dueDate: result.commissionPayment.dueDate.toLocaleDateString('en-GB'),
-      });
-    } catch (emailError) {
-      console.error('❌ Error sending commission invoice:', emailError);
-    }
+  // Email notifications disabled - commission invoices are now only accessible in-app
+  if (result.commissionPayment) {
+    console.log(`✅ Email sending disabled - Commission payment created for job: ${job.title}, contractor: ${contractor.user.email}`);
   }
 
   res.status(200).json({
