@@ -4,6 +4,18 @@ import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
 import nodemailer from 'nodemailer';
+import { createEmailService, createServiceEmail } from '../services/emailService';
+
+// Helper to format currency
+const formatCurrency = (amount: number | any): string => {
+  // Handle Decimal/Prisma decimal objects by converting to number if needed
+  const numAmount = typeof amount?.toNumber === 'function' ? amount.toNumber() : Number(amount);
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+  }).format(numAmount || 0);
+};
 
 const router = Router();
 
@@ -33,7 +45,6 @@ function getStripeInstance(): Stripe {
 }
 
 // Use email service instead of direct transporter
-import { createEmailService } from '../services/emailService';
 
 // Send customer notification when contractor purchases their job
 async function sendCustomerNotification(customerEmail: string, notificationData: {
@@ -109,7 +120,8 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
 // @route   POST /api/payments/purchase-job-access
 // @access  Private (Contractor only)
 export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const { jobId, paymentMethod, stripePaymentIntentId } = req.body;
+  const { jobId, stripePaymentIntentId } = req.body;
+  let { paymentMethod } = req.body;
   const userId = req.user!.id;
 
   // Get contractor profile with subscription
@@ -343,7 +355,17 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return { payment, invoice };
   });
 
-  // Email sending part removed - invoices and notifications are now accessible in-app only
+  // Invoice generation is implemented but email sending is disabled per user request
+  /* 
+  Code to send invoice emails to contractors has been implemented but is currently disabled.
+  This will be enabled in a future update when needed.
+  
+  The invoice is still generated and associated with the payment in the database,
+  but no emails are sent to contractors.
+  
+  When ready to enable, uncomment and review the email sending code.
+  */
+  console.log(`✅ Invoice generated: ${transactionResult.invoice?.invoiceNumber} - Email sending disabled per request`)
 
   // Return response with customer contact details since access was granted
   res.status(200).json({
