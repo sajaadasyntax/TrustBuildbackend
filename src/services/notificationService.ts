@@ -280,3 +280,29 @@ export async function deleteExpiredNotifications() {
     return null;
   }
 }
+
+/**
+ * Create a review request notification
+ */
+export async function createReviewRequestNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  contractorName: string
+) {
+  return createNotification({
+    userId,
+    title: '✍️ Review Request',
+    message: `${contractorName} has requested a review for your job "${jobTitle}". Please share your experience.`,
+    type: 'REVIEW_RECEIVED',
+    actionLink: `/dashboard/client/jobs/${jobId}`,
+    actionText: 'Leave a Review',
+    metadata: {
+      jobId,
+      jobTitle,
+      contractorName,
+      requestedAt: new Date().toISOString(),
+    },
+    expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Expire in 14 days
+  });
+}

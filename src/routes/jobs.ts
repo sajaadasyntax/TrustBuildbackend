@@ -2114,6 +2114,15 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
 
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
   });
 
   if (!contractor) {
@@ -2127,6 +2136,7 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
         include: {
           user: {
             select: {
+              id: true,
               name: true,
               email: true,
             },
@@ -2163,8 +2173,20 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Review has already been submitted for this job', 400));
   }
 
-  // Here you would typically send a notification to the customer
-  // For now, we'll just return success
+  // Send notification to customer
+  try {
+    const { createReviewRequestNotification } = await import('../services/notificationService');
+    await createReviewRequestNotification(
+      job.customer.user.id,
+      job.id,
+      job.title,
+      contractor.user?.name || 'Your contractor'
+    );
+    console.log(`Review request notification sent to customer ${job.customer.user.id} for job ${job.id}`);
+  } catch (error) {
+    console.error('Failed to send review request notification:', error);
+    // Don't throw error, continue with success response
+  }
 
   res.status(200).json({
     status: 'success',
