@@ -1124,7 +1124,7 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
       // Access is granted if contractor either has existing access or an active subscription
       hasAccess: !!existingAccess || hasActiveSubscription,
       hasSubscription: hasActiveSubscription,
-      subscriptionPlan: hasActiveSubscription ? contractor.subscription.plan : null,
+      subscriptionPlan: hasActiveSubscription ? contractor.subscription?.plan : null,
       creditsBalance: contractor.creditsBalance,
       leadPrice: hasActiveSubscription ? 0 : leadPrice, // Free for subscribers
       jobSize: job.jobSize,
@@ -1256,11 +1256,11 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       });
       
       // Check for active subscription (gives unlimited access to jobs)
-      hasSubscription = contractor.subscription && 
-                        contractor.subscription.isActive && 
+      hasSubscription = !!contractor.subscription && 
+                        !!contractor.subscription.isActive && 
                         contractor.subscription.status === 'active';
       
-      if (hasSubscription) {
+      if (hasSubscription && contractor.subscription) {
         subscriptionPlan = contractor.subscription.plan;
       }
       
@@ -1874,16 +1874,23 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     return next(new AppError('No final amount has been set by contractor', 400));
   }
 
-  // Check if the winning contractor used credits for access (for commission calculation)
-  const winningContractorAccess = job.jobAccess.find(
-    access => access.contractorId === job.wonByContractorId
-  );
+  // Get winning contractor with subscription details
+  const winningContractor = await prisma.contractor.findUnique({
+    where: { id: job.wonByContractorId || '' },
+    include: {
+      subscription: true,
+      user: true,
+    }
+  });
 
   let commissionAmount = 0;
   let commissionPayment = null;
 
-  // Only charge commission if contractor used credits
-  if (winningContractorAccess && winningContractorAccess.creditUsed && !job.commissionPaid) {
+  // Only charge commission if contractor has an active subscription
+  if (winningContractor && winningContractor.subscription && 
+      winningContractor.subscription.isActive && 
+      winningContractor.subscription.status === 'active' && 
+      !job.commissionPaid) {
     commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
     
     // Calculate VAT and total
@@ -1899,9 +1906,9 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         totalAmount: totalAmount,
         description: `5% commission for completed job: ${job.title}`,
         invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
-        recipientName: winningContractorAccess.contractor?.businessName || winningContractorAccess.contractor?.user?.name || 'Unknown Contractor',
-        recipientEmail: winningContractorAccess.contractor?.user?.email || 'unknown@contractor.com',
-        recipientAddress: winningContractorAccess.contractor?.businessAddress || 'Address not provided',
+        recipientName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
+        recipientEmail: winningContractor.user.email || 'unknown@contractor.com',
+        recipientAddress: winningContractor.businessAddress || 'Address not provided',
         dueAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Due in 30 days
       },
     });

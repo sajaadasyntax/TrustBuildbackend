@@ -750,6 +750,7 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     let commissionPayment = null;
 
     // Only create commission if contractor has active subscription
+    // This is the key difference: subscribed contractors pay 5% commission, non-subscribed don't
     if (contractor.subscription && contractor.subscription.isActive && contractor.subscription.status === 'active') {
       const commissionRate = 5.0; // 5%
       const commissionAmount = (finalAmount * commissionRate) / 100;
@@ -794,9 +795,31 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     return { updatedJob, commissionPayment };
   });
 
-  // Email notifications disabled - commission invoices are now only accessible in-app
+  // Send notification if commission is created
   if (result.commissionPayment) {
-    console.log(`✅ Email sending disabled - Commission payment created for job: ${job.title}, contractor: ${contractor.user.email}`);
+    console.log(`✅ Commission payment created for job: ${job.title}, contractor: ${contractor.user.email}`);
+    
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: userId,
+        title: '💰 Commission Payment Required',
+        message: `A 5% commission (£${(finalAmount * 0.05).toFixed(2)}) is due for your completed job "${job.title}". This is part of your subscription benefits.`,
+        type: 'COMMISSION_DUE',
+        actionLink: '/dashboard/commissions',
+        actionText: 'View Details',
+        metadata: {
+          jobId,
+          jobTitle: job.title,
+          finalAmount,
+          commissionPaymentId: result.commissionPayment.id,
+        },
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Expire in 7 days
+      });
+    } catch (error) {
+      console.error('Failed to create commission notification:', error);
+      // Don't throw error - continue with success response
+    }
   }
 
   res.status(200).json({
@@ -806,6 +829,7 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
       job: result.updatedJob,
       commissionPayment: result.commissionPayment,
       hasCommission: !!result.commissionPayment,
+      isSubscribed: !!contractor.subscription && contractor.subscription.isActive,
     },
   });
 });
