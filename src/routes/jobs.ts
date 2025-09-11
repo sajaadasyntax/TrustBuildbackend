@@ -308,6 +308,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       isUrgent: urgent || false,
       requiresQuote: !budget || budget === 0,
       status: 'POSTED', // Automatically post the job when created
+      maxContractorsPerJob: 10, // Allow up to 10 contractors to purchase access
     },
     include: {
       customer: {
@@ -646,23 +647,68 @@ export const acceptApplication = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError('Application does not belong to this job', 400));
   }
 
-  // Update application status and job
+  // Just update the application status to ACCEPTED - don't mark as winner yet
+  // Customer will separately select their preferred contractor via selectContractor endpoint
+  await prisma.jobApplication.update({
+    where: { id: req.params.applicationId },
+    data: { status: 'ACCEPTED' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Application accepted successfully. You can now select this contractor to start work.',
+  });
+});
+
+// @desc    Start work on job (customer confirms contractor can begin)
+// @route   PATCH /api/jobs/:id/start-work
+// @access  Private (Customer who owns the job)
+export const startWork = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: true,
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  if (job.customer.userId !== req.user!.id) {
+    return next(new AppError('Not authorized to start work on this job', 403));
+  }
+
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not in a state where work can be started', 400));
+  }
+
+  if (!job.wonByContractorId) {
+    return next(new AppError('No contractor has been selected for this job yet', 400));
+  }
+
+  // Update job status to IN_PROGRESS and reject other pending applications
   await prisma.$transaction([
-    prisma.jobApplication.update({
-      where: { id: req.params.applicationId },
-      data: { status: 'ACCEPTED' },
-    }),
     prisma.job.update({
       where: { id: req.params.id },
       data: {
         status: 'IN_PROGRESS',
       },
     }),
-    // Reject other applications
+    // Now reject other pending applications since work has officially started
     prisma.jobApplication.updateMany({
       where: {
         jobId: req.params.id,
-        id: { not: req.params.applicationId },
+        status: 'PENDING',
       },
       data: { status: 'REJECTED' },
     }),
@@ -670,7 +716,7 @@ export const acceptApplication = catchAsync(async (req: AuthenticatedRequest, re
 
   res.status(200).json({
     status: 'success',
-    message: 'Application accepted successfully',
+    message: `Work started with ${job.wonByContractor?.user?.name}. Other applications have been closed.`,
   });
 });
 
@@ -1915,31 +1961,35 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     const vatAmount = (commissionAmount * vatRate) / 100;
     const totalAmount = commissionAmount + vatAmount;
     
-    // Create commission invoice first
-    const commissionInvoice = await prisma.invoice.create({
+    // Create commission payment record (the main record that commissions page looks for)
+    commissionPayment = await prisma.commissionPayment.create({
       data: {
-        amount: commissionAmount,
+        jobId: job.id,
+        contractorId: job.wonByContractorId!,
+        customerId: job.customerId,
+        finalJobAmount: job.finalAmount.toNumber(),
+        commissionRate: 5.0,
+        commissionAmount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,
-        description: `5% commission for completed job: ${job.title} (Subscription Plan)`,
-        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
-        recipientName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
-        recipientEmail: winningContractor.user.email || 'unknown@contractor.com',
-        recipientAddress: winningContractor.businessAddress || 'Address not provided',
-        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
+        status: 'PENDING',
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
       },
     });
-    
-    // Create commission payment record (status PENDING for contractor to pay)
-    commissionPayment = await prisma.payment.create({
+
+    // Create commission invoice linked to the commission payment
+    const commissionInvoice = await prisma.commissionInvoice.create({
       data: {
-        contractorId: job.wonByContractorId!,
-        amount: totalAmount, // Include VAT in payment amount
-        type: 'COMMISSION',  // Use COMMISSION type specifically
-        status: 'PENDING',   // Contractor needs to pay this
-        description: `5% commission due for completed job: ${job.title} (Final Amount: £${job.finalAmount})`,
-        jobId: job.id,
-        invoiceId: commissionInvoice.id,
+        commissionPaymentId: commissionPayment.id,
+        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
+        contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
+        contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
+        jobTitle: job.title,
+        finalJobAmount: job.finalAmount.toNumber(),
+        commissionAmount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
@@ -2177,6 +2227,7 @@ router.post('/:id/apply', protect, applyForJob);
 router.post('/:id/accept', protect, acceptJobDirectly);
 router.get('/:id/applications', protect, getJobApplications);
 router.patch('/:id/applications/:applicationId/accept', protect, acceptApplication);
+router.patch('/:id/start-work', protect, startWork);
 router.patch('/:id/status', protect, updateJobStatus);
 router.patch('/:id/complete', protect, completeJob);
 router.get('/:id/access', protect, checkJobAccess);

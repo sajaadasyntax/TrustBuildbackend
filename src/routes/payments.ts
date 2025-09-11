@@ -177,9 +177,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError('You already have access to this job', 400));
   }
 
+  console.log(`🔍 Job Access Check - Job: ${job.id}, Current access: ${job.jobAccess.length}, Max allowed: ${job.maxContractorsPerJob}`);
+
   // Check if the maximum number of contractors has been reached
   if (job.jobAccess.length >= job.maxContractorsPerJob) {
-    return next(new AppError(`Maximum number of contractors (${job.maxContractorsPerJob}) has already purchased this job`, 400));
+    return next(new AppError(`This job has reached its limit. ${job.jobAccess.length}/${job.maxContractorsPerJob} contractors have already purchased access.`, 400));
   }
 
   // Check if contractor has an active subscription (gets free access to all jobs)
@@ -928,9 +930,10 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
           id: true,
           title: true,
           completionDate: true,
+          finalAmount: true,
         },
       },
-      invoice: true,
+      invoice: true, // Commission invoice relation
     },
     orderBy: { createdAt: 'desc' },
     skip,
