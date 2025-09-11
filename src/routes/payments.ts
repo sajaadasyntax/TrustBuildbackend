@@ -911,6 +911,8 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
 
+  console.log(`🔍 Getting commission payments for user ${userId}, page ${page}, limit ${limit}`);
+
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
@@ -918,8 +920,11 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   });
 
   if (!contractor) {
+    console.log(`❌ Contractor profile not found for user ${userId}`);
     return next(new AppError('Contractor profile not found', 404));
   }
+
+  console.log(`✅ Found contractor ${contractor.id} for user ${userId}`);
 
   // Get commission payments
   const commissions = await prisma.commissionPayment.findMany({
@@ -943,6 +948,8 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   const total = await prisma.commissionPayment.count({
     where: { contractorId: contractor.id },
   });
+
+  console.log(`📊 Found ${commissions.length} commissions out of ${total} total for contractor ${contractor.id}`);
 
   res.status(200).json({
     status: 'success',
