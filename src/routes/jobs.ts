@@ -1782,7 +1782,15 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   const jobId = req.params.id;
   const userId = req.user!.id;
 
+  console.log(`🔍 COMPLETE JOB WITH AMOUNT - Received data:`);
+  console.log(`🔍 Job ID: ${jobId}`);
+  console.log(`🔍 User ID: ${userId}`);
+  console.log(`🔍 Request body:`, req.body);
+  console.log(`🔍 Final Amount: ${finalAmount}`);
+  console.log(`🔍 Final Amount Type: ${typeof finalAmount}`);
+
   if (!finalAmount || finalAmount <= 0) {
+    console.log(`❌ Final amount validation failed - finalAmount: ${finalAmount}`);
     return next(new AppError('Please provide a valid final amount', 400));
   }
 
@@ -1853,68 +1861,10 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   let commissionPayment = null;
   let commissionAmount = 0;
 
-  // Create commission if contractor used credits
-  if (winningContractor && accessedViaSubscription && !job.commissionPaid) {
-    commissionAmount = finalAmount * 0.05; // 5% commission
-    
-    console.log(`💰 Creating commission: ${commissionAmount} (5% of ${finalAmount})`);
-    
-    // Calculate VAT and total
-    const vatRate = 20.00; // 20% VAT
-    const vatAmount = (commissionAmount * vatRate) / 100;
-    const totalAmount = commissionAmount + vatAmount;
-    
-    // Create commission payment record
-    commissionPayment = await prisma.commissionPayment.create({
-      data: {
-        jobId: job.id,
-        contractorId: job.wonByContractorId!,
-        customerId: job.customerId,
-        finalJobAmount: finalAmount,
-        commissionRate: 5.0,
-        commissionAmount: commissionAmount,
-        vatAmount: vatAmount,
-        totalAmount: totalAmount,
-        status: 'PENDING',
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
-      },
-    });
-
-    // Create commission invoice linked to the commission payment
-    const commissionInvoice = await prisma.commissionInvoice.create({
-      data: {
-        commissionPaymentId: commissionPayment.id,
-        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
-        contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
-        contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
-        jobTitle: job.title,
-        finalJobAmount: finalAmount,
-        commissionAmount: commissionAmount,
-        vatAmount: vatAmount,
-        totalAmount: totalAmount,
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    console.log(`✅ Commission created: Invoice ${commissionInvoice.invoiceNumber}, Payment ${commissionPayment.id}`);
-
-    // Send notification to contractor about commission due
-    try {
-      const { createCommissionDueNotification } = await import('../services/notificationService');
-      await createCommissionDueNotification(
-        winningContractor.user.id,
-        commissionPayment.id,
-        job.title,
-        totalAmount,
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Due in 7 days
-      );
-      console.log(`📧 Commission notification sent to contractor ${winningContractor.user.id}`);
-    } catch (notificationError) {
-      console.error('Failed to send commission notification:', notificationError);
-    }
-  } else {
-    console.log(`ℹ️ No commission charged - Contractor: ${!!winningContractor}, AccessedViaSubscription: ${accessedViaSubscription}, AlreadyPaid: ${job.commissionPaid}`);
-  }
+  // Commission will be created when customer confirms completion
+  // This ensures commission is only created once and only after customer confirmation
+  console.log(`ℹ️ Commission will be created when customer confirms completion - Contractor: ${!!winningContractor}, AccessedViaSubscription: ${accessedViaSubscription}, AlreadyPaid: ${job.commissionPaid}`);
+  console.log(`💾 Saving final amount - Job: ${jobId}, finalAmount: ${finalAmount}, type: ${typeof finalAmount}`);
 
   const updatedJob = await prisma.job.update({
     where: { id: jobId },
@@ -1922,7 +1872,7 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
       status: 'COMPLETED',
       finalAmount: finalAmount,
       completionDate: new Date(),
-      commissionPaid: commissionAmount > 0,
+      // commissionPaid will be set when customer confirms completion
     },
     include: {
       wonByContractor: {
@@ -1946,13 +1896,15 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
     },
   });
 
+  console.log(`✅ Final amount saved - Job: ${jobId}, saved finalAmount: ${updatedJob.finalAmount}, type: ${typeof updatedJob.finalAmount}`);
+
   res.status(200).json({
     status: 'success',
     message: 'Job completed. Waiting for customer confirmation.',
     data: {
       job: updatedJob,
-      commissionCharged: commissionAmount,
-      commissionPayment,
+      commissionCharged: 0, // Commission will be charged when customer confirms
+      commissionPayment: null,
     },
   });
 });
@@ -2011,7 +1963,15 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     return next(new AppError('Job completion already confirmed', 400));
   }
 
-  if (!job.finalAmount) {
+  console.log(`🔍 DEBUG - Job ID: ${job.id}`);
+  console.log(`🔍 DEBUG - Job Status: ${job.status}`);
+  console.log(`🔍 DEBUG - Final Amount: ${job.finalAmount}`);
+  console.log(`🔍 DEBUG - Final Amount Type: ${typeof job.finalAmount}`);
+  console.log(`🔍 DEBUG - Customer Confirmed: ${job.customerConfirmed}`);
+  console.log(`🔍 DEBUG - Won By Contractor ID: ${job.wonByContractorId}`);
+  
+  if (!job.finalAmount || job.finalAmount.toNumber() <= 0) {
+    console.log(`❌ Final amount validation failed - finalAmount: ${job.finalAmount}`);
     return next(new AppError('No final amount has been set by contractor', 400));
   }
 
