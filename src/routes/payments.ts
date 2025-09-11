@@ -950,6 +950,17 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   });
 
   console.log(`📊 Found ${commissions.length} commissions out of ${total} total for contractor ${contractor.id}`);
+  
+  // Debug: Show commission details if any exist
+  if (commissions.length > 0) {
+    console.log(`📊 Commission details:`, commissions.map(c => ({
+      id: c.id,
+      jobId: c.jobId,
+      status: c.status,
+      amount: c.totalAmount,
+      dueDate: c.dueDate
+    })));
+  }
 
   res.status(200).json({
     status: 'success',

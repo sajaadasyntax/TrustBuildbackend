@@ -650,8 +650,8 @@ export const acceptApplication = catchAsync(async (req: AuthenticatedRequest, re
   // Just update the application status to ACCEPTED - don't mark as winner yet
   // Customer will separately select their preferred contractor via selectContractor endpoint
   await prisma.jobApplication.update({
-    where: { id: req.params.applicationId },
-    data: { status: 'ACCEPTED' },
+      where: { id: req.params.applicationId },
+      data: { status: 'ACCEPTED' },
   });
 
   res.status(200).json({
@@ -1844,6 +1844,12 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   // Only charge commission if accessed via CREDIT (not if they paid lead price)
   const accessedViaSubscription = jobAccess && jobAccess.accessMethod === 'CREDIT';
 
+  console.log(`🔍 Commission Debug (completeJobWithAmount) - Job: ${job.id}`);
+  console.log(`🔍 WinningContractor: ${!!winningContractor}, ID: ${winningContractor?.id}`);
+  console.log(`🔍 JobAccess: ${!!jobAccess}, Method: ${jobAccess?.accessMethod}`);
+  console.log(`🔍 AccessedViaSubscription: ${accessedViaSubscription}`);
+  console.log(`🔍 Job.commissionPaid: ${job.commissionPaid}`);
+
   let commissionPayment = null;
   let commissionAmount = 0;
 
@@ -2078,7 +2084,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
       },
     });
-
+    
     // Create commission invoice linked to the commission payment
     const commissionInvoice = await prisma.commissionInvoice.create({
       data: {
@@ -2150,7 +2156,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
 // @access  Private (Admin only)
 export const testCommissionCreation = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const jobId = req.params.id;
-  
+
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
