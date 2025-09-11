@@ -322,6 +322,7 @@ model JobInterest {
 enum AccessMethod {
   CREDIT
   PAYMENT
+  PAYMENT_SUBSCRIBER
   SUBSCRIPTION
 }
 

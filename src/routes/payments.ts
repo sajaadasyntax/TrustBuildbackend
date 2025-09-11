@@ -381,6 +381,41 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       });
       
       console.log(`✅ Stripe invoice created and linked: ${invoice.invoiceNumber}`);
+    } else if (paymentMethod === 'STRIPE_SUBSCRIBER') {
+      // Subscriber paying lead price (no credit deduction, no commission)
+      console.log(`✅ Subscriber paying lead price - Contractor ID: ${contractor.id}, Job ID: ${job.id}, Amount: ${leadPrice}`);
+      
+      // Create payment record with lead price
+      payment = await tx.payment.create({
+        data: {
+          contractorId: contractor.id,
+          amount: leadPrice,
+          type: 'LEAD_ACCESS',
+          status: 'COMPLETED',
+          description: `Job lead access purchased (subscriber rate) for: ${job.title}`,
+        },
+      });
+
+      // Create invoice with lead price
+      invoice = await tx.invoice.create({
+        data: {
+          amount: leadPrice,
+          vatAmount: leadPrice * 0.2, // 20% VAT
+          totalAmount: leadPrice * 1.2,
+          description: `Job Lead Access (Subscriber) - ${job.title}`,
+          invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
+          recipientName: contractor.businessName || 'Contractor',
+          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+        },
+      });
+      
+      // Link payment to invoice
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { invoiceId: invoice.id }
+      });
+      
+      console.log(`✅ Subscriber lead price invoice created and linked: ${invoice.invoiceNumber}`);
     } else {
       throw new AppError('Invalid payment method', 400);
     }
@@ -391,8 +426,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         contractorId: contractor.id,
         jobId,
         accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 
-                      paymentMethod === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'PAYMENT',
-        paidAmount: paymentMethod === 'STRIPE' ? leadPrice : 0,
+                      paymentMethod === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 
+                      paymentMethod === 'STRIPE_SUBSCRIBER' ? 'PAYMENT_SUBSCRIBER' : 'PAYMENT',
+        paidAmount: (paymentMethod === 'STRIPE' || paymentMethod === 'STRIPE_SUBSCRIBER') ? leadPrice : 0,
         creditUsed: paymentMethod === 'CREDIT',
       } as any, // Type cast to avoid TypeScript errors until migration is applied
     });
@@ -443,7 +479,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         jobId,
         contractorId: contractor.id,
         accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 
-                      paymentMethod === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'PAYMENT'
+                      paymentMethod === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 
+                      paymentMethod === 'STRIPE_SUBSCRIBER' ? 'PAYMENT_SUBSCRIBER' : 'PAYMENT'
       },
       // Instantly provide customer contact details
       customerContact: {
