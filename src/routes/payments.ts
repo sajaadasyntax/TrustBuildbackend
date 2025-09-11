@@ -964,6 +964,33 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   console.log(`✅ Found contractor ${contractor.id} for user ${userId}`);
 
   // Get commission payments
+  console.log(`🔍 Searching for commissions with contractorId: ${contractor.id}`);
+  
+  // Debug: Check if there are any jobs won by this contractor
+  const wonJobs = await prisma.job.findMany({
+    where: { wonByContractorId: contractor.id },
+    select: { id: true, title: true, status: true, customerConfirmed: true, finalAmount: true }
+  });
+  console.log(`🔍 Jobs won by contractor ${contractor.id}:`, wonJobs.length);
+  wonJobs.forEach(job => {
+    console.log(`  - Job ${job.id}: ${job.title}, Status: ${job.status}, Confirmed: ${job.customerConfirmed}, FinalAmount: ${job.finalAmount}`);
+  });
+  
+  // Debug: Check all commissions in the database
+  const allCommissions = await prisma.commissionPayment.findMany({
+    select: {
+      id: true,
+      contractorId: true,
+      jobId: true,
+      status: true,
+      createdAt: true,
+    },
+  });
+  console.log(`🗃️ Total commissions in database: ${allCommissions.length}`);
+  allCommissions.forEach(comm => {
+    console.log(`📄 Commission ${comm.id}: contractorId=${comm.contractorId}, jobId=${comm.jobId}, status=${comm.status}`);
+  });
+  
   const commissions = await prisma.commissionPayment.findMany({
     where: { contractorId: contractor.id },
     include: {
@@ -997,6 +1024,13 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
       amount: c.totalAmount,
       dueDate: c.dueDate
     })));
+  } else {
+    console.log(`❌ No commissions found for contractor ${contractor.id}`);
+    console.log(`🔍 Debugging commission creation conditions:`);
+    console.log(`  - Won jobs: ${wonJobs.length}`);
+    console.log(`  - Completed jobs: ${wonJobs.filter(j => j.status === 'COMPLETED').length}`);
+    console.log(`  - Customer confirmed: ${wonJobs.filter(j => j.customerConfirmed).length}`);
+    console.log(`  - With final amount: ${wonJobs.filter(j => j.finalAmount && j.finalAmount.toNumber() > 0).length}`);
   }
 
   res.status(200).json({

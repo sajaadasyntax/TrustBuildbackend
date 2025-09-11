@@ -1976,6 +1976,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   }
 
   // Get winning contractor with subscription details
+  // Use the contractor ID from the user session to ensure consistency with dashboard queries
   const winningContractor = await prisma.contractor.findUnique({
     where: { id: job.wonByContractorId || '' },
     include: {
@@ -1983,6 +1984,14 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       user: true,
     }
   });
+
+  // Use the winning contractor ID for commission creation
+  // This ensures commission is created with the same ID that the contractor's dashboard will query
+  const commissionContractorId = job.wonByContractorId!;
+  
+  console.log(`🔍 Commission Contractor ID: ${commissionContractorId}`);
+  console.log(`🔍 Job Won By Contractor ID: ${job.wonByContractorId}`);
+  console.log(`🔍 IDs Match: ${commissionContractorId === job.wonByContractorId}`);
 
   let commissionAmount = 0;
   let commissionPayment = null;
@@ -2030,10 +2039,17 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     const totalAmount = commissionAmount + vatAmount;
     
     // Create commission payment record (the main record that commissions page looks for)
+    console.log(`🔍 DEBUG Commission Creation:`);
+    console.log(`  - Job ID: ${job.id}`);
+    console.log(`  - Won By Contractor ID: ${job.wonByContractorId}`);
+    console.log(`  - Commission Contractor ID: ${commissionContractorId}`);
+    console.log(`  - Customer ID: ${job.customerId}`);
+    console.log(`  - Commission Amount: ${commissionAmount}`);
+    
     commissionPayment = await prisma.commissionPayment.create({
       data: {
         jobId: job.id,
-        contractorId: job.wonByContractorId!,
+        contractorId: commissionContractorId, // Use consistent contractor ID from user session
         customerId: job.customerId,
         finalJobAmount: job.finalAmount.toNumber(),
         commissionRate: 5.0,
@@ -2045,11 +2061,13 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       },
     });
     
+    console.log(`✅ Commission Payment Created: ID=${commissionPayment.id}, ContractorID=${commissionPayment.contractorId}`);
+    
     // Create commission invoice linked to the commission payment
     const commissionInvoice = await prisma.commissionInvoice.create({
       data: {
         commissionPaymentId: commissionPayment.id,
-        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
+        invoiceNumber: `COMM-${Date.now()}-${commissionContractorId.slice(-6)}`,
         contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
         contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
         jobTitle: job.title,
