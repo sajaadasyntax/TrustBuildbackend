@@ -1173,7 +1173,7 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
       hasSubscription: hasActiveSubscription,
       subscriptionPlan: hasActiveSubscription ? contractor.subscription?.plan : null,
       creditsBalance: contractor.creditsBalance,
-      leadPrice: hasActiveSubscription ? 0 : leadPrice, // Free for subscribers but still requires purchasing access
+      leadPrice: leadPrice, // Show actual lead price for all contractors
       jobSize: job.jobSize,
       estimatedValue: job.estimatedValue,
     },
@@ -1335,10 +1335,8 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         leadPrice = job.leadPrice.toNumber();
       }
       
-      // Price is 0 for subscribers
-      if (hasSubscription) {
-        leadPrice = 0;
-      }
+      // Subscribers can choose to pay lead price or use credits
+      // leadPrice remains the same for all contractors
     }
   } else {
     // Non-contractors (customers, admins) have full access
@@ -1943,14 +1941,29 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     }
   });
 
-  const accessedViaSubscription = jobAccess && (
-    winningContractor?.subscription?.isActive === true ||
-    winningContractor?.subscription?.status === 'active'
-  );
+  // Only charge commission if accessed via CREDIT (not if they paid lead price)
+  const accessedViaSubscription = jobAccess && jobAccess.accessMethod === 'CREDIT';
 
   console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaSubscription: ${accessedViaSubscription}, HasJobAccess: ${!!jobAccess}`);
+  console.log(`🔍 JobAccess Details:`, jobAccess ? {
+    accessMethod: jobAccess.accessMethod,
+    contractorId: jobAccess.contractorId,
+    jobId: jobAccess.jobId
+  } : 'No jobAccess found');
+  console.log(`🔍 Contractor Subscription:`, winningContractor ? {
+    hasSubscription: !!winningContractor.subscription,
+    isActive: winningContractor.subscription?.isActive,
+    status: winningContractor.subscription?.status
+  } : 'No contractor found');
 
   // Only charge commission if contractor has subscription (accessed via subscription or credits)
+  console.log(`🔍 Commission Condition Check:`, {
+    hasWinningContractor: !!winningContractor,
+    accessedViaSubscription,
+    commissionNotPaid: !job.commissionPaid,
+    willCreateCommission: !!(winningContractor && accessedViaSubscription && !job.commissionPaid)
+  });
+  
   if (winningContractor && accessedViaSubscription && !job.commissionPaid) {
     commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
     
@@ -2040,6 +2053,76 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       commissionCharged: commissionAmount,
       commissionPayment,
     },
+  });
+});
+
+// @desc    Test commission creation for debugging
+// @route   POST /api/jobs/:id/test-commission
+// @access  Private (Admin only)
+export const testCommissionCreation = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      wonByContractor: {
+        include: {
+          subscription: true,
+          user: true,
+        }
+      },
+      jobAccess: true,
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  if (!job.wonByContractorId) {
+    return next(new AppError('No contractor assigned to this job', 400));
+  }
+
+  const jobAccess = await prisma.jobAccess.findFirst({
+    where: {
+      jobId: job.id,
+      contractorId: job.wonByContractorId,
+    }
+  });
+
+  const accessedViaSubscription = jobAccess && (
+    jobAccess.accessMethod === 'SUBSCRIPTION' ||
+    jobAccess.accessMethod === 'CREDIT' ||
+    (job.wonByContractor?.subscription?.isActive === true) ||
+    (job.wonByContractor?.subscription?.status === 'active')
+  );
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      job: {
+        id: job.id,
+        title: job.title,
+        status: job.status,
+        finalAmount: job.finalAmount,
+        wonByContractorId: job.wonByContractorId,
+        commissionPaid: job.commissionPaid,
+      },
+      contractor: {
+        id: job.wonByContractor?.id,
+        hasSubscription: !!job.wonByContractor?.subscription,
+        subscriptionActive: job.wonByContractor?.subscription?.isActive,
+        subscriptionStatus: job.wonByContractor?.subscription?.status,
+      },
+      jobAccess: jobAccess ? {
+        id: jobAccess.id,
+        accessMethod: jobAccess.accessMethod,
+        contractorId: jobAccess.contractorId,
+        jobId: jobAccess.jobId,
+      } : null,
+      accessedViaSubscription,
+      shouldCreateCommission: !!(job.wonByContractor && accessedViaSubscription && !job.commissionPaid),
+    }
   });
 });
 
@@ -2238,6 +2321,7 @@ router.patch('/:id/confirm-contractor-start', protect, confirmContractorStart);
 router.post('/:id/express-interest', protect, expressInterest);
 router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
 router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
+router.post('/:id/test-commission', protect, testCommissionCreation);
 router.post('/:id/request-review', protect, requestReview);
 
 // Milestone routes
