@@ -178,7 +178,8 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
 
   // If user is not authenticated or is a contractor, filter sensitive data
   if (!req.user || req.user.role === 'CONTRACTOR') {
-    // Check if contractor has purchased access to this job
+    // Check if contractor has purchased access to this job via JobAccess record
+    // Contractors MUST have a JobAccess record regardless of subscription status
     const hasAccess = req.user?.role === 'CONTRACTOR' ? await prisma.jobAccess.findUnique({
       where: {
         jobId_contractorId: {
@@ -1074,7 +1075,7 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
     },
   });
   
-  // Check if contractor has active subscription (gives unlimited access)
+  // Check if contractor has active subscription (provides access but still requires using a lead access point)
   const hasActiveSubscription = contractor.subscription && 
                                contractor.subscription.isActive && 
                                contractor.subscription.status === 'active';
@@ -1121,12 +1122,12 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   res.status(200).json({
     status: 'success',
     data: {
-      // Access is granted if contractor either has existing access or an active subscription
-      hasAccess: !!existingAccess || hasActiveSubscription,
+      // Access is granted ONLY if contractor has existing access record
+      hasAccess: !!existingAccess,
       hasSubscription: hasActiveSubscription,
       subscriptionPlan: hasActiveSubscription ? contractor.subscription?.plan : null,
       creditsBalance: contractor.creditsBalance,
-      leadPrice: hasActiveSubscription ? 0 : leadPrice, // Free for subscribers
+      leadPrice: hasActiveSubscription ? 0 : leadPrice, // Free for subscribers but still requires purchasing access
       jobSize: job.jobSize,
       estimatedValue: job.estimatedValue,
     },
@@ -1255,7 +1256,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         },
       });
       
-      // Check for active subscription (gives unlimited access to jobs)
+      // Check for active subscription (pricing benefits but still requires access record)
       hasSubscription = !!contractor.subscription && 
                         !!contractor.subscription.isActive && 
                         contractor.subscription.status === 'active';
@@ -1264,8 +1265,9 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         subscriptionPlan = contractor.subscription.plan;
       }
       
-      // Access is granted if the contractor either purchased access or has an active subscription
-      hasAccess = !!existingAccess || hasSubscription;
+      // Access is granted ONLY if the contractor has purchased access through a JobAccess record
+      // Subscription does not automatically grant access - contractor must still use a lead access point
+      hasAccess = !!existingAccess;
 
       // Calculate lead price
       if (job.service) {
