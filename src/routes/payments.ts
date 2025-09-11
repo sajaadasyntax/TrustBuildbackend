@@ -219,40 +219,46 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     let invoice;
 
     if (paymentMethod === 'CREDIT') {
-      // Double-check the contractor's current balance within the transaction
-      const freshContractor = await tx.contractor.findUnique({
+      // Get the most current contractor data within the transaction
+      const currentContractor = await tx.contractor.findUnique({
         where: { id: contractor.id },
-        select: { creditsBalance: true }
+        select: { creditsBalance: true, id: true }
       });
       
-      if (!freshContractor || freshContractor.creditsBalance < 1) {
-        throw new AppError('Insufficient credits. Please refresh and try again.', 400);
+      if (!currentContractor) {
+        throw new AppError('Contractor not found', 404);
       }
       
-      console.log(`Starting credit deduction for contractor ${contractor.id}. Current balance: ${freshContractor.creditsBalance}`);
+      console.log(`💳 Credit Purchase - Contractor ${contractor.id}: Current balance = ${currentContractor.creditsBalance}`);
       
-      // Atomically deduct credit
+      if (currentContractor.creditsBalance < 1) {
+        throw new AppError(`Insufficient credits. Current balance: ${currentContractor.creditsBalance}. Please top up or use card payment.`, 400);
+      }
+      
+      // CRITICAL: Use the current balance and subtract 1
+      const newBalance = currentContractor.creditsBalance - 1;
+      
+      // Update the contractor's balance directly
       const updatedContractor = await tx.contractor.update({
-        where: { 
-          id: contractor.id,
-          creditsBalance: { gte: 1 } // Only update if they still have credits
-        },
-        data: { creditsBalance: { decrement: 1 } },
+        where: { id: contractor.id },
+        data: { creditsBalance: newBalance },
         select: { creditsBalance: true }
       });
 
-      console.log(`✅ Credit deducted successfully. New balance: ${updatedContractor.creditsBalance}`);
+      console.log(`✅ Credit deducted: ${currentContractor.creditsBalance} → ${updatedContractor.creditsBalance}`);
 
-      // Create credit transaction record
-      await tx.creditTransaction.create({
+      // Create credit transaction record (NEGATIVE amount for deduction)
+      const creditTransaction = await tx.creditTransaction.create({
         data: {
           contractorId: contractor.id,
           type: 'JOB_ACCESS',
-          amount: -1,
+          amount: -1, // Negative to indicate deduction
           description: `Job access purchased for: ${job.title}`,
           jobId,
         },
       });
+
+      console.log(`📝 Credit transaction recorded: ID=${creditTransaction.id}, Amount=${creditTransaction.amount}`);
 
       // Create payment record
       payment = await tx.payment.create({
@@ -272,8 +278,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           vatAmount: 0,
           totalAmount: 0,
           description: `Job Lead Access - ${job.title}`,
-          invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
-          recipientName: job.customer?.user?.name || 'Unknown',
+          invoiceNumber: `INV-CREDIT-${Date.now()}-${contractor.id.slice(-6)}`,
+          recipientName: contractor.businessName || 'Contractor',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
         },
       });

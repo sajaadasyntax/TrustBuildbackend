@@ -1888,45 +1888,79 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   let commissionAmount = 0;
   let commissionPayment = null;
 
-  // Only charge commission if contractor has an active subscription
-  if (winningContractor && winningContractor.subscription && 
-      winningContractor.subscription.isActive && 
-      winningContractor.subscription.status === 'active' && 
-      !job.commissionPaid) {
+  // Check if contractor accessed the job via subscription or credits (both indicate subscription status)
+  // Subscription holders pay 5% commission, non-subscribers pay full upfront (no commission)
+  const jobAccess = await prisma.jobAccess.findFirst({
+    where: {
+      jobId: job.id,
+      contractorId: job.wonByContractorId || '',
+    }
+  });
+
+  const accessedViaSubscription = jobAccess && (
+    winningContractor?.subscription?.isActive === true ||
+    winningContractor?.subscription?.status === 'active'
+  );
+
+  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaSubscription: ${accessedViaSubscription}, HasJobAccess: ${!!jobAccess}`);
+
+  // Only charge commission if contractor has subscription (accessed via subscription or credits)
+  if (winningContractor && accessedViaSubscription && !job.commissionPaid) {
     commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
+    
+    console.log(`💰 Creating commission: ${commissionAmount} (5% of ${job.finalAmount})`);
     
     // Calculate VAT and total
     const vatRate = 20.00; // 20% VAT
     const vatAmount = (commissionAmount * vatRate) / 100;
     const totalAmount = commissionAmount + vatAmount;
     
-    // Create invoice first
+    // Create commission invoice first
     const commissionInvoice = await prisma.invoice.create({
       data: {
         amount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,
-        description: `5% commission for completed job: ${job.title}`,
+        description: `5% commission for completed job: ${job.title} (Subscription Plan)`,
         invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
         recipientName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
         recipientEmail: winningContractor.user.email || 'unknown@contractor.com',
         recipientAddress: winningContractor.businessAddress || 'Address not provided',
-        dueAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Due in 30 days
+        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
       },
     });
     
-    // Create commission payment record linked to invoice
+    // Create commission payment record (status PENDING for contractor to pay)
     commissionPayment = await prisma.payment.create({
       data: {
         contractorId: job.wonByContractorId!,
         amount: totalAmount, // Include VAT in payment amount
-        type: 'JOB_PAYMENT',
-        status: 'COMPLETED',
-        description: `5% commission for job: ${job.title} (£${job.finalAmount})`,
+        type: 'COMMISSION',  // Use COMMISSION type specifically
+        status: 'PENDING',   // Contractor needs to pay this
+        description: `5% commission due for completed job: ${job.title} (Final Amount: £${job.finalAmount})`,
         jobId: job.id,
         invoiceId: commissionInvoice.id,
       },
     });
+
+    console.log(`✅ Commission created: Invoice ${commissionInvoice.invoiceNumber}, Payment ${commissionPayment.id}`);
+
+    // Send notification to contractor about commission due
+    try {
+      const { createCommissionDueNotification } = await import('../services/notificationService');
+      await createCommissionDueNotification(
+        winningContractor.user.id, 
+        commissionPayment.id, 
+        job.title, 
+        totalAmount, 
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Due in 7 days
+      );
+      console.log(`📧 Commission notification sent to contractor ${winningContractor.user.id}`);
+    } catch (notificationError) {
+      console.error('Failed to send commission notification:', notificationError);
+    }
+  } else {
+    console.log(`ℹ️ No commission charged - Contractor: ${!!winningContractor}, AccessedViaSubscription: ${accessedViaSubscription}, AlreadyPaid: ${job.commissionPaid}`);
   }
 
   const updatedJob = await prisma.job.update({
