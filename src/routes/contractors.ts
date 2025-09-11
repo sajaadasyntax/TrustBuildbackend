@@ -714,7 +714,11 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
     let resetCount = 0;
 
     for (const contractor of contractorsToReset) {
-      await prisma.contractor.update({
+      // Get current balance before reset
+      const currentBalance = contractor.creditsBalance;
+      
+      // Reset credits to weekly limit
+      const updatedContractor = await prisma.contractor.update({
         where: { id: contractor.id },
         data: {
           creditsBalance: contractor.weeklyCreditsLimit, // Reset to weekly limit (3)
@@ -722,15 +726,22 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
         }
       });
 
-      // Log the credit reset
-      await prisma.creditTransaction.create({
-        data: {
-          contractorId: contractor.id,
-          type: 'WEEKLY_ALLOCATION',
-          amount: contractor.weeklyCreditsLimit,
-          description: 'Weekly credit reset'
-        }
-      });
+      console.log(`Batch credit reset for contractor ${contractor.id}: Balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
+
+      // Calculate the actual amount added (to handle cases where contractor already had some credits)
+      const amountAdded = Math.max(0, contractor.weeklyCreditsLimit - currentBalance);
+      
+      if (amountAdded > 0) {
+        // Only create a transaction if credits were actually added
+        await prisma.creditTransaction.create({
+          data: {
+            contractorId: contractor.id,
+            type: 'WEEKLY_ALLOCATION',
+            amount: amountAdded, // Only log the net increase
+            description: 'Weekly credit reset'
+          }
+        });
+      }
 
       resetCount++;
     }
@@ -775,7 +786,11 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
   }
 
   if (shouldReset) {
-    await prisma.contractor.update({
+    // Get current balance before reset for logging
+    const currentBalance = contractor.creditsBalance;
+    
+    // Reset credits to weekly limit
+    const updatedContractor = await prisma.contractor.update({
       where: { id: contractor.id },
       data: {
         creditsBalance: contractor.weeklyCreditsLimit,
@@ -783,15 +798,22 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
       }
     });
 
-    // Log the credit reset
-    await prisma.creditTransaction.create({
-      data: {
-        contractorId: contractor.id,
-        type: 'WEEKLY_ALLOCATION',
-        amount: contractor.weeklyCreditsLimit,
-        description: 'Weekly credit reset'
-      }
-    });
+    console.log(`Credit reset for contractor ${contractor.id}: Balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
+
+    // Calculate the actual amount added (to handle cases where contractor already had some credits)
+    const amountAdded = Math.max(0, contractor.weeklyCreditsLimit - currentBalance);
+    
+    if (amountAdded > 0) {
+      // Only create a transaction if credits were actually added
+      await prisma.creditTransaction.create({
+        data: {
+          contractorId: contractor.id,
+          type: 'WEEKLY_ALLOCATION',
+          amount: amountAdded, // Only log the net increase
+          description: 'Weekly credit reset'
+        }
+      });
+    }
 
     res.status(200).json({
       status: 'success',

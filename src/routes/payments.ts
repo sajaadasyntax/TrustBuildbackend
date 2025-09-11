@@ -224,18 +224,23 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Insufficient credits. Please top up or pay directly.', 400);
       }
 
+      // Get current balance before deduction for logging
+      const currentBalance = contractor.creditsBalance;
+      
       // Deduct credit
-      await tx.contractor.update({
+      const updatedContractor = await tx.contractor.update({
         where: { id: contractor.id },
         data: { creditsBalance: { decrement: 1 } },
       });
 
-      // Create credit transaction
+      console.log(`Credit deduction: Contractor ${contractor.id} balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
+
+      // Create credit transaction with negative amount to indicate deduction
       await tx.creditTransaction.create({
         data: {
           contractorId: contractor.id,
-          type: 'DEDUCTION',
-          amount: 1,
+          type: 'JOB_ACCESS',
+          amount: -1, // Negative value to indicate deduction
           description: `Job access purchased for: ${job.title}`,
           jobId,
         },
