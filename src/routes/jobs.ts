@@ -1959,88 +1959,12 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   });
 });
 
-// @desc    Mark job as won by contractor (contractor can mark themselves as winner)
+// @desc    Mark job as won by contractor (DISABLED - only customers can select contractors)
 // @route   PATCH /api/jobs/:id/contractor-mark-won
 // @access  Private (Contractor who has access to the job)
 export const contractorMarkJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const jobId = req.params.id;
-  const userId = req.user!.id;
-
-  const contractor = await prisma.contractor.findUnique({
-    where: { userId },
-  });
-
-  if (!contractor) {
-    return next(new AppError('Contractor profile not found', 404));
-  }
-
-  const job = await prisma.job.findUnique({
-    where: { id: jobId },
-    include: {
-      jobAccess: {
-        where: {
-          contractorId: contractor.id,
-        },
-      },
-      customer: {
-        include: {
-          user: {
-            select: {
-              name: true,
-              email: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!job) {
-    return next(new AppError('Job not found', 404));
-  }
-
-  // Check if contractor has access to this job
-  if (job.jobAccess.length === 0) {
-    return next(new AppError('You must purchase access to this job first', 403));
-  }
-
-  // Check if job is still available for selection
-  if (job.status !== 'POSTED') {
-    return next(new AppError('Job is not available for contractor selection', 400));
-  }
-
-  // Check if job already has a winner
-  if (job.wonByContractorId) {
-    return next(new AppError('This job already has a selected contractor', 400));
-  }
-
-  const updatedJob = await prisma.job.update({
-    where: { id: jobId },
-    data: {
-      wonByContractorId: contractor.id,
-      // Keep status as POSTED until customer explicitly confirms contractor can start
-      // Status will be changed to IN_PROGRESS when customer confirms the selection
-    },
-    include: {
-      wonByContractor: {
-        include: {
-          user: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  res.status(200).json({
-    status: 'success',
-    message: 'You have marked this job as won. Waiting for customer confirmation to start work.',
-    data: {
-      job: updatedJob,
-    },
-  });
+  // This endpoint is now disabled to prevent contractors from auto-selecting themselves
+  return next(new AppError('This feature has been disabled. Only customers can select contractors for jobs.', 403));
 });
 
 // @desc    Customer confirms contractor selection and allows work to start

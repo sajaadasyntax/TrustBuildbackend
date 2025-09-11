@@ -227,16 +227,29 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Get current balance before deduction for logging
       const currentBalance = contractor.creditsBalance;
       
-      // Deduct credit
+      // Double-check the current balance to ensure it's accurate
+      const freshContractor = await tx.contractor.findUnique({
+        where: { id: contractor.id },
+        select: { creditsBalance: true }
+      });
+      
+      const actualBalance = freshContractor?.creditsBalance || currentBalance;
+      console.log(`Verified current credit balance: ${actualBalance} (cached: ${currentBalance})`);
+      
+      if (actualBalance < 1) {
+        throw new AppError('Insufficient credits. Please top up or pay directly.', 400);
+      }
+      
+      // Deduct credit with a direct update to ensure accuracy
       const updatedContractor = await tx.contractor.update({
         where: { id: contractor.id },
-        data: { creditsBalance: { decrement: 1 } },
+        data: { creditsBalance: actualBalance - 1 },
       });
 
       console.log(`Credit deduction: Contractor ${contractor.id} balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
 
       // Create credit transaction with negative amount to indicate deduction
-      await tx.creditTransaction.create({
+      const creditTransaction = await tx.creditTransaction.create({
         data: {
           contractorId: contractor.id,
           type: 'JOB_ACCESS',
@@ -245,6 +258,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           jobId,
         },
       });
+      
+      console.log(`Credit transaction created: ${creditTransaction.id} with amount ${creditTransaction.amount}`);
 
       // Create payment record
       payment = await tx.payment.create({
@@ -257,7 +272,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice
+      // Create invoice with proper payment association
       invoice = await tx.invoice.create({
         data: {
           amount: 0,
@@ -267,8 +282,16 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: job.customer?.user?.name || 'Unknown',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          // Ensure payment is linked to invoice
+          payments: {
+            connect: {
+              id: payment.id
+            }
+          }
         },
       });
+      
+      console.log(`Invoice created: ${invoice.id} with invoiceNumber ${invoice.invoiceNumber}`);
     } else if (paymentMethod === 'SUBSCRIPTION') {
       // Subscription-based access (free for subscribers)
       console.log(`✅ Granting free job access to subscriber - Contractor ID: ${contractor.id}, Job ID: ${job.id}`);
@@ -284,7 +307,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice (amount = 0)
+      // Create invoice (amount = 0) with proper payment association
       invoice = await tx.invoice.create({
         data: {
           amount: 0,
@@ -294,8 +317,16 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: job.customer?.user?.name || 'Unknown',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          // Ensure payment is linked to invoice
+          payments: {
+            connect: {
+              id: payment.id
+            }
+          }
         },
       });
+      
+      console.log(`Subscription invoice created: ${invoice.id} with invoiceNumber ${invoice.invoiceNumber}`);
     } else if (paymentMethod === 'STRIPE') {
       if (!stripePaymentIntentId) {
         throw new AppError('Stripe payment intent ID is required', 400);
@@ -329,7 +360,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice
+      // Create invoice with proper payment association
       invoice = await tx.invoice.create({
         data: {
           amount: basePrice,  // Price without VAT
@@ -339,8 +370,16 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: job.customer?.user?.name || 'Unknown',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          // Ensure payment is linked to invoice
+          payments: {
+            connect: {
+              id: payment.id
+            }
+          }
         },
       });
+      
+      console.log(`Stripe invoice created: ${invoice.id} with invoiceNumber ${invoice.invoiceNumber}`);
     } else {
       throw new AppError('Invalid payment method', 400);
     }
@@ -371,6 +410,29 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   When ready to enable, uncomment and review the email sending code.
   */
   console.log(`✅ Invoice generated: ${transactionResult.invoice?.invoiceNumber} - Email sending disabled per request`)
+  
+  // Verify invoice was properly created and associated with payment
+  const verifiedInvoice = await prisma.invoice.findUnique({
+    where: { id: transactionResult.invoice?.id },
+    include: { payments: true }
+  });
+  
+  if (!verifiedInvoice) {
+    console.error(`❌ Invoice verification failed: Invoice ${transactionResult.invoice?.id} not found`);
+  } else if (!verifiedInvoice.payments || verifiedInvoice.payments.length === 0) {
+    console.error(`❌ Invoice verification failed: Invoice ${verifiedInvoice.id} has no associated payments`);
+    
+    // Fix the association if needed
+    if (transactionResult.payment?.id) {
+      await prisma.payment.update({
+        where: { id: transactionResult.payment.id },
+        data: { invoiceId: verifiedInvoice.id }
+      });
+      console.log(`🔄 Fixed payment-invoice association for payment ${transactionResult.payment.id}`);
+    }
+  } else {
+    console.log(`✅ Invoice verification successful: Invoice ${verifiedInvoice.id} is properly associated with ${verifiedInvoice.payments.length} payment(s)`);
+  }
 
   // Return response with customer contact details since access was granted
   res.status(200).json({
