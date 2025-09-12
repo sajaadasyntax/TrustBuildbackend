@@ -1778,7 +1778,6 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
 // @route   PATCH /api/jobs/:id/complete-with-amount
 // @access  Private (Contractor who won the job)
 export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const { finalAmount } = req.body;
   const jobId = req.params.id;
   const userId = req.user!.id;
 
@@ -1786,13 +1785,6 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   console.log(`🔍 Job ID: ${jobId}`);
   console.log(`🔍 User ID: ${userId}`);
   console.log(`🔍 Request body:`, req.body);
-  console.log(`🔍 Final Amount: ${finalAmount}`);
-  console.log(`🔍 Final Amount Type: ${typeof finalAmount}`);
-
-  if (!finalAmount || finalAmount <= 0) {
-    console.log(`❌ Final amount validation failed - finalAmount: ${finalAmount}`);
-    return next(new AppError('Please provide a valid final amount', 400));
-  }
 
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
@@ -1831,6 +1823,16 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   if (job.status !== 'IN_PROGRESS') {
     return next(new AppError('Job is not in progress', 400));
   }
+
+  // Use job budget as final amount automatically
+  const finalAmount = job.budget?.toNumber() || 0;
+  
+  if (finalAmount <= 0) {
+    console.log(`❌ Job budget validation failed - budget: ${job.budget}`);
+    return next(new AppError('Job budget is not set or invalid', 400));
+  }
+
+  console.log(`✅ Using job budget as final amount: ${finalAmount} (from budget: ${job.budget})`);
 
   // Get winning contractor with subscription details for commission calculation
   const winningContractor = await prisma.contractor.findUnique({
@@ -1900,11 +1902,12 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
 
   res.status(200).json({
     status: 'success',
-    message: 'Job completed. Waiting for customer confirmation.',
+    message: `Job completed with amount £${finalAmount} (from job budget). Waiting for customer confirmation.`,
     data: {
       job: updatedJob,
       commissionCharged: 0, // Commission will be charged when customer confirms
       commissionPayment: null,
+      finalAmount: finalAmount,
     },
   });
 });
