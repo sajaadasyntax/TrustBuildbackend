@@ -45,8 +45,8 @@ export function getSubscriptionPricing(plan: string) {
       return {
         monthly: 49.99,
         total: 49.99,
-        basePrice: 41.66, // Price before VAT (49.99 / 1.2)
-        vatAmount: 8.33,  // VAT portion (49.99 - 41.66)
+        basePrice: 49.99, // Total amount (VAT included)
+        vatAmount: 0,     // No additional VAT calculation
         discount: 0,
         discountPercentage: 0,
         duration: 1,
@@ -57,8 +57,8 @@ export function getSubscriptionPricing(plan: string) {
       return {
         monthly: 44.99,
         total: 269.94,
-        basePrice: 224.95, // Price before VAT (269.94 / 1.2)
-        vatAmount: 44.99,  // VAT portion (269.94 - 224.95)
+        basePrice: 269.94, // Total amount (VAT included)
+        vatAmount: 0,      // No additional VAT calculation
         discount: 30.00,
         discountPercentage: 10,
         duration: 6,
@@ -69,8 +69,8 @@ export function getSubscriptionPricing(plan: string) {
       return {
         monthly: 39.99,
         total: 479.88,
-        basePrice: 399.90, // Price before VAT (479.88 / 1.2)
-        vatAmount: 79.98,  // VAT portion (479.88 - 399.90)
+        basePrice: 479.88, // Total amount (VAT included)
+        vatAmount: 0,      // No additional VAT calculation
         discount: 119.88,
         discountPercentage: 20,
         duration: 12,
@@ -81,8 +81,8 @@ export function getSubscriptionPricing(plan: string) {
       return {
         monthly: 49.99,
         total: 49.99,
-        basePrice: 41.66, // Price before VAT
-        vatAmount: 8.33,  // VAT portion
+        basePrice: 49.99, // Total amount (VAT included)
+        vatAmount: 0,     // No additional VAT calculation
         discount: 0,
         discountPercentage: 0,
         duration: 1,

@@ -2033,10 +2033,9 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     
     console.log(`💰 Creating commission: ${commissionAmount} (5% of ${job.finalAmount})`);
     
-    // Calculate VAT and total
-    const vatRate = 20.00; // 20% VAT
-    const vatAmount = (commissionAmount * vatRate) / 100;
-    const totalAmount = commissionAmount + vatAmount;
+    // No additional VAT calculation - commission amount already includes VAT
+    const vatAmount = 0; // No additional VAT
+    const totalAmount = commissionAmount; // Total is just the commission amount
     
     // Create commission payment record (the main record that commissions page looks for)
     console.log(`🔍 DEBUG Commission Creation:`);

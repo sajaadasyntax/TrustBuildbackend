@@ -22,7 +22,7 @@ TrustBuild now supports a comprehensive subscription and commission system that 
 ### How It Works
 
 1. **Job Completion**: Contractor marks job as completed with final agreed amount
-2. **Commission Calculation**: 5% commission + 20% VAT calculated automatically
+2. **Commission Calculation**: 5% commission (VAT included in amounts)
 3. **48-Hour Payment Window**: Contractor has exactly 48 hours to pay commission
 4. **Automatic Suspension**: Account suspended if payment not received on time
 
@@ -30,8 +30,8 @@ TrustBuild now supports a comprehensive subscription and commission system that 
 ```
 Final Job Amount: £1,000
 Commission (5%):  £50
-VAT (20%):        £10
-Total Due:        £60
+VAT (included):   £0
+Total Due:        £50
 ```
 
 ### Payment Timeline

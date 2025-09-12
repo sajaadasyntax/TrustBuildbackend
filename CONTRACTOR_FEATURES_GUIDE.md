@@ -62,8 +62,8 @@ POST /api/contractor/cancel-subscription
 ```
 Final Job Amount: £1,000
 Commission (5%):  £50
-VAT (20%):        £10
-Total Due:        £60
+VAT (included):   £0
+Total Due:        £50
 ```
 
 ### Commission API Endpoints
