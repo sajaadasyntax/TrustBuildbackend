@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { createEmailService, createServiceEmail } from '../services/emailService';
+import { generateInvoicePDF } from '../services/pdfService';
 
 const router = Router();
 
@@ -433,6 +434,81 @@ export const getMyInvoices = catchAsync(async (req: AuthenticatedRequest, res: R
   });
 });
 
+// @desc    Download invoice PDF
+// @route   GET /api/invoices/:id/download
+// @access  Private (Contractor only)
+export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get invoice with payment details
+  const invoice = await prisma.invoice.findFirst({
+    where: {
+      id,
+      payments: {
+        some: {
+          contractorId: contractor.id
+        }
+      }
+    },
+    include: {
+      payments: {
+        include: {
+          job: {
+            select: {
+              title: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!invoice) {
+    return next(new AppError('Invoice not found or you do not have permission to view it', 404));
+  }
+
+  try {
+    // Generate PDF on the fly
+    const pdfBuffer = await generateInvoicePDF({
+      invoiceNumber: invoice.invoiceNumber,
+      recipientName: invoice.recipientName,
+      recipientEmail: invoice.recipientEmail,
+      recipientAddress: invoice.recipientAddress || undefined,
+      description: invoice.description,
+      amount: Number(invoice.amount),
+      vatAmount: Number(invoice.vatAmount),
+      totalAmount: Number(invoice.totalAmount),
+      issuedAt: invoice.issuedAt,
+      dueAt: invoice.dueAt || undefined,
+      paidAt: invoice.paidAt || undefined,
+      paymentType: invoice.payments[0]?.type || undefined,
+      vatRate: Number(invoice.vatRate)
+    });
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send the PDF buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Failed to generate invoice PDF:', error);
+    return next(new AppError('Failed to generate invoice PDF', 500));
+  }
+});
+
 // Routes
 router.use(protect); // All routes require authentication
 
@@ -440,6 +516,7 @@ router.get('/', getInvoices);
 router.get('/my', getMyInvoices); // Add the /my endpoint with the new handler
 router.get('/stats', getInvoiceStats);
 router.get('/:id', getInvoice);
+router.get('/:id/download', downloadInvoice);
 router.post('/:id/send', sendInvoiceEmail);
 
 export default router; 
