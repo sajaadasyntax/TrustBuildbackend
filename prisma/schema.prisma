@@ -152,6 +152,7 @@ model Contractor {
   operatingArea         String?
   servicesProvided      String?
   yearsExperience       String?
+  logoUrl               String?
   workSetup             String? // "alone" or "team"
   providesWarranty      Boolean           @default(false)
   warrantyPeriod        String?
