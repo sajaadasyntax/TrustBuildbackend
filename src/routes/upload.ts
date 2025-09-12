@@ -2,9 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { catchAsync } from '../middleware/errorHandler';
+import { catchAsync, AppError } from '../middleware/errorHandler';
 import { protect } from '../middleware/auth';
-import { AppError } from '../utils/AppError';
 
 const router = Router();
 
