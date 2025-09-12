@@ -465,8 +465,8 @@ model CreditTransaction {
 
 model Review {
   id           String   @id @default(cuid())
-  jobId        String
-  customerId   String
+  jobId        String?
+  customerId   String?
   contractorId String
   rating       Int      @db.SmallInt
   comment      String?  @db.Text
@@ -480,8 +480,8 @@ model Review {
   updatedAt    DateTime @updatedAt
 
   // Relationships
-  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job        Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   contractor Contractor @relation("ContractorReviews", fields: [contractorId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, customerId])

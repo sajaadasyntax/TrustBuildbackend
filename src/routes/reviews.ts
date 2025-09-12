@@ -185,9 +185,10 @@ export const addExternalReview = catchAsync(async (req: AuthenticatedRequest, re
   // Create external review
   const review = await prisma.review.create({
     data: {
-      // Use a dummy job ID for external reviews
-      jobId: `external-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      customerId: 'external', // Use a placeholder for external reviews
+      // No jobId for external reviews
+      jobId: null,
+      // No customerId for external reviews
+      customerId: null,
       contractorId: contractor.id,
       rating,
       comment,

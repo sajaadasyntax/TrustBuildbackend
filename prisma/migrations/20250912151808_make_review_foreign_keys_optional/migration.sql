@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "reviews" ALTER COLUMN "jobId" DROP NOT NULL,
+ALTER COLUMN "customerId" DROP NOT NULL;
