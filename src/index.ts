@@ -138,6 +138,9 @@ app.get('/api/cors-test', (req, res) => {
   });
 });
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static('uploads'));
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
