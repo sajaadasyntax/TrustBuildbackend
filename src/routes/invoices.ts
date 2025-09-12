@@ -515,8 +515,8 @@ router.use(protect); // All routes require authentication
 router.get('/', getInvoices);
 router.get('/my', getMyInvoices); // Add the /my endpoint with the new handler
 router.get('/stats', getInvoiceStats);
-router.get('/:id', getInvoice);
 router.get('/:id/download', downloadInvoice);
+router.get('/:id', getInvoice);
 router.post('/:id/send', sendInvoiceEmail);
 
 export default router; 
