@@ -1302,6 +1302,8 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         },
       });
       
+      console.log(`🔍 Job Access Check - Job: ${job.id}, Contractor: ${contractor.id}, HasAccess: ${!!existingAccess}`);
+      
       // Check for active subscription (pricing benefits but still requires access record)
       hasSubscription = !!contractor.subscription && 
                         !!contractor.subscription.isActive && 
@@ -1407,6 +1409,14 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       }),
     })) || [],
   };
+
+  console.log(`📋 Job Response - Job: ${job.id}, HasAccess: ${hasAccess}, CustomerData:`, {
+    hasCustomer: !!job.customer,
+    customerName: job.customer?.user?.name,
+    customerPhone: job.customer?.phone,
+    customerEmail: job.customer?.user?.email,
+    userRole: req.user?.role
+  });
 
   res.status(200).json({
     status: 'success',
