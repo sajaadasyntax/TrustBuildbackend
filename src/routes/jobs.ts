@@ -1999,8 +1999,8 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   let commissionAmount = 0;
   let commissionPayment = null;
 
-  // Check if contractor accessed the job via subscription or credits (both indicate subscription status)
-  // Subscription holders pay 5% commission, non-subscribers pay full upfront (no commission)
+  // Check if contractor accessed the job using credits
+  // Only charge commission if they used credits (not if they paid lead price)
   const jobAccess = await prisma.jobAccess.findFirst({
     where: {
       jobId: job.id,
@@ -2008,12 +2008,13 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     }
   });
 
-  // Only charge commission if accessed via CREDIT (not if they paid lead price)
-  const accessedViaSubscription = jobAccess && jobAccess.accessMethod === 'CREDIT';
+  // Only charge commission if they used credits (creditUsed = true)
+  const accessedViaCredits = jobAccess && jobAccess.creditUsed === true;
 
-  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaSubscription: ${accessedViaSubscription}, HasJobAccess: ${!!jobAccess}`);
+  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaCredits: ${accessedViaCredits}, HasJobAccess: ${!!jobAccess}`);
   console.log(`🔍 JobAccess Details:`, jobAccess ? {
     accessMethod: jobAccess.accessMethod,
+    creditUsed: jobAccess.creditUsed,
     contractorId: jobAccess.contractorId,
     jobId: jobAccess.jobId
   } : 'No jobAccess found');
@@ -2023,15 +2024,15 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     status: winningContractor.subscription?.status
   } : 'No contractor found');
 
-  // Only charge commission if contractor has subscription (accessed via subscription or credits)
+  // Only charge commission if they used credits (not if they paid lead price)
   console.log(`🔍 Commission Condition Check:`, {
     hasWinningContractor: !!winningContractor,
-    accessedViaSubscription,
+    accessedViaCredits,
     commissionNotPaid: !job.commissionPaid,
-    willCreateCommission: !!(winningContractor && accessedViaSubscription && !job.commissionPaid)
+    willCreateCommission: !!(winningContractor && accessedViaCredits && !job.commissionPaid)
   });
   
-  if (winningContractor && accessedViaSubscription && !job.commissionPaid) {
+  if (winningContractor && accessedViaCredits && !job.commissionPaid) {
     commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
     
     console.log(`💰 Creating commission: ${commissionAmount} (5% of ${job.finalAmount})`);
