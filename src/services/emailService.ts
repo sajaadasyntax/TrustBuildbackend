@@ -178,7 +178,15 @@ export const createEmailService = () => {
           });
         }
         
-        // Prepare SendGrid message
+        // Prepare SendGrid message - ensure we have valid content
+        const htmlContent = options.html || options.text || 'This is a message from TrustBuild.';
+        const textContent = options.text || 'This is a message from TrustBuild.';
+        
+        // Ensure content is not empty
+        if (!htmlContent || htmlContent.trim().length === 0) {
+          throw new Error('Email content cannot be empty');
+        }
+        
         const msg = {
           to: recipients,
           from: {
@@ -186,12 +194,15 @@ export const createEmailService = () => {
             name: fromName
           },
           subject: options.subject || 'Message from TrustBuild',
-          text: options.text || '',
-          html: options.html || options.text || ''
+          text: textContent,
+          html: htmlContent
         };
         
         console.log(`✅ Sending via SendGrid API to: ${recipients.join(', ')}`);
         console.log(`✅ From: ${fromName} <${fromEmail}>`);
+        console.log(`✅ Subject: ${msg.subject}`);
+        console.log(`✅ HTML content length: ${msg.html ? msg.html.length : 0}`);
+        console.log(`✅ Text content length: ${msg.text ? msg.text.length : 0}`);
         
         const result = await sgMail.send(msg);
         console.log('✅ SendGrid API success:', result[0].statusCode);
@@ -347,45 +358,48 @@ export const createServiceEmail = (options: {
     footerText
   } = options;
 
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
+        .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; color: #64748b; }
+        .button { display: inline-block; background-color: #10b981; color: white; padding: 10px 20px; 
+                 text-decoration: none; border-radius: 4px; font-weight: bold; margin: 15px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${heading}</h1>
+      </div>
+      
+      <div class="content">
+        ${body}
+        
+        ${ctaText && ctaUrl ? `
+        <div style="text-align: center; margin: 25px 0;">
+          <a href="${ctaUrl}" class="button">${ctaText}</a>
+        </div>
+        ` : ''}
+      </div>
+      
+      <div class="footer">
+        <p>${footerText || 'TrustBuild - Connecting trusted contractors with customers'}</p>
+        <p>© ${new Date().getFullYear()} TrustBuild. All rights reserved.</p>
+      </div>
+    </body>
+    </html>
+  `;
+
   return {
     from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
     to,
     subject,
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
-          .header { background-color: #10b981; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; }
-          .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; color: #64748b; }
-          .button { display: inline-block; background-color: #10b981; color: white; padding: 10px 20px; 
-                   text-decoration: none; border-radius: 4px; font-weight: bold; margin: 15px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${heading}</h1>
-        </div>
-        
-        <div class="content">
-          ${body}
-          
-          ${ctaText && ctaUrl ? `
-          <div style="text-align: center; margin: 25px 0;">
-            <a href="${ctaUrl}" class="button">${ctaText}</a>
-          </div>
-          ` : ''}
-        </div>
-        
-        <div class="footer">
-          <p>${footerText || 'TrustBuild - Connecting trusted contractors with customers'}</p>
-          <p>© ${new Date().getFullYear()} TrustBuild. All rights reserved.</p>
-        </div>
-      </body>
-      </html>
-    `
+    html: htmlContent,
+    text: `TrustBuild Notification\n\n${heading}\n\n${body.replace(/<[^>]*>/g, '')}\n\n${footerText || 'TrustBuild - Connecting trusted contractors with customers'}`
   };
 };
 
@@ -413,6 +427,15 @@ export const sendTestEmail = async () => {
     
     // Send mail with retry logic
     console.log(`📧 Attempting to send test email to: ${mailOptions.to}`);
+    console.log(`📧 Email options:`, {
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      from: mailOptions.from,
+      hasHtml: !!mailOptions.html,
+      htmlLength: mailOptions.html ? mailOptions.html.length : 0,
+      hasText: !!mailOptions.text,
+      textLength: mailOptions.text ? mailOptions.text.length : 0
+    });
     const info = await emailService.sendMail(mailOptions);
     console.log('✉️ Test email sent successfully!', info.messageId);
     return true;
