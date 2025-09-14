@@ -459,6 +459,34 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     throw err;
   }
 
+  // Allocate initial credits to the contractor
+  console.log(`🎯 Allocating initial credits to contractor: ${contractor.id}`);
+  try {
+    // Update contractor with initial credits
+    const updatedContractor = await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: {
+        creditsBalance: contractor.weeklyCreditsLimit,
+        lastCreditReset: now
+      }
+    });
+
+    // Create credit transaction record
+    await prisma.creditTransaction.create({
+      data: {
+        contractorId: contractor.id,
+        type: 'WEEKLY_ALLOCATION',
+        amount: contractor.weeklyCreditsLimit,
+        description: 'Initial credit allocation - subscription activated'
+      }
+    });
+
+    console.log(`✅ Credits allocated: ${contractor.weeklyCreditsLimit} credits to contractor ${contractor.id}`);
+  } catch (err) {
+    console.error(`❌ Error allocating credits: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    // Don't throw error here as subscription is already created
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Subscription confirmed successfully',
@@ -587,7 +615,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   });
 
   // Format invoices for consistent response
-  const formattedRegularInvoices = regularInvoices.map(invoice => ({
+  const formattedRegularInvoices = regularInvoices.map((invoice: any) => ({
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     type: 'regular',
@@ -601,7 +629,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     updatedAt: invoice.updatedAt,
   }));
 
-  const formattedCommissionInvoices = commissionInvoices.map(invoice => ({
+  const formattedCommissionInvoices = commissionInvoices.map((invoice: any) => ({
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     type: 'commission',

@@ -200,8 +200,8 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       unsatisfiedCustomers,
       preferredClients,
       usesContracts,
-      creditsBalance: 3, // Give initial 3 credits
-      lastCreditReset: new Date(), // Set initial reset date
+      creditsBalance: 0, // No initial credits for non-subscribers
+      lastCreditReset: null, // No credit reset for non-subscribers
       services: services ? {
         connect: services.map((serviceId: string) => ({ id: serviceId })),
       } : undefined,
@@ -218,15 +218,8 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     },
   });
 
-  // Create initial credit transaction record
-  await prisma.creditTransaction.create({
-    data: {
-      contractorId: contractor.id,
-      type: 'WEEKLY_ALLOCATION',
-      amount: 3,
-      description: 'Initial credit allocation',
-    },
-  });
+  // Note: Credits will only be allocated when contractor subscribes
+  // No initial credit transaction for non-subscribers
 
   res.status(201).json({
     status: 'success',
@@ -371,7 +364,7 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
   // Filter location data for applications where contractor doesn't have access
   const contractorWithFilteredApps = {
     ...contractor,
-    applications: contractor.applications?.map(app => ({
+    applications: contractor.applications?.map((app: any) => ({
       ...app,
       job: {
         ...app.job,
@@ -708,10 +701,23 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
 
     const contractorsToReset = await prisma.contractor.findMany({
       where: {
-        OR: [
-          { lastCreditReset: null },
-          { lastCreditReset: { lt: oneWeekAgo } }
+        AND: [
+          {
+            OR: [
+              { lastCreditReset: null },
+              { lastCreditReset: { lt: oneWeekAgo } }
+            ]
+          },
+          {
+            subscription: {
+              isActive: true,
+              status: 'active'
+            }
+          }
         ]
+      },
+      include: {
+        subscription: true
       }
     });
 
@@ -771,10 +777,29 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
 export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const contractor = await prisma.contractor.findUnique({
     where: { userId: req.user!.id },
+    include: {
+      subscription: true
+    }
   });
 
   if (!contractor) {
     return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Check if contractor has an active subscription
+  const hasActiveSubscription = contractor.subscription && 
+                              contractor.subscription.isActive && 
+                              contractor.subscription.status === 'active';
+
+  if (!hasActiveSubscription) {
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        creditsReset: false,
+        currentBalance: contractor.creditsBalance,
+        message: 'Credits are only available for subscribers. Please subscribe to access credit features.'
+      }
+    });
   }
 
   // Check if credits need to be reset
@@ -847,12 +872,22 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
 // @route   POST /api/contractors/admin/initialize-credits
 // @access  Private (Admin only)
 export const initializeContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  // Find contractors with 0 credits and no lastCreditReset
+  // Find contractors with 0 credits and no lastCreditReset who have active subscriptions
   const contractorsNeedingCredits = await prisma.contractor.findMany({
     where: {
-      OR: [
-        { creditsBalance: 0 },
-        { lastCreditReset: null }
+      AND: [
+        {
+          OR: [
+            { creditsBalance: 0 },
+            { lastCreditReset: null }
+          ]
+        },
+        {
+          subscription: {
+            isActive: true,
+            status: 'active'
+          }
+        }
       ]
     },
     select: {
@@ -865,6 +900,12 @@ export const initializeContractorCredits = catchAsync(async (req: AuthenticatedR
         select: {
           name: true,
           email: true
+        }
+      },
+      subscription: {
+        select: {
+          isActive: true,
+          status: true
         }
       }
     }

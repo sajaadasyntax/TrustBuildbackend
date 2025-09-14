@@ -180,20 +180,13 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         unsatisfiedCustomers,
         preferredClients,
         usesContracts: usesContracts || false,
-        creditsBalance: 3, // Give initial 3 credits
-        lastCreditReset: new Date(), // Set initial reset date
+        creditsBalance: 0, // No initial credits for non-subscribers
+        lastCreditReset: null, // No credit reset for non-subscribers
       },
     });
 
-    // Create initial credit transaction record
-    await prisma.creditTransaction.create({
-      data: {
-        contractorId: newContractor.id,
-        type: 'WEEKLY_ALLOCATION',
-        amount: 3,
-        description: 'Initial credit allocation',
-      },
-    });
+    // Note: Credits will only be allocated when contractor subscribes
+    // No initial credit transaction for non-subscribers
 
     // Send welcome email to contractor
     try {
