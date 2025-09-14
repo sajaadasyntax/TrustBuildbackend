@@ -2095,6 +2095,25 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
 
     console.log(`✅ Commission created: Invoice ${commissionInvoice.invoiceNumber}, Payment ${commissionPayment.id}`);
 
+    // Send commission invoice email to contractor
+    try {
+      const { sendCommissionInvoiceEmail } = await import('../services/emailNotificationService');
+      await sendCommissionInvoiceEmail({
+        invoiceNumber: commissionInvoice.invoiceNumber,
+        contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
+        contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
+        jobTitle: job.title,
+        finalJobAmount: job.finalAmount.toNumber(),
+        commissionAmount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      console.log(`📧 Commission invoice email sent to contractor ${winningContractor.user.email}`);
+    } catch (emailError) {
+      console.error('Failed to send commission invoice email:', emailError);
+    }
+
     // Send notification to contractor about commission due
     try {
       const { createCommissionDueNotification } = await import('../services/notificationService');

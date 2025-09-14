@@ -148,6 +148,18 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         postcode,
       },
     });
+
+    // Send welcome email to customer
+    try {
+      const { sendCustomerWelcomeEmail } = await import('../services/emailNotificationService');
+      await sendCustomerWelcomeEmail({
+        name: newUser.name,
+        email: newUser.email,
+      });
+    } catch (error) {
+      console.error('Failed to send customer welcome email:', error);
+      // Don't fail registration if email fails
+    }
   } else if (role === 'CONTRACTOR') {
     const newContractor = await prisma.contractor.create({
       data: {
@@ -182,6 +194,19 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         description: 'Initial credit allocation',
       },
     });
+
+    // Send welcome email to contractor
+    try {
+      const { sendContractorWelcomeEmail } = await import('../services/emailNotificationService');
+      await sendContractorWelcomeEmail({
+        name: newUser.name,
+        email: newUser.email,
+        businessName: businessName,
+      });
+    } catch (error) {
+      console.error('Failed to send contractor welcome email:', error);
+      // Don't fail registration if email fails
+    }
   }
 
   createSendToken(newUser, 201, res);

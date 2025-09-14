@@ -532,9 +532,10 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   // Create invoice
   console.log(`📄 Creating invoice for subscription payment`);
+  let invoice;
   try {
     const pricing = getSubscriptionPricing(plan);
-    const invoice = await prisma.invoice.create({
+    invoice = await prisma.invoice.create({
       data: {
         payments: { connect: { id: payment.id } },
         invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}`,
@@ -554,7 +555,24 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     throw err;
   }
 
-  // No email sending is needed - subscription is fully active now
+  // Send subscription invoice email
+  try {
+    const { sendSubscriptionInvoiceEmail } = await import('../services/emailNotificationService');
+    await sendSubscriptionInvoiceEmail({
+      invoiceNumber: invoice.invoiceNumber,
+      recipientName: contractor.businessName || contractor.user.name,
+      recipientEmail: contractor.user.email,
+      plan: plan,
+      amount: invoice.amount,
+      vatAmount: invoice.vatAmount,
+      totalAmount: invoice.totalAmount,
+      dueDate: invoice.dueAt,
+      paidAt: invoice.paidAt,
+    });
+  } catch (error) {
+    console.error('Failed to send subscription invoice email:', error);
+    // Don't fail subscription if email fails
+  }
   
   // Create in-app notification (non-blocking)
   try {

@@ -167,7 +167,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
           });
           
           // Create invoice record in our database
-          await prisma.invoice.create({
+          const createdInvoice = await prisma.invoice.create({
             data: {
               invoiceNumber: `INV-${invoice.id}`,
               recipientName: dbSubscription.contractor.businessName || dbSubscription.contractor.user.name,
@@ -180,6 +180,26 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
               paidAt: new Date(),
             },
           });
+
+          // Send subscription invoice email
+          try {
+            const { sendSubscriptionInvoiceEmail } = await import('../services/emailNotificationService');
+            await sendSubscriptionInvoiceEmail({
+              invoiceNumber: createdInvoice.invoiceNumber,
+              recipientName: dbSubscription.contractor.businessName || dbSubscription.contractor.user.name,
+              recipientEmail: dbSubscription.contractor.user.email,
+              plan: dbSubscription.plan,
+              amount: createdInvoice.amount,
+              vatAmount: createdInvoice.vatAmount,
+              totalAmount: createdInvoice.totalAmount,
+              dueDate: createdInvoice.dueAt,
+              paidAt: createdInvoice.paidAt,
+            });
+            console.log(`📧 Subscription invoice email sent to: ${dbSubscription.contractor.user.email}`);
+          } catch (error) {
+            console.error('Failed to send subscription invoice email:', error);
+            // Don't fail webhook processing if email fails
+          }
           
           // Create payment record
           await prisma.payment.create({

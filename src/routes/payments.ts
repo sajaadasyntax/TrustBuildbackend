@@ -294,7 +294,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           description: `Job Lead Access - ${job.title}`,
           invoiceNumber: `INV-CREDIT-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: contractor.businessName || 'Contractor',
-          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          recipientEmail: contractor.user.email,
         },
       });
       
@@ -410,17 +410,26 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return { payment, invoice };
   });
 
-  // Invoice generation is implemented but email sending is disabled per user request
-  /* 
-  Code to send invoice emails to contractors has been implemented but is currently disabled.
-  This will be enabled in a future update when needed.
-  
-  The invoice is still generated and associated with the payment in the database,
-  but no emails are sent to contractors.
-  
-  When ready to enable, uncomment and review the email sending code.
-  */
-  console.log(`✅ Invoice generated: ${transactionResult.invoice?.invoiceNumber} - Email sending disabled per request`)
+  // Send job access invoice email to contractor
+  try {
+    const { sendJobAccessInvoiceEmail } = await import('../services/emailNotificationService');
+    await sendJobAccessInvoiceEmail({
+      invoiceNumber: transactionResult.invoice.invoiceNumber,
+      recipientName: contractor.businessName || contractor.user.name,
+      recipientEmail: contractor.user.email,
+      jobTitle: job.title,
+      amount: transactionResult.invoice.amount,
+      vatAmount: transactionResult.invoice.vatAmount,
+      totalAmount: transactionResult.invoice.totalAmount,
+      dueDate: transactionResult.invoice.dueAt,
+      paidAt: transactionResult.invoice.paidAt,
+      accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'STRIPE',
+    });
+    console.log(`✅ Job access invoice email sent to: ${contractor.user.email}`);
+  } catch (error) {
+    console.error('Failed to send job access invoice email:', error);
+    // Don't fail the transaction if email fails
+  }
   
   // Fetch the contractor's updated balance to return in response
   const updatedContractorData = await prisma.contractor.findUnique({
@@ -1099,6 +1108,27 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
       description: `Commission payment for job: ${commissionPayment.job.title}`,
     },
   });
+
+  // Send commission payment confirmation email
+  try {
+    const { sendCommissionInvoiceEmail } = await import('../services/emailNotificationService');
+    await sendCommissionInvoiceEmail({
+      invoiceNumber: commissionPayment.invoice?.invoiceNumber || `COMM-${commissionPayment.id}`,
+      contractorName: contractor.user.name,
+      contractorEmail: contractor.user.email,
+      jobTitle: commissionPayment.job.title,
+      finalJobAmount: commissionPayment.finalJobAmount,
+      commissionAmount: commissionPayment.commissionAmount,
+      vatAmount: commissionPayment.vatAmount,
+      totalAmount: commissionPayment.totalAmount,
+      dueDate: commissionPayment.dueDate,
+      paidAt: new Date(),
+    });
+    console.log(`📧 Commission payment confirmation email sent to: ${contractor.user.email}`);
+  } catch (error) {
+    console.error('Failed to send commission payment confirmation email:', error);
+    // Don't fail the payment if email fails
+  }
 
   res.status(200).json({
     status: 'success',
