@@ -4,17 +4,21 @@ This guide explains how to configure the email sending functionality in the Trus
 
 ## Email Service Architecture
 
-The TrustBuild email service uses Gmail SMTP as the primary method for sending emails, with a fallback to Ethereal Email for development environments:
+The TrustBuild email service uses SendGrid API as the primary method for sending emails, with fallbacks to Gmail SMTP and Ethereal Email:
 
-1. **Primary Method**: Gmail SMTP
-2. **Fallback Method**: Ethereal Email (for development/testing environments)
+1. **Primary Method**: SendGrid API (recommended for production)
+2. **Fallback Method 1**: Gmail SMTP
+3. **Fallback Method 2**: Ethereal Email (for development/testing environments)
 
 ## Required Environment Variables
 
 To properly configure email functionality, add these variables to your `.env` file:
 
 ```
-# Gmail SMTP Configuration (Primary Method)
+# SendGrid API Configuration (Primary Method - Recommended)
+SENDGRID_API_KEY=your-sendgrid-api-key
+
+# Gmail SMTP Configuration (Fallback Method)
 GMAIL_USER=your-gmail@gmail.com
 GMAIL_APP_PASSWORD=your_app_password_not_regular_password
 
@@ -22,6 +26,22 @@ GMAIL_APP_PASSWORD=your_app_password_not_regular_password
 EMAIL_FROM=noreply@yourdomain.com
 EMAIL_FROM_NAME=Your Service Name
 ```
+
+## Setting Up SendGrid (Recommended)
+
+To set up SendGrid as your primary email provider:
+
+1. Create a SendGrid account at [sendgrid.com](https://sendgrid.com)
+2. Go to Settings → API Keys in your SendGrid dashboard
+3. Create a new API key with "Full Access" permissions
+4. Copy the API key and add it to your `.env` file as `SENDGRID_API_KEY`
+5. Verify your sender identity in SendGrid (domain or single sender)
+
+**Benefits of SendGrid:**
+- More reliable than SMTP in hosted environments
+- Better deliverability rates
+- Detailed analytics and tracking
+- No firewall/port restrictions
 
 ## Setting Up Gmail SMTP
 

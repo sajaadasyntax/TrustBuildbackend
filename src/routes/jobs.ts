@@ -1192,6 +1192,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
             select: {
               id: true,
               name: true,
+              email: true,
               createdAt: true,
             },
           },
@@ -2109,7 +2110,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       console.error('Failed to send commission notification:', notificationError);
     }
   } else {
-    console.log(`ℹ️ No commission charged - Contractor: ${!!winningContractor}, AccessedViaSubscription: ${accessedViaSubscription}, AlreadyPaid: ${job.commissionPaid}`);
+    console.log(`ℹ️ No commission charged - Contractor: ${!!winningContractor}, AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
   }
 
   const updatedJob = await prisma.job.update({

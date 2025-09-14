@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { MailerSend, EmailParams, Sender, Recipient } from 'mailersend';
+import sgMail from '@sendgrid/mail';
 
 // Email service with API-based sending
 export const createEmailService = () => {
@@ -7,10 +8,23 @@ export const createEmailService = () => {
   const defaultFromEmail = process.env.EMAIL_FROM || 'noreply@trustbuild.uk';
   const defaultFromName = process.env.EMAIL_FROM_NAME || 'TrustBuild';
   
+  // Initialize SendGrid
+  const sendGridApiKey = process.env.SENDGRID_API_KEY;
+  if (sendGridApiKey) {
+    sgMail.setApiKey(sendGridApiKey);
+    console.log('✅ SendGrid API key configured');
+  } else {
+    console.log('⚠️ SendGrid API key not found, will use fallback methods');
+  }
+  
   // Send email with retry logic and fallbacks
   const sendMail = async (options: nodemailer.SendMailOptions, retries = 2) => {
     try {
-      // Always use nodemailer with Gmail configuration
+      // Try SendGrid first if API key is available
+      if (sendGridApiKey) {
+        return await sendWithSendGrid(options, retries);
+      }
+      // Fallback to nodemailer with Gmail configuration
       return await sendWithNodemailer(options, retries);
     } catch (error: any) {
       // If we get here, all email sending attempts have failed
@@ -124,6 +138,92 @@ export const createEmailService = () => {
     
     // If all MailerSend attempts fail, try nodemailer as fallback
     console.log('⚠️ All MailerSend API attempts failed, trying Nodemailer fallback...');
+    return sendWithNodemailer(options, retries);
+  };
+  
+  // Send using SendGrid API
+  const sendWithSendGrid = async (options: nodemailer.SendMailOptions, retries = 2) => {
+    let lastError;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`📨 SendGrid retry attempt ${attempt} for email to: ${options.to}`);
+        }
+        
+        // Extract from email and name
+        let fromEmail = defaultFromEmail;
+        let fromName = defaultFromName;
+        
+        if (options.from) {
+          if (typeof options.from === 'string') {
+            fromEmail = options.from;
+          } else if (typeof options.from === 'object' && options.from.address) {
+            fromEmail = options.from.address;
+            if (options.from.name) {
+              fromName = options.from.name;
+            }
+          }
+        }
+        
+        // Parse recipients - handle both string and array formats
+        const recipients: string[] = [];
+        if (typeof options.to === 'string') {
+          recipients.push(options.to);
+        } else if (Array.isArray(options.to)) {
+          options.to.forEach(recipient => {
+            if (typeof recipient === 'string') {
+              recipients.push(recipient);
+            }
+          });
+        }
+        
+        // Prepare SendGrid message
+        const msg = {
+          to: recipients,
+          from: {
+            email: fromEmail,
+            name: fromName
+          },
+          subject: options.subject || 'Message from TrustBuild',
+          text: options.text || '',
+          html: options.html || options.text || ''
+        };
+        
+        console.log(`✅ Sending via SendGrid API to: ${recipients.join(', ')}`);
+        console.log(`✅ From: ${fromName} <${fromEmail}>`);
+        
+        const result = await sgMail.send(msg);
+        console.log('✅ SendGrid API success:', result[0].statusCode);
+        
+        return {
+          messageId: result[0].headers['x-message-id'] || `sendgrid_${Date.now()}`,
+          envelope: {
+            from: fromEmail,
+            to: recipients
+          }
+        };
+      } catch (error: any) {
+        lastError = error;
+        console.error(`❌ SendGrid API send attempt ${attempt + 1} failed:`, error);
+        console.error('Error details:', JSON.stringify({
+          name: error.name,
+          message: error.message,
+          code: error.code,
+          status: error.status,
+          response: error.response?.body
+        }, null, 2));
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < retries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    // If all SendGrid attempts fail, try nodemailer as fallback
+    console.log('⚠️ All SendGrid API attempts failed, trying Nodemailer fallback...');
     return sendWithNodemailer(options, retries);
   };
   
