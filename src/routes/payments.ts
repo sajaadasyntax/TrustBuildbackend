@@ -128,7 +128,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
     include: {
-      subscription: true
+      subscription: true,
+      user: true,
     }
   });
 
@@ -207,20 +208,20 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
+        leadPrice = job.service.smallJobPrice ? Number(job.service.smallJobPrice) : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
+        leadPrice = job.service.mediumJobPrice ? Number(job.service.mediumJobPrice) : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
+        leadPrice = job.service.largeJobPrice ? Number(job.service.largeJobPrice) : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
-    leadPrice = job.leadPrice.toNumber();
+  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && Number(job.leadPrice) > 0) {
+    leadPrice = Number(job.leadPrice);
   }
 
   // For CREDIT payment method, lead price is 0 (no payment required)
@@ -418,11 +419,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       recipientName: contractor.businessName || contractor.user.name,
       recipientEmail: contractor.user.email,
       jobTitle: job.title,
-      amount: transactionResult.invoice.amount,
-      vatAmount: transactionResult.invoice.vatAmount,
-      totalAmount: transactionResult.invoice.totalAmount,
-      dueDate: transactionResult.invoice.dueAt,
-      paidAt: transactionResult.invoice.paidAt,
+      amount: Number(transactionResult.invoice.amount),
+      vatAmount: Number(transactionResult.invoice.vatAmount),
+      totalAmount: Number(transactionResult.invoice.totalAmount),
+      dueDate: transactionResult.invoice.dueAt || new Date(),
+      paidAt: transactionResult.invoice.paidAt || undefined,
       accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'STRIPE',
     });
     console.log(`✅ Job access invoice email sent to: ${contractor.user.email}`);
@@ -487,6 +488,9 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: {
+      user: true,
+    },
   });
 
   if (!contractor) {
@@ -516,20 +520,20 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
+        leadPrice = job.service.smallJobPrice ? Number(job.service.smallJobPrice) : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
+        leadPrice = job.service.mediumJobPrice ? Number(job.service.mediumJobPrice) : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
+        leadPrice = job.service.largeJobPrice ? Number(job.service.largeJobPrice) : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && job.leadPrice.toNumber() > 0) {
-    leadPrice = job.leadPrice.toNumber();
+  if (job.leadPrice && typeof job.leadPrice.toNumber === 'function' && Number(job.leadPrice) > 0) {
+    leadPrice = Number(job.leadPrice);
   }
 
   if (leadPrice <= 0) {
@@ -1011,7 +1015,7 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
     console.log(`  - Won jobs: ${wonJobs.length}`);
     console.log(`  - Completed jobs: ${wonJobs.filter(j => j.status === 'COMPLETED').length}`);
     console.log(`  - Customer confirmed: ${wonJobs.filter(j => j.customerConfirmed).length}`);
-    console.log(`  - With final amount: ${wonJobs.filter(j => j.finalAmount && j.finalAmount.toNumber() > 0).length}`);
+    console.log(`  - With final amount: ${wonJobs.filter(j => j.finalAmount && Number(j.finalAmount) > 0).length}`);
   }
 
   res.status(200).json({
@@ -1042,6 +1046,9 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: {
+      user: true,
+    },
   });
 
   if (!contractor) {
@@ -1069,7 +1076,7 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   const stripe = getStripeInstance();
   const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
   
-  console.log(`🔍 Payment Intent Status: ${paymentIntent.status}, Amount: ${paymentIntent.amount}, Expected: ${commissionPayment.totalAmount.toNumber() * 100}`);
+  console.log(`🔍 Payment Intent Status: ${paymentIntent.status}, Amount: ${paymentIntent.amount}, Expected: ${Number(commissionPayment.totalAmount) * 100}`);
   
   // For development: allow requires_payment_method status (test mode)
   if (paymentIntent.status !== 'succeeded' && paymentIntent.status !== 'requires_payment_method') {
@@ -1077,7 +1084,7 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   }
 
   // For development: skip amount verification if in test mode
-  if (paymentIntent.status === 'succeeded' && paymentIntent.amount !== commissionPayment.totalAmount.toNumber() * 100) {
+  if (paymentIntent.status === 'succeeded' && paymentIntent.amount !== Number(commissionPayment.totalAmount) * 100) {
     return next(new AppError('Payment amount mismatch', 400));
   }
 
@@ -1117,10 +1124,10 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
       contractorName: contractor.user.name,
       contractorEmail: contractor.user.email,
       jobTitle: commissionPayment.job.title,
-      finalJobAmount: commissionPayment.finalJobAmount,
-      commissionAmount: commissionPayment.commissionAmount,
-      vatAmount: commissionPayment.vatAmount,
-      totalAmount: commissionPayment.totalAmount,
+      finalJobAmount: Number(commissionPayment.finalJobAmount),
+      commissionAmount: Number(commissionPayment.commissionAmount),
+      vatAmount: Number(commissionPayment.vatAmount),
+      totalAmount: Number(commissionPayment.totalAmount),
       dueDate: commissionPayment.dueDate,
       paidAt: new Date(),
     });
@@ -1149,6 +1156,9 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
+    include: {
+      user: true,
+    },
   });
 
   if (!contractor) {
@@ -1193,7 +1203,7 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
     const stripe = getStripeInstance();
     
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: commissionPayment.totalAmount.toNumber() * 100, // Convert to cents
+      amount: Number(commissionPayment.totalAmount) * 100, // Convert to cents
       currency: 'gbp',
       // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
@@ -1212,7 +1222,7 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
       status: 'success',
       data: {
         clientSecret: paymentIntent.client_secret,
-        amount: commissionPayment.totalAmount.toNumber(),
+        amount: Number(commissionPayment.totalAmount),
         dueDate: commissionPayment.dueDate,
         jobTitle: commissionPayment.job.title,
       },

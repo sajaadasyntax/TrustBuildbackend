@@ -11,7 +11,20 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "cron:commission": "node scripts/commission-cron.js",
+    "cron:final-price-timeout": "node scripts/final-price-timeout-cron.js",
+    "cron:final-price-reminder": "node scripts/final-price-reminder-cron.js",
+    "pm2:start": "node scripts/pm2-manager.js start",
+    "pm2:stop": "node scripts/pm2-manager.js stop",
+    "pm2:restart": "node scripts/pm2-manager.js restart",
+    "pm2:status": "node scripts/pm2-manager.js status",
+    "pm2:logs": "node scripts/pm2-manager.js logs",
+    "pm2:setup": "node scripts/pm2-manager.js setup",
+    "pm2:clean": "node scripts/pm2-manager.js clean",
+    "pm2:delete": "node scripts/pm2-manager.js delete",
+    "pm2:run": "node scripts/pm2-manager.js run",
+    "pm2:help": "node scripts/pm2-manager.js help"
   },
   "keywords": [
     "trustbuild",

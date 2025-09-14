@@ -37,7 +37,7 @@ interface RegisterData {
 const signToken = (id: string): string => {
   return jwt.sign({ id }, process.env.JWT_SECRET!, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  });
+  } as jwt.SignOptions);
 };
 
 const createSendToken = (user: any, statusCode: number, res: express.Response): void => {

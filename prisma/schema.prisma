@@ -27,6 +27,7 @@ enum JobStatus {
   DRAFT
   POSTED
   IN_PROGRESS
+  AWAITING_FINAL_PRICE_CONFIRMATION
   COMPLETED
   CANCELLED
   DISPUTED
@@ -97,6 +98,15 @@ enum NotificationType {
   JOB_PURCHASED
   REVIEW_RECEIVED
   ACCOUNT_SUSPENDED
+  JOB_STATUS_CHANGED
+  JOB_STARTED
+  JOB_COMPLETED
+  PAYMENT_FAILED
+  ACCOUNT_HOLD
+  MESSAGE_RECEIVED
+  CONTRACTOR_SELECTED
+  FINAL_PRICE_PROPOSED
+  FINAL_PRICE_CONFIRMATION_REMINDER
 }
 
 model User {
@@ -285,6 +295,16 @@ model Job {
   finalAmount      Decimal?     @db.Decimal(10, 2) // Final job amount entered by contractor
   customerConfirmed Boolean     @default(false) // Customer confirmed completion and amount
   commissionPaid   Boolean      @default(false) // Whether 5% commission was charged
+  
+  // Final price workflow
+  contractorProposedAmount    Decimal?     @db.Decimal(10, 2) // Amount proposed by contractor
+  finalPriceProposedAt        DateTime?    // When contractor proposed final price
+  finalPriceConfirmedAt       DateTime?    // When customer confirmed final price
+  finalPriceRejectedAt        DateTime?    // When customer rejected final price
+  finalPriceRejectionReason   String?      @db.Text // Reason for rejection
+  adminOverrideAt             DateTime?    // When admin overrode customer confirmation
+  adminOverrideBy             String?      // Admin user ID who overrode
+  finalPriceTimeoutAt         DateTime?    // When final price confirmation times out
   
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt

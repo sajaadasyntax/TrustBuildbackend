@@ -358,7 +358,7 @@ async function main() {
         postcode: 'M1 1AA',
         urgency: 'flexible',
         status: 'POSTED',
-        jobSize: ['SMALL', 'MEDIUM', 'LARGE'][i % 3],
+        jobSize: (['SMALL', 'MEDIUM', 'LARGE'][i % 3] as 'SMALL' | 'MEDIUM' | 'LARGE'),
       }
     });
     additionalJobs.push(newJob);
@@ -370,37 +370,37 @@ async function main() {
     {
       contractorId: contractor.id,
       amount: 49.99,
-      type: 'SUBSCRIPTION',
-      status: 'COMPLETED',
+      type: 'SUBSCRIPTION' as const,
+      status: 'COMPLETED' as const,
       description: 'Monthly subscription payment',
     },
     {
       contractorId: contractor.id,
       jobId: job?.id,
       amount: 15.00,
-      type: 'LEAD_ACCESS',
-      status: 'COMPLETED',
+      type: 'LEAD_ACCESS' as const,
+      status: 'COMPLETED' as const,
       description: 'Job lead access payment',
     },
     {
       customerId: customer.id,
       amount: 500.00,
-      type: 'JOB_PAYMENT',
-      status: 'COMPLETED',
+      type: 'JOB_PAYMENT' as const,
+      status: 'COMPLETED' as const,
       description: 'Milestone payment for kitchen renovation',
     },
     {
       contractorId: contractor.id,
       amount: 25.00,
-      type: 'COMMISSION',
-      status: 'PENDING',
+      type: 'COMMISSION' as const,
+      status: 'PENDING' as const,
       description: 'Commission payment for completed job',
     },
     {
       contractorId: contractor.id,
       amount: 29.99,
-      type: 'LEAD_ACCESS',
-      status: 'COMPLETED',
+      type: 'LEAD_ACCESS' as const,
+      status: 'COMPLETED' as const,
       description: 'Job lead access payment bundle',
     }
   ];
@@ -543,7 +543,7 @@ async function main() {
     const subscription = await prisma.subscription.create({
       data: {
         contractorId: config.contractor.id,
-        plan: config.plan,
+        plan: config.plan as 'BASIC' | 'STANDARD' | 'PREMIUM' as any,
         tier: 'STANDARD',
         status: config.status,
         isActive: config.isActive,
@@ -561,8 +561,8 @@ async function main() {
         data: {
           contractorId: config.contractor.id,
           amount: paymentAmount,
-          type: 'SUBSCRIPTION',
-          status: 'COMPLETED',
+          type: 'SUBSCRIPTION' as const,
+          status: 'COMPLETED' as const,
           description: `${config.plan} subscription payment`,
         }
       });
@@ -612,7 +612,7 @@ async function main() {
       data: {
         contractorId,
         amount: -1, // Use 1 credit
-        type: 'JOB_ACCESS',
+        type: 'JOB_ACCESS' as const,
         description: `Credit used to access job ${additionalJobs[i].title}`,
         jobId,
       }

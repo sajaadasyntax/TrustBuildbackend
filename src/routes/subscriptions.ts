@@ -181,7 +181,7 @@ export const getCurrentSubscription = catchAsync(async (req: AuthenticatedReques
     if (contractor.subscription.stripeSubscriptionId) {
       try {
         const stripe = getStripeInstance();
-        stripeSubscription = await stripe.subscriptions.retrieve(
+        stripeSubscription = await stripe!.subscriptions.retrieve(
           contractor.subscription.stripeSubscriptionId
         );
       } catch (error) {
@@ -263,7 +263,7 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
       return;
     }
     
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await stripe!.paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
       currency: 'gbp',
       // Remove payment_method_types when using automatic_payment_methods
@@ -333,7 +333,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     
     console.log(`🔍 Retrieving payment intent: ${stripePaymentIntentId}`);
     try {
-      paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+      paymentIntent = await stripe!.paymentIntents.retrieve(stripePaymentIntentId);
       console.log(`✅ Payment intent status: ${paymentIntent.status}`);
       paymentSucceeded = paymentIntent.status === 'succeeded';
       
@@ -350,7 +350,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         } else {
           // Create a new Stripe customer
           console.log(`➕ Creating new Stripe customer for contractor: ${contractor.id}`);
-          const customer = await stripe.customers.create({
+          const customer = await stripe!.customers.create({
             email: contractor.user.email,
             name: contractor.businessName || contractor.user.name,
             metadata: {
@@ -373,7 +373,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       }
     } catch (error) {
       console.error('❌ Error retrieving payment intent:', error);
-      return next(new AppError(`Failed to verify payment: ${error.message}`, 400));
+      return next(new AppError(`Failed to verify payment: ${error instanceof Error ? error.message : 'Unknown error'}`, 400));
     }
   }
   
@@ -438,7 +438,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         }
         
         // Create the subscription in Stripe
-        const stripeSubscription = await stripe.subscriptions.create({
+        const stripeSubscription = await stripe!.subscriptions.create({
           customer: stripeCustomerId,
           items: [{
             price: priceId,
@@ -459,7 +459,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         console.log(`✅ Stripe subscription created: ${stripeSubscription.id}`);
         stripeSubscriptionId = stripeSubscription.id;
       } catch (error) {
-        console.error(`❌ Failed to create Stripe subscription: ${error.message}`);
+        console.error(`❌ Failed to create Stripe subscription: ${error instanceof Error ? error.message : 'Unknown error'}`);
         // Continue anyway to update our database
       }
     }
@@ -483,7 +483,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       });
       console.log(`✅ Subscription updated successfully: ${subscription.id}`);
     } catch (err) {
-      console.error(`❌ Error updating subscription: ${err.message}`);
+      console.error(`❌ Error updating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   } else {
@@ -505,7 +505,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       });
       console.log(`✅ New subscription created successfully: ${subscription.id}`);
     } catch (err) {
-      console.error(`❌ Error creating subscription: ${err.message}`);
+      console.error(`❌ Error creating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   }
@@ -526,7 +526,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     });
     console.log(`✅ Payment record created: ${payment.id}`);
   } catch (err) {
-    console.error(`❌ Error creating payment record: ${err.message}`);
+    console.error(`❌ Error creating payment record: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
   }
 
@@ -551,7 +551,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     });
     console.log(`✅ Invoice created: ${invoice.id} (VAT included in price)`);
   } catch (err) {
-    console.error(`❌ Error creating invoice: ${err.message}`);
+    console.error(`❌ Error creating invoice: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
   }
 
@@ -563,11 +563,11 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       recipientName: contractor.businessName || contractor.user.name,
       recipientEmail: contractor.user.email,
       plan: plan,
-      amount: invoice.amount,
-      vatAmount: invoice.vatAmount,
-      totalAmount: invoice.totalAmount,
-      dueDate: invoice.dueAt,
-      paidAt: invoice.paidAt,
+      amount: Number(invoice.amount),
+      vatAmount: Number(invoice.vatAmount),
+      totalAmount: Number(invoice.totalAmount),
+      dueDate: invoice.dueAt || new Date(),
+      paidAt: invoice.paidAt || undefined,
     });
   } catch (error) {
     console.error('Failed to send subscription invoice email:', error);
@@ -632,7 +632,7 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
   if (contractor.subscription.stripeSubscriptionId) {
     try {
       const stripe = getStripeInstance();
-      await stripe.subscriptions.cancel(contractor.subscription.stripeSubscriptionId);
+      await stripe!.subscriptions.cancel(contractor.subscription.stripeSubscriptionId);
     } catch (error) {
       console.error('Failed to cancel Stripe subscription:', error);
       // Continue anyway to update our database
@@ -656,7 +656,7 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
       createNotification({
         userId: contractor.userId,
         title: 'Subscription Cancelled',
-        message: `Your subscription has been cancelled. You will have access until ${new Date(contractor.subscription.currentPeriodEnd).toLocaleDateString()}.`,
+        message: `Your subscription has been cancelled. You will have access until ${contractor.subscription?.currentPeriodEnd ? new Date(contractor.subscription.currentPeriodEnd).toLocaleDateString() : 'the end of your current period'}.`,
         type: 'INFO',
         actionLink: '/dashboard/contractor/payments',
         actionText: 'View Details',

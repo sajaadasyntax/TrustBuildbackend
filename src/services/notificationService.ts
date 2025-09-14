@@ -54,6 +54,15 @@ export async function createNotification({
       JOB_PURCHASED: 'jobs',
       REVIEW_RECEIVED: 'reviews',
       ACCOUNT_SUSPENDED: 'commission',
+      JOB_STATUS_CHANGED: 'jobs',
+      JOB_STARTED: 'jobs',
+      JOB_COMPLETED: 'jobs',
+      PAYMENT_FAILED: 'commission',
+      ACCOUNT_HOLD: 'commission',
+      MESSAGE_RECEIVED: 'inApp',
+      CONTRACTOR_SELECTED: 'jobs',
+      FINAL_PRICE_PROPOSED: 'jobs',
+      FINAL_PRICE_CONFIRMATION_REMINDER: 'jobs',
       INFO: 'inApp',
       WARNING: 'inApp',
       SUCCESS: 'inApp',
@@ -304,5 +313,260 @@ export async function createReviewRequestNotification(
       requestedAt: new Date().toISOString(),
     },
     expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Expire in 14 days
+  });
+}
+
+/**
+ * Create a job status changed notification
+ */
+export async function createJobStatusChangedNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  oldStatus: string,
+  newStatus: string,
+  isCustomer: boolean = false
+) {
+  const message = isCustomer 
+    ? `Your job "${jobTitle}" status changed from ${oldStatus} to ${newStatus}.`
+    : `Job "${jobTitle}" status changed from ${oldStatus} to ${newStatus}.`;
+
+  return createNotification({
+    userId,
+    title: `📋 Job Status Updated`,
+    message,
+    type: 'JOB_STATUS_CHANGED',
+    actionLink: `/dashboard/${isCustomer ? 'client' : 'contractor'}/jobs/${jobId}`,
+    actionText: 'View Job',
+    metadata: {
+      jobId,
+      jobTitle,
+      oldStatus,
+      newStatus,
+      isCustomer,
+    },
+  });
+}
+
+/**
+ * Create a job started notification
+ */
+export async function createJobStartedNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  contractorName: string,
+  isCustomer: boolean = false
+) {
+  const message = isCustomer
+    ? `Work has started on your job "${jobTitle}" by ${contractorName}.`
+    : `You can now start working on job "${jobTitle}".`;
+
+  return createNotification({
+    userId,
+    title: `🚀 Job Started`,
+    message,
+    type: 'JOB_STARTED',
+    actionLink: `/dashboard/${isCustomer ? 'client' : 'contractor'}/jobs/${jobId}`,
+    actionText: 'View Job',
+    metadata: {
+      jobId,
+      jobTitle,
+      contractorName,
+      isCustomer,
+    },
+  });
+}
+
+/**
+ * Create a job completed notification
+ */
+export async function createJobCompletedNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  finalAmount: number,
+  isCustomer: boolean = false
+) {
+  const message = isCustomer
+    ? `Your job "${jobTitle}" has been completed. Final amount: £${finalAmount.toFixed(2)}`
+    : `Job "${jobTitle}" has been completed. Final amount: £${finalAmount.toFixed(2)}`;
+
+  return createNotification({
+    userId,
+    title: `✅ Job Completed`,
+    message,
+    type: 'JOB_COMPLETED',
+    actionLink: `/dashboard/${isCustomer ? 'client' : 'contractor'}/jobs/${jobId}`,
+    actionText: 'View Job',
+    metadata: {
+      jobId,
+      jobTitle,
+      finalAmount,
+      isCustomer,
+    },
+  });
+}
+
+/**
+ * Create a payment failed notification
+ */
+export async function createPaymentFailedNotification(
+  userId: string,
+  paymentId: string,
+  amount: number,
+  reason: string,
+  retryUrl?: string
+) {
+  return createNotification({
+    userId,
+    title: `💳 Payment Failed`,
+    message: `Your payment of £${amount.toFixed(2)} failed. Reason: ${reason}`,
+    type: 'PAYMENT_FAILED',
+    actionLink: retryUrl || '/dashboard/payments',
+    actionText: 'Retry Payment',
+    metadata: {
+      paymentId,
+      amount,
+      reason,
+      retryUrl,
+    },
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Expire in 7 days
+  });
+}
+
+/**
+ * Create an account hold notification
+ */
+export async function createAccountHoldNotification(
+  userId: string,
+  reason: string,
+  holdUntil?: Date
+) {
+  const message = holdUntil 
+    ? `Your account is on hold until ${holdUntil.toLocaleDateString()}. Reason: ${reason}`
+    : `Your account is on hold. Reason: ${reason}`;
+
+  return createNotification({
+    userId,
+    title: `🚫 Account On Hold`,
+    message,
+    type: 'ACCOUNT_HOLD',
+    actionLink: '/dashboard/support',
+    actionText: 'Contact Support',
+    metadata: {
+      reason,
+      holdUntil: holdUntil?.toISOString(),
+    },
+  });
+}
+
+/**
+ * Create a contractor selected notification
+ */
+export async function createContractorSelectedNotification(
+  customerId: string,
+  contractorId: string,
+  jobId: string,
+  jobTitle: string,
+  contractorName: string
+) {
+  return createNotification({
+    userId: customerId,
+    title: `👷 Contractor Selected`,
+    message: `You have selected ${contractorName} for your job "${jobTitle}".`,
+    type: 'CONTRACTOR_SELECTED',
+    actionLink: `/dashboard/client/jobs/${jobId}`,
+    actionText: 'View Job',
+    metadata: {
+      jobId,
+      jobTitle,
+      contractorId,
+      contractorName,
+    },
+  });
+}
+
+/**
+ * Create a final price proposed notification
+ */
+export async function createFinalPriceProposedNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  proposedAmount: number,
+  contractorName: string,
+  isCustomer: boolean = false
+) {
+  const message = isCustomer
+    ? `${contractorName} has proposed a final price of £${proposedAmount.toFixed(2)} for your job "${jobTitle}".`
+    : `You have proposed a final price of £${proposedAmount.toFixed(2)} for job "${jobTitle}".`;
+
+  return createNotification({
+    userId,
+    title: `💰 Final Price Proposed`,
+    message,
+    type: 'FINAL_PRICE_PROPOSED',
+    actionLink: `/dashboard/${isCustomer ? 'client' : 'contractor'}/jobs/${jobId}`,
+    actionText: 'Review Price',
+    metadata: {
+      jobId,
+      jobTitle,
+      proposedAmount,
+      contractorName,
+      isCustomer,
+    },
+  });
+}
+
+/**
+ * Create a final price confirmation reminder notification
+ */
+export async function createFinalPriceConfirmationReminderNotification(
+  userId: string,
+  jobId: string,
+  jobTitle: string,
+  proposedAmount: number,
+  hoursRemaining: number
+) {
+  return createNotification({
+    userId,
+    title: `⏰ Final Price Confirmation Reminder`,
+    message: `You have ${hoursRemaining} hours to confirm the final price of £${proposedAmount.toFixed(2)} for job "${jobTitle}".`,
+    type: 'FINAL_PRICE_CONFIRMATION_REMINDER',
+    actionLink: `/dashboard/client/jobs/${jobId}`,
+    actionText: 'Confirm Price',
+    metadata: {
+      jobId,
+      jobTitle,
+      proposedAmount,
+      hoursRemaining,
+    },
+  });
+}
+
+/**
+ * Create a message received notification (for future chat system)
+ */
+export async function createMessageReceivedNotification(
+  userId: string,
+  senderName: string,
+  jobId: string,
+  jobTitle: string,
+  messagePreview: string
+) {
+  return createNotification({
+    userId,
+    title: `💬 New Message from ${senderName}`,
+    message: `"${messagePreview}" - Job: ${jobTitle}`,
+    type: 'MESSAGE_RECEIVED',
+    actionLink: `/dashboard/jobs/${jobId}/messages`,
+    actionText: 'View Message',
+    metadata: {
+      senderName,
+      jobId,
+      jobTitle,
+      messagePreview,
+    },
   });
 }

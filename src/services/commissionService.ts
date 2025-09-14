@@ -5,7 +5,108 @@ import {
   createAccountSuspendedNotification 
 } from './notificationService';
 
-// Send commission reminder email (Email sending is disabled)
+// Process commission for a job
+export async function processCommissionForJob(jobId: string, finalAmount: number) {
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      wonByContractor: {
+        include: {
+          subscription: true,
+          user: true,
+        }
+      },
+      jobAccess: true
+    }
+  });
+
+  if (!job || !job.wonByContractor) {
+    console.error(`❌ Job or contractor not found for commission processing: ${jobId}`);
+    return;
+  }
+
+  // Filter jobAccess by contractorId after the job is fetched
+  const relevantJobAccess = job.jobAccess.filter((access: any) => 
+    access.contractorId === job.wonByContractorId
+  );
+
+  // Check if contractor accessed the job using credits
+  const accessedViaCredits = relevantJobAccess.length > 0 && relevantJobAccess[0].creditUsed === true;
+
+  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
+
+  // Only charge commission if they used credits and haven't paid commission yet
+  if (accessedViaCredits && !job.commissionPaid) {
+    const commissionAmount = finalAmount * 0.05; // 5% commission
+    const vatAmount = 0; // No additional VAT
+    const totalAmount = commissionAmount;
+
+    console.log(`💰 Creating commission: ${commissionAmount} (5% of ${finalAmount})`);
+
+    // Create commission payment record
+    const commissionPayment = await prisma.commissionPayment.create({
+      data: {
+        jobId: job.id,
+        contractorId: job.wonByContractorId!,
+        customerId: job.customerId,
+        finalJobAmount: finalAmount,
+        commissionRate: 5.0,
+        commissionAmount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        status: 'PENDING',
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Due in 7 days
+      },
+    });
+
+    // Create commission invoice
+    const commissionInvoice = await prisma.commissionInvoice.create({
+      data: {
+        commissionPaymentId: commissionPayment.id,
+        invoiceNumber: `COMM-${Date.now()}-${job.wonByContractorId!.slice(-6)}`,
+        contractorName: job.wonByContractor.businessName || job.wonByContractor.user.name || 'Unknown Contractor',
+        contractorEmail: job.wonByContractor.user.email || 'unknown@contractor.com',
+        jobTitle: job.title,
+        finalJobAmount: finalAmount,
+        commissionAmount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    // Send commission invoice email
+    try {
+      const { sendCommissionInvoiceEmail } = await import('./emailNotificationService');
+      await sendCommissionInvoiceEmail({
+        invoiceNumber: commissionInvoice.invoiceNumber,
+        contractorName: job.wonByContractor.businessName || job.wonByContractor.user.name || 'Unknown Contractor',
+        contractorEmail: job.wonByContractor.user.email || 'unknown@contractor.com',
+        jobTitle: job.title,
+        finalJobAmount: finalAmount,
+        commissionAmount: commissionAmount,
+        vatAmount: vatAmount,
+        totalAmount: totalAmount,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      console.log(`📧 Commission invoice email sent to contractor ${job.wonByContractor.user.email}`);
+    } catch (emailError) {
+      console.error('Failed to send commission invoice email:', emailError);
+    }
+
+    // Update job to mark commission as paid
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { commissionPaid: true }
+    });
+
+    console.log(`✅ Commission processed: ${commissionAmount} for job ${jobId}`);
+  } else {
+    console.log(`ℹ️ No commission charged - AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
+  }
+}
+
+// Send commission reminder email
 async function sendCommissionReminder(recipientEmail: string, reminderData: {
   invoiceNumber: string;
   contractorName: string;
@@ -15,10 +116,50 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
   hoursRemaining: number;
   reminderNumber: number;
 }): Promise<boolean> {
-  // Email notifications disabled - commission reminders are now only accessible in-app
-  const urgencyLevel = reminderData.hoursRemaining <= 12 ? 'FINAL' : 'URGENT';
-  console.log(`✅ Email sending disabled - ${urgencyLevel} commission reminder #${reminderData.reminderNumber} for: ${recipientEmail}, invoice: ${reminderData.invoiceNumber}`);
-  return true;
+  try {
+    const { createServiceEmail } = await import('./emailService');
+    const emailService = (await import('./emailService')).createEmailService();
+    
+    const urgencyLevel = reminderData.hoursRemaining <= 12 ? 'FINAL' : 'URGENT';
+    const subject = `🚨 Commission Payment ${urgencyLevel} Reminder - Invoice ${reminderData.invoiceNumber}`;
+    
+    const mailOptions = createServiceEmail({
+      to: recipientEmail,
+      subject,
+      heading: `Commission Payment ${urgencyLevel} Reminder`,
+      body: `
+        <p>This is a ${urgencyLevel.toLowerCase()} reminder about your outstanding commission payment.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3>Payment Details</h3>
+          <p><strong>Invoice Number:</strong> ${reminderData.invoiceNumber}</p>
+          <p><strong>Job Title:</strong> ${reminderData.jobTitle}</p>
+          <p><strong>Amount Due:</strong> £${reminderData.totalAmount.toFixed(2)}</p>
+          <p><strong>Due Date:</strong> ${reminderData.dueDate}</p>
+          <p><strong>Time Remaining:</strong> ${reminderData.hoursRemaining} hours</p>
+        </div>
+
+        ${reminderData.hoursRemaining <= 12 ? `
+          <div style="background-color: #ffebee; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f44336;">
+            <h4 style="color: #d32f2f; margin: 0 0 10px 0;">⚠️ URGENT: Payment Due Soon</h4>
+            <p style="margin: 0; color: #d32f2f;">Your account will be suspended if payment is not received within ${reminderData.hoursRemaining} hours.</p>
+          </div>
+        ` : ''}
+
+        <p>Please complete your payment to avoid account suspension and maintain your contractor status.</p>
+      `,
+      ctaText: 'Pay Now',
+      ctaUrl: 'https://trustbuild.uk/dashboard/contractor/commissions',
+      footerText: 'Please pay promptly to avoid account suspension.'
+    });
+
+    await emailService.sendMail(mailOptions);
+    console.log(`📧 Commission reminder email sent to: ${recipientEmail}`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to send commission reminder email to ${recipientEmail}:`, error);
+    return false;
+  }
 }
 
 // Check for overdue commission payments and send reminders

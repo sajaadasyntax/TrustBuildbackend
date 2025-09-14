@@ -146,13 +146,6 @@ export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest,
         },
       },
       creditTransactions: {
-        include: {
-          job: {
-            select: {
-              title: true,
-            },
-          },
-        },
         orderBy: { createdAt: 'desc' },
         take: 20,
       },

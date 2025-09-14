@@ -83,10 +83,10 @@ export const createEmailService = () => {
       .setFrom(sentFrom)
       .setTo(recipientObjects)
       .setSubject(options.subject || 'Message from TrustBuild')
-      .setHtml(options.html || '');
+      .setHtml(typeof options.html === 'string' ? options.html : '');
     
     // Add plain text version if provided
-    if (options.text) {
+    if (options.text && typeof options.text === 'string') {
       emailParams.setText(options.text);
     }
 
@@ -179,11 +179,11 @@ export const createEmailService = () => {
         }
         
         // Prepare SendGrid message - ensure we have valid content
-        const htmlContent = options.html || options.text || 'This is a message from TrustBuild.';
-        const textContent = options.text || 'This is a message from TrustBuild.';
+        const htmlContent = typeof options.html === 'string' ? options.html : (options.text || 'This is a message from TrustBuild.');
+        const textContent = typeof options.text === 'string' ? options.text : 'This is a message from TrustBuild.';
         
         // Ensure content is not empty
-        if (!htmlContent || htmlContent.trim().length === 0) {
+        if (!htmlContent || (typeof htmlContent === 'string' && htmlContent.trim().length === 0)) {
           throw new Error('Email content cannot be empty');
         }
         
@@ -195,13 +195,13 @@ export const createEmailService = () => {
           },
           subject: options.subject || 'Message from TrustBuild',
           text: textContent,
-          html: htmlContent
+          html: typeof htmlContent === 'string' ? htmlContent : String(htmlContent)
         };
         
         console.log(`✅ Sending via SendGrid API to: ${recipients.join(', ')}`);
         console.log(`✅ From: ${fromName} <${fromEmail}>`);
         console.log(`✅ Subject: ${msg.subject}`);
-        console.log(`✅ HTML content length: ${msg.html ? msg.html.length : 0}`);
+        console.log(`✅ HTML content length: ${msg.html && typeof msg.html === 'string' ? msg.html.length : 0}`);
         console.log(`✅ Text content length: ${msg.text ? msg.text.length : 0}`);
         
         const result = await sgMail.send(msg);

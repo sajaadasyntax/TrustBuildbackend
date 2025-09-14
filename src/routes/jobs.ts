@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
+import { processCommissionForJob } from '../services/commissionService';
 
 const router = Router();
 
@@ -94,7 +95,7 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   // Filter sensitive data for contractors
   const filteredJobs = req.user?.role === 'CONTRACTOR' 
-    ? jobs.map(job => ({
+    ? jobs.map((job: any) => ({
         ...job,
         location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
         description: job.description.substring(0, 300) + '...',
@@ -345,7 +346,11 @@ export const updateJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
     },
   });
 
@@ -435,7 +440,11 @@ export const deleteJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
     },
   });
 
@@ -523,7 +532,7 @@ export const applyForJob = catchAsync(async (req: AuthenticatedRequest, res: Res
   }
 
   // For quote-on-request jobs (no budget specified), ensure quote is provided
-  if ((!job.budget || job.budget.toNumber() <= 0) && !estimatedCost) {
+  if ((!job.budget || Number(job.budget) <= 0) && !estimatedCost) {
     return next(new AppError('This is a quote-on-request job. Please provide your quote.', 400));
   }
 
@@ -576,7 +585,11 @@ export const getJobApplications = catchAsync(async (req: AuthenticatedRequest, r
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
     },
   });
 
@@ -620,7 +633,11 @@ export const acceptApplication = catchAsync(async (req: AuthenticatedRequest, re
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
     },
   });
 
@@ -667,7 +684,11 @@ export const startWork = catchAsync(async (req: AuthenticatedRequest, res: Respo
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
       wonByContractor: {
         include: {
           user: {
@@ -860,14 +881,14 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
   let { proposal, estimatedCost, timeline } = req.body;
 
   // For quote-on-request jobs, direct acceptance is not allowed
-  if (!job.budget || job.budget.toNumber() <= 0) {
+  if (!job.budget || Number(job.budget) <= 0) {
     return next(new AppError('This is a quote-on-request job. Please apply with your quote instead of direct acceptance.', 400));
   }
 
   // Validate estimated cost for fixed-budget jobs
   if (!estimatedCost) {
     // Use job budget as default for direct acceptance
-    estimatedCost = job.budget.toNumber();
+    estimatedCost = Number(job.budget);
   }
 
   // Create application and mark as accepted, but keep job status as POSTED
@@ -1149,20 +1170,20 @@ export const checkJobAccess = catchAsync(async (req: AuthenticatedRequest, res: 
   if (job.service) {
     switch (job.jobSize) {
       case 'SMALL':
-        leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
+        leadPrice = job.service.smallJobPrice ? Number(job.service.smallJobPrice) : 0;
         break;
       case 'MEDIUM':
-        leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
+        leadPrice = job.service.mediumJobPrice ? Number(job.service.mediumJobPrice) : 0;
         break;
       case 'LARGE':
-        leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
+        leadPrice = job.service.largeJobPrice ? Number(job.service.largeJobPrice) : 0;
         break;
     }
   }
 
   // Use override price if set
-  if (job.leadPrice && job.leadPrice.toNumber() > 0) {
-    leadPrice = job.leadPrice.toNumber();
+  if (job.leadPrice && Number(job.leadPrice) > 0) {
+    leadPrice = Number(job.leadPrice);
   }
 
   res.status(200).json({
@@ -1322,20 +1343,20 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       if (job.service) {
         switch (job.jobSize) {
           case 'SMALL':
-            leadPrice = job.service.smallJobPrice ? job.service.smallJobPrice.toNumber() : 0;
+            leadPrice = job.service.smallJobPrice ? Number(job.service.smallJobPrice) : 0;
             break;
           case 'MEDIUM':
-            leadPrice = job.service.mediumJobPrice ? job.service.mediumJobPrice.toNumber() : 0;
+            leadPrice = job.service.mediumJobPrice ? Number(job.service.mediumJobPrice) : 0;
             break;
           case 'LARGE':
-            leadPrice = job.service.largeJobPrice ? job.service.largeJobPrice.toNumber() : 0;
+            leadPrice = job.service.largeJobPrice ? Number(job.service.largeJobPrice) : 0;
             break;
         }
       }
 
       // Use override price if set
-      if (job.leadPrice && job.leadPrice.toNumber() > 0) {
-        leadPrice = job.leadPrice.toNumber();
+      if (job.leadPrice && Number(job.leadPrice) > 0) {
+        leadPrice = Number(job.leadPrice);
       }
       
       // Subscribers can choose to pay lead price or use credits
@@ -1394,12 +1415,12 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     accessCount: job.jobAccess?.length || 0,
     contractorsWithAccess: job.jobAccess?.length || 0,
     spotsRemaining: job.maxContractorsPerJob - (job.jobAccess?.length || 0),
-    purchasedBy: job.jobAccess?.map(access => ({
+    purchasedBy: job.jobAccess?.map((access: any) => ({
       contractorId: access.contractor.id,
       contractorName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod,
-      paidAmount: access.paidAmount?.toNumber() || 0,
+      paidAmount: access.paidAmount ? Number(access.paidAmount) : 0,
       // Include contractor details for customers
       ...(req.user?.role === 'CUSTOMER' && {
         portfolio: access.contractor.portfolio,
@@ -1450,7 +1471,7 @@ export const getJobMilestones = catchAsync(async (req: AuthenticatedRequest, res
 
   // Check if user has access (job owner or assigned contractor)
   const isJobOwner = job.customer.user.id === userId;
-  const assignedContractor = job.applications.find(app => app.status === 'ACCEPTED')?.contractor;
+  const assignedContractor = job.applications.find((app: any) => app.status === 'ACCEPTED')?.contractor;
   const isAssignedContractor = assignedContractor?.user.id === userId;
 
   if (!isJobOwner && !isAssignedContractor) {
@@ -1494,7 +1515,7 @@ export const createJobMilestone = catchAsync(async (req: AuthenticatedRequest, r
 
   // Check if user has access (job owner or assigned contractor)
   const isJobOwner = job.customer.user.id === userId;
-  const assignedContractor = job.applications.find(app => app.status === 'ACCEPTED')?.contractor;
+  const assignedContractor = job.applications.find((app: any) => app.status === 'ACCEPTED')?.contractor;
   const isAssignedContractor = assignedContractor?.user.id === userId;
 
   if (!isJobOwner && !isAssignedContractor) {
@@ -1546,7 +1567,7 @@ export const updateJobMilestone = catchAsync(async (req: AuthenticatedRequest, r
 
   // Check if user has access (job owner or assigned contractor)
   const isJobOwner = job.customer.user.id === userId;
-  const assignedContractor = job.applications.find(app => app.status === 'ACCEPTED')?.contractor;
+  const assignedContractor = job.applications.find((app: any) => app.status === 'ACCEPTED')?.contractor;
   const isAssignedContractor = assignedContractor?.user.id === userId;
 
   if (!isJobOwner && !isAssignedContractor) {
@@ -1612,7 +1633,7 @@ export const deleteJobMilestone = catchAsync(async (req: AuthenticatedRequest, r
 
   // Check if user has access (job owner or assigned contractor)
   const isJobOwner = job.customer.user.id === userId;
-  const assignedContractor = job.applications.find(app => app.status === 'ACCEPTED')?.contractor;
+  const assignedContractor = job.applications.find((app: any) => app.status === 'ACCEPTED')?.contractor;
   const isAssignedContractor = assignedContractor?.user.id === userId;
 
   if (!isJobOwner && !isAssignedContractor) {
@@ -1666,7 +1687,7 @@ export const expressInterest = catchAsync(async (req: AuthenticatedRequest, res:
   }
 
   // Check if contractor has purchased access
-  const hasAccess = job.jobAccess.find(access => access.contractorId === contractor.id);
+  const hasAccess = job.jobAccess.find((access: any) => access.contractorId === contractor.id);
   if (!hasAccess) {
     return next(new AppError('You must purchase access to this job before expressing interest', 403));
   }
@@ -1711,7 +1732,11 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
       jobAccess: {
         include: {
           contractor: {
@@ -1743,7 +1768,7 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
   }
 
   // Verify the contractor has purchased access to this job
-  const hasAccess = job.jobAccess.find(access => access.contractorId === contractorId);
+  const hasAccess = job.jobAccess.find((access: any) => access.contractorId === contractorId);
   if (!hasAccess) {
     return next(new AppError('The selected contractor has not purchased access to this job', 400));
   }
@@ -1768,6 +1793,21 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
     },
   });
 
+  // Send notification to customer about contractor selection
+  try {
+    const { createContractorSelectedNotification } = await import('../services/notificationService');
+    await createContractorSelectedNotification(
+      job.customer.userId,
+      contractorId,
+      jobId,
+      job.title,
+      hasAccess.contractor.user.name
+    );
+    console.log(`📧 Contractor selection notification sent to customer`);
+  } catch (error) {
+    console.error('Failed to send contractor selection notification:', error);
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Contractor selected successfully',
@@ -1777,6 +1817,7 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
   });
 });
 
+
 // @desc    Mark job as won by contractor (DEPRECATED - use selectContractor instead)
 // @route   PATCH /api/jobs/:id/mark-won
 // @access  Private (Customer only)
@@ -1785,7 +1826,177 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
   return selectContractor(req, res, next);
 });
 
-// @desc    Complete job with final amount (contractor only)
+// @desc    Propose final price for job completion (contractor only)
+// @route   PATCH /api/jobs/:id/propose-final-price
+// @access  Private (Contractor who won the job)
+export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+  const { finalPrice } = req.body;
+
+  console.log(`🔍 PROPOSE FINAL PRICE - Received data:`);
+  console.log(`🔍 Job ID: ${jobId}`);
+  console.log(`🔍 User ID: ${userId}`);
+  console.log(`🔍 Final Price: ${finalPrice}`);
+
+  if (!finalPrice || finalPrice <= 0) {
+    return next(new AppError('Please provide a valid final price', 400));
+  }
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    include: {
+      user: {
+        select: {
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+      customer: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if this contractor won the job
+  if (job.wonByContractorId !== contractor.id) {
+    return next(new AppError('You are not authorized to propose final price for this job', 403));
+  }
+
+  if (job.status !== 'IN_PROGRESS') {
+    return next(new AppError('Job is not in progress', 400));
+  }
+
+  // Check if final price has already been proposed
+  if (job.contractorProposedAmount) {
+    return next(new AppError('Final price has already been proposed for this job', 400));
+  }
+
+  // Set timeout for customer response (7 days)
+  const timeoutAt = new Date();
+  timeoutAt.setDate(timeoutAt.getDate() + 7);
+
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      contractorProposedAmount: finalPrice,
+      finalPriceProposedAt: new Date(),
+      finalPriceTimeoutAt: timeoutAt,
+      status: 'AWAITING_FINAL_PRICE_CONFIRMATION',
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      customer: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Send notification to customer about final price proposal
+  try {
+    const { createServiceEmail } = await import('../services/emailService');
+    const emailService = (await import('../services/emailService')).createEmailService();
+    
+    const mailOptions = createServiceEmail({
+      to: job.customer.user.email,
+      subject: `Final Price Proposal for Job: ${job.title}`,
+      heading: 'Final Price Proposal Received',
+      body: `
+        <p>Your contractor has completed the job and proposed a final price.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3>Job Details</h3>
+          <p><strong>Job Title:</strong> ${job.title}</p>
+          <p><strong>Contractor:</strong> ${contractor.user.name}</p>
+          <p><strong>Proposed Final Price:</strong> £${Number(finalPrice).toFixed(2)}</p>
+          <p><strong>Original Budget:</strong> £${job.budget ? Number(job.budget).toFixed(2) : 'Not specified'}</p>
+        </div>
+
+        <p>Please review and confirm or reject this final price. You have 7 days to respond.</p>
+      `,
+      ctaText: 'Review Final Price',
+      ctaUrl: `https://trustbuild.uk/dashboard/client/jobs/${jobId}`,
+      footerText: 'Please respond within 7 days to avoid automatic processing.'
+    });
+
+    await emailService.sendMail(mailOptions);
+    console.log(`📧 Final price proposal notification sent to customer: ${job.customer.user.email}`);
+  } catch (error) {
+    console.error('Failed to send final price proposal notification:', error);
+    // Don't fail the proposal if email fails
+  }
+
+  // Send in-app notification to customer
+  try {
+    const { createFinalPriceProposedNotification } = await import('../services/notificationService');
+    await createFinalPriceProposedNotification(
+      job.customer.userId,
+      jobId,
+      job.title,
+      finalPrice,
+      contractor.user.name,
+      true // isCustomer
+    );
+    console.log(`📱 Final price proposal in-app notification sent to customer`);
+  } catch (error) {
+    console.error('Failed to send final price proposal in-app notification:', error);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `Final price of £${finalPrice} proposed successfully. Waiting for customer confirmation.`,
+    data: {
+      job: updatedJob,
+      proposedAmount: finalPrice,
+      timeoutAt: timeoutAt,
+    },
+  });
+});
+
+// @desc    Complete job with final amount (contractor only) - DEPRECATED
 // @route   PATCH /api/jobs/:id/complete-with-amount
 // @access  Private (Contractor who won the job)
 export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -1808,11 +2019,16 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
-      wonByContractor: true,
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
       customer: {
         include: {
           user: {
             select: {
+              id: true,
               name: true,
               email: true,
             },
@@ -1923,7 +2139,221 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   });
 });
 
-// @desc    Customer confirm job completion and amount
+// @desc    Customer confirm or reject final price proposal
+// @route   PATCH /api/jobs/:id/confirm-final-price
+// @access  Private (Customer only)
+export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+  const { action, rejectionReason } = req.body; // action: 'confirm' or 'reject'
+
+  if (!action || !['confirm', 'reject'].includes(action)) {
+    return next(new AppError('Please specify action as "confirm" or "reject"', 400));
+  }
+
+  if (action === 'reject' && !rejectionReason) {
+    return next(new AppError('Please provide a reason for rejecting the final price', 400));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if user is the customer
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Not authorized to confirm this job', 403));
+  }
+
+  if (job.status !== 'AWAITING_FINAL_PRICE_CONFIRMATION') {
+    return next(new AppError('Job is not awaiting final price confirmation', 400));
+  }
+
+  if (!job.contractorProposedAmount) {
+    return next(new AppError('No final price has been proposed for this job', 400));
+  }
+
+  let updatedJob;
+
+  if (action === 'confirm') {
+    // Customer confirmed the final price
+    updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        finalAmount: Number(job.contractorProposedAmount),
+        finalPriceConfirmedAt: new Date(),
+        status: 'COMPLETED',
+        completionDate: new Date(),
+        customerConfirmed: true,
+      },
+    });
+
+    // Process commission if applicable
+    await processCommissionForJob(jobId, Number(job.contractorProposedAmount));
+
+    // Send confirmation email to contractor
+    try {
+      const { createServiceEmail } = await import('../services/emailService');
+      const emailService = (await import('../services/emailService')).createEmailService();
+      
+      const mailOptions = createServiceEmail({
+        to: job.wonByContractor?.user?.email || 'contractor@example.com',
+        subject: `Final Price Confirmed for Job: ${job.title}`,
+        heading: 'Final Price Confirmed',
+        body: `
+          <p>Great news! The customer has confirmed your final price proposal.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>Job Details</h3>
+            <p><strong>Job Title:</strong> ${job.title}</p>
+            <p><strong>Customer:</strong> ${job.customer?.user?.name || 'Customer'}</p>
+            <p><strong>Confirmed Final Price:</strong> £${Number(job.contractorProposedAmount).toFixed(2)}</p>
+          </div>
+
+          <p>The job is now marked as completed and you can request a review from the customer.</p>
+        `,
+        ctaText: 'View Job Details',
+        ctaUrl: `https://trustbuild.uk/dashboard/contractor/jobs/${jobId}`,
+        footerText: 'Congratulations on completing the job!'
+      });
+
+      await emailService.sendMail(mailOptions);
+      console.log(`📧 Final price confirmation sent to contractor: ${job.wonByContractor?.user?.email || 'contractor@example.com'}`);
+    } catch (error) {
+      console.error('Failed to send final price confirmation email:', error);
+    }
+
+    // Send in-app notifications for job completion
+    try {
+      const { 
+        createJobCompletedNotification, 
+        createJobStatusChangedNotification 
+      } = await import('../services/notificationService');
+      
+      // Notify customer
+      await createJobCompletedNotification(
+        job.customer.userId,
+        jobId,
+        job.title,
+        Number(job.contractorProposedAmount),
+        true // isCustomer
+      );
+      
+      // Notify contractor
+      await createJobCompletedNotification(
+        job.wonByContractor?.user?.id || '',
+        jobId,
+        job.title,
+        Number(job.contractorProposedAmount),
+        false // isCustomer
+      );
+
+      // Send status change notifications
+      await createJobStatusChangedNotification(
+        job.customer.userId,
+        jobId,
+        job.title,
+        'AWAITING_FINAL_PRICE_CONFIRMATION',
+        'COMPLETED',
+        true // isCustomer
+      );
+      
+      await createJobStatusChangedNotification(
+        job.wonByContractor?.user?.id || '',
+        jobId,
+        job.title,
+        'AWAITING_FINAL_PRICE_CONFIRMATION',
+        'COMPLETED',
+        false // isCustomer
+      );
+
+      console.log(`📱 Job completion notifications sent to customer and contractor`);
+    } catch (error) {
+      console.error('Failed to send job completion notifications:', error);
+    }
+
+  } else {
+    // Customer rejected the final price
+    updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        finalPriceRejectedAt: new Date(),
+        finalPriceRejectionReason: rejectionReason,
+        status: 'IN_PROGRESS', // Back to in progress for contractor to propose new price
+        contractorProposedAmount: null, // Clear the proposed amount
+        finalPriceProposedAt: null,
+        finalPriceTimeoutAt: null,
+      },
+    });
+
+    // Send rejection email to contractor
+    try {
+      const { createServiceEmail } = await import('../services/emailService');
+      const emailService = (await import('../services/emailService')).createEmailService();
+      
+      const mailOptions = createServiceEmail({
+        to: job.wonByContractor?.user?.email || 'contractor@example.com',
+        subject: `Final Price Rejected for Job: ${job.title}`,
+        heading: 'Final Price Rejected',
+        body: `
+          <p>The customer has rejected your final price proposal.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>Job Details</h3>
+            <p><strong>Job Title:</strong> ${job.title}</p>
+            <p><strong>Customer:</strong> ${job.customer?.user?.name || 'Customer'}</p>
+            <p><strong>Rejected Price:</strong> £${Number(job.contractorProposedAmount).toFixed(2)}</p>
+            <p><strong>Rejection Reason:</strong> ${rejectionReason}</p>
+          </div>
+
+          <p>You can propose a new final price for this job.</p>
+        `,
+        ctaText: 'Propose New Price',
+        ctaUrl: `https://trustbuild.uk/dashboard/contractor/jobs/${jobId}`,
+        footerText: 'Please review the feedback and propose a new price.'
+      });
+
+      await emailService.sendMail(mailOptions);
+      console.log(`📧 Final price rejection sent to contractor: ${job.wonByContractor?.user?.email || 'contractor@example.com'}`);
+    } catch (error) {
+      console.error('Failed to send final price rejection email:', error);
+    }
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: action === 'confirm' 
+      ? 'Final price confirmed successfully. Job marked as completed.'
+      : 'Final price rejected. Contractor can propose a new price.',
+    data: {
+      job: updatedJob,
+      action: action,
+    },
+  });
+});
+
+// @desc    Customer confirm job completion and amount (DEPRECATED - use confirmFinalPrice)
 // @route   PATCH /api/jobs/:id/confirm-completion
 // @access  Private (Customer only)
 export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -1933,7 +2363,11 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
       wonByContractor: {
         include: {
           user: {
@@ -1984,7 +2418,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   console.log(`🔍 DEBUG - Customer Confirmed: ${job.customerConfirmed}`);
   console.log(`🔍 DEBUG - Won By Contractor ID: ${job.wonByContractorId}`);
   
-  if (!job.finalAmount || job.finalAmount.toNumber() <= 0) {
+  if (!job.finalAmount || Number(job.finalAmount) <= 0) {
     console.log(`❌ Final amount validation failed - finalAmount: ${job.finalAmount}`);
     return next(new AppError('No final amount has been set by contractor', 400));
   }
@@ -2044,7 +2478,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   });
   
   if (winningContractor && accessedViaCredits && !job.commissionPaid) {
-    commissionAmount = job.finalAmount.toNumber() * 0.05; // 5% commission
+    commissionAmount = Number(job.finalAmount) * 0.05; // 5% commission
     
     console.log(`💰 Creating commission: ${commissionAmount} (5% of ${job.finalAmount})`);
     
@@ -2065,7 +2499,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         jobId: job.id,
         contractorId: commissionContractorId, // Use consistent contractor ID from user session
         customerId: job.customerId,
-        finalJobAmount: job.finalAmount.toNumber(),
+        finalJobAmount: Number(job.finalAmount),
         commissionRate: 5.0,
         commissionAmount: commissionAmount,
         vatAmount: vatAmount,
@@ -2085,7 +2519,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
         contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
         jobTitle: job.title,
-        finalJobAmount: job.finalAmount.toNumber(),
+        finalJobAmount: Number(job.finalAmount),
         commissionAmount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,
@@ -2103,7 +2537,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         contractorName: winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
         contractorEmail: winningContractor.user.email || 'unknown@contractor.com',
         jobTitle: job.title,
-        finalJobAmount: job.finalAmount.toNumber(),
+        finalJobAmount: Number(job.finalAmount),
         commissionAmount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,
@@ -2250,11 +2684,16 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
-      customer: true,
+      customer: {
+        include: {
+          user: true,
+        },
+      },
       wonByContractor: {
         include: {
           user: {
             select: {
+              id: true,
               name: true,
               email: true,
             },
@@ -2302,11 +2741,269 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
     },
   });
 
+  // Send notifications to both customer and contractor about job start
+  try {
+    const { 
+      createJobStartedNotification, 
+      createJobStatusChangedNotification 
+    } = await import('../services/notificationService');
+    
+    // Notify customer
+    await createJobStartedNotification(
+      job.customer.userId,
+      jobId,
+      job.title,
+      job.wonByContractor?.user?.name || 'Contractor',
+      true // isCustomer
+    );
+    
+    // Notify contractor
+    await createJobStartedNotification(
+      job.wonByContractor?.user?.id || '',
+      jobId,
+      job.title,
+      job.wonByContractor?.user?.name || 'Contractor',
+      false // isCustomer
+    );
+
+    // Send status change notifications
+    await createJobStatusChangedNotification(
+      job.customer.userId,
+      jobId,
+      job.title,
+      'POSTED',
+      'IN_PROGRESS',
+      true // isCustomer
+    );
+    
+    await createJobStatusChangedNotification(
+      job.wonByContractor?.user?.id || '',
+      jobId,
+      job.title,
+      'POSTED',
+      'IN_PROGRESS',
+      false // isCustomer
+    );
+
+    console.log(`📧 Job start notifications sent to customer and contractor`);
+  } catch (error) {
+    console.error('Failed to send job start notifications:', error);
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Contractor confirmed and work can now begin',
     data: {
       job: updatedJob,
+    },
+  });
+});
+
+// @desc    Admin override final price confirmation (admin only)
+// @route   PATCH /api/jobs/:id/admin-override-final-price
+// @access  Private (Admin only)
+export const adminOverrideFinalPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+  const { reason } = req.body;
+
+  // Check if user is admin
+  if (req.user!.role !== 'ADMIN' && req.user!.role !== 'SUPER_ADMIN') {
+    return next(new AppError('Not authorized to perform admin actions', 403));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  if (job.status !== 'AWAITING_FINAL_PRICE_CONFIRMATION') {
+    return next(new AppError('Job is not awaiting final price confirmation', 400));
+  }
+
+  if (!job.contractorProposedAmount) {
+    return next(new AppError('No final price has been proposed for this job', 400));
+  }
+
+  // Admin overrides the final price confirmation
+  const updatedJob = await prisma.job.update({
+    where: { id: jobId },
+    data: {
+      finalAmount: job.contractorProposedAmount,
+      finalPriceConfirmedAt: new Date(),
+      adminOverrideAt: new Date(),
+      adminOverrideBy: userId,
+      status: 'COMPLETED',
+      completionDate: new Date(),
+      customerConfirmed: true,
+    },
+  });
+
+  // Process commission if applicable
+  await processCommissionForJob(jobId, Number(job.contractorProposedAmount));
+
+  // Send notification to both customer and contractor about admin override
+  try {
+    const { createServiceEmail } = await import('../services/emailService');
+    const emailService = (await import('../services/emailService')).createEmailService();
+    
+    // Email to customer
+    const customerMailOptions = createServiceEmail({
+      to: job.customer.user.email,
+      subject: `Final Price Confirmed by Admin - Job: ${job.title}`,
+      heading: 'Final Price Confirmed by Admin',
+      body: `
+        <p>An admin has confirmed the final price for your job due to the 7-day response period expiring.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3>Job Details</h3>
+          <p><strong>Job Title:</strong> ${job.title}</p>
+          <p><strong>Contractor:</strong> ${job.wonByContractor?.user?.name || 'Contractor'}</p>
+          <p><strong>Confirmed Final Price:</strong> £${Number(job.contractorProposedAmount).toFixed(2)}</p>
+          <p><strong>Admin Reason:</strong> ${reason || 'Customer did not respond within 7 days'}</p>
+        </div>
+
+        <p>The job is now marked as completed.</p>
+      `,
+      ctaText: 'View Job Details',
+      ctaUrl: `https://trustbuild.uk/dashboard/client/jobs/${jobId}`,
+      footerText: 'This action was taken by an admin due to the response timeout.'
+    });
+
+    // Email to contractor
+    const contractorMailOptions = createServiceEmail({
+      to: job.wonByContractor?.user?.email || 'contractor@example.com',
+      subject: `Final Price Confirmed by Admin - Job: ${job.title}`,
+      heading: 'Final Price Confirmed by Admin',
+      body: `
+        <p>An admin has confirmed your final price proposal due to the customer not responding within 7 days.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3>Job Details</h3>
+          <p><strong>Job Title:</strong> ${job.title}</p>
+          <p><strong>Customer:</strong> ${job.customer.user.name}</p>
+          <p><strong>Confirmed Final Price:</strong> £${Number(job.contractorProposedAmount).toFixed(2)}</p>
+          <p><strong>Admin Reason:</strong> ${reason || 'Customer did not respond within 7 days'}</p>
+        </div>
+
+        <p>The job is now marked as completed and you can request a review from the customer.</p>
+      `,
+      ctaText: 'View Job Details',
+      ctaUrl: `https://trustbuild.uk/dashboard/contractor/jobs/${jobId}`,
+      footerText: 'This action was taken by an admin due to the response timeout.'
+    });
+
+    await Promise.all([
+      emailService.sendMail(customerMailOptions),
+      emailService.sendMail(contractorMailOptions)
+    ]);
+    
+    console.log(`📧 Admin override notifications sent to customer and contractor for job ${jobId}`);
+  } catch (error) {
+    console.error('Failed to send admin override notifications:', error);
+    // Don't fail the override if email fails
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Final price confirmed by admin override. Job marked as completed.',
+    data: {
+      job: updatedJob,
+      adminOverride: true,
+      reason: reason || 'Customer did not respond within 7 days',
+    },
+  });
+});
+
+// @desc    Get jobs awaiting final price confirmation (admin only)
+// @route   GET /api/jobs/awaiting-final-price-confirmation
+// @access  Private (Admin only)
+export const getJobsAwaitingFinalPriceConfirmation = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Check if user is admin
+  if (req.user!.role !== 'ADMIN' && req.user!.role !== 'SUPER_ADMIN') {
+    return next(new AppError('Not authorized to view admin data', 403));
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+
+  const jobs = await prisma.job.findMany({
+    where: {
+      status: 'AWAITING_FINAL_PRICE_CONFIRMATION',
+    },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { finalPriceProposedAt: 'asc' }, // Oldest first
+    skip,
+    take: limit,
+  });
+
+  const total = await prisma.job.count({
+    where: {
+      status: 'AWAITING_FINAL_PRICE_CONFIRMATION',
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     },
   });
 });
@@ -2408,6 +3105,7 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
 router.get('/', getAllJobs);
 router.get('/my/posted', protect, getMyPostedJobs);
 router.get('/my/applications', protect, getMyApplications);
+router.get('/awaiting-final-price-confirmation', protect, getJobsAwaitingFinalPriceConfirmation);
 router.post('/', protect, createJob);
 router.get('/:id', getJobWithAccess);
 router.patch('/:id', protect, updateJob);
@@ -2429,6 +3127,11 @@ router.patch('/:id/complete-with-amount', protect, completeJobWithAmount);
 router.patch('/:id/confirm-completion', protect, confirmJobCompletion);
 router.post('/:id/test-commission', protect, testCommissionCreation);
 router.post('/:id/request-review', protect, requestReview);
+
+// New final price workflow routes
+router.patch('/:id/propose-final-price', protect, proposeFinalPrice);
+router.patch('/:id/confirm-final-price', protect, confirmFinalPrice);
+router.patch('/:id/admin-override-final-price', protect, adminOverrideFinalPrice);
 
 // Milestone routes
 router.get('/:id/milestones', protect, getJobMilestones);

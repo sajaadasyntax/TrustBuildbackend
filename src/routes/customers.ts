@@ -81,7 +81,7 @@ export const getCustomer = catchAsync(async (req: AuthenticatedRequest, res: Res
       },
       jobs: {
         include: {
-          assignedContractor: {
+          wonByContractor: {
             include: {
               user: {
                 select: {
@@ -238,7 +238,7 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
       },
       jobs: {
         include: {
-          assignedContractor: {
+          wonByContractor: {
             include: {
               user: {
                 select: {
@@ -327,7 +327,7 @@ export const deleteMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
     include: {
       jobs: {
         where: {
-          status: { in: ['OPEN', 'IN_PROGRESS'] },
+          status: { in: ['POSTED', 'IN_PROGRESS'] },
         },
       },
     },
@@ -338,7 +338,7 @@ export const deleteMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
   }
 
   // Check if customer has active jobs
-  if (customer.jobs.length > 0) {
+  if (customer.jobs && customer.jobs.length > 0) {
     return next(new AppError('Cannot delete profile with active jobs', 400));
   }
 
@@ -788,27 +788,16 @@ export const getCustomerInvoices = catchAsync(async (req: AuthenticatedRequest, 
   const [invoices, total] = await Promise.all([
     prisma.invoice.findMany({
       where: {
-        payment: {
-          customerId: customer.id
+        payments: {
         }
       },
       include: {
-        payment: {
+        payments: {
           select: {
             amount: true,
             status: true,
             type: true,
             createdAt: true
-          }
-        },
-        contractor: {
-          select: {
-            businessName: true,
-            user: {
-              select: {
-                name: true
-              }
-            }
           }
         }
       },
@@ -818,8 +807,7 @@ export const getCustomerInvoices = catchAsync(async (req: AuthenticatedRequest, 
     }),
     prisma.invoice.count({
       where: {
-        payment: {
-          customerId: customer.id
+        payments: {
         }
       }
     })

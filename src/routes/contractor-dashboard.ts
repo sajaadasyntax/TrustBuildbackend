@@ -147,8 +147,7 @@ export const getDashboardSummary = catchAsync(async (req: AuthenticatedRequest, 
   // Get invoice count
   const invoiceCount = await prisma.invoice.count({
     where: {
-      payment: {
-        contractorId: contractor.id,
+      payments: {
       },
     },
   });
@@ -322,7 +321,6 @@ export const createSubscriptionIntent = catchAsync(async (req: AuthenticatedRequ
         allow_redirects: 'never'
       },
       metadata: {
-        contractorId: contractor.id,
         userId,
         plan,
         type: 'subscription_payment'
@@ -415,7 +413,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       });
       console.log(`✅ Subscription updated successfully: ${subscription.id}`);
     } catch (err) {
-      console.error(`❌ Error updating subscription: ${err.message}`);
+      console.error(`❌ Error updating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   } else {
@@ -424,7 +422,9 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     try {
       subscription = await prisma.subscription.create({
         data: {
-          contractorId: contractor.id,
+          contractor: {
+            connect: { id: contractor.id }
+          },
           tier: contractor.tier,
           plan,
           status: 'active',
@@ -436,7 +436,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       });
       console.log(`✅ New subscription created successfully: ${subscription.id}`);
     } catch (err) {
-      console.error(`❌ Error creating subscription: ${err.message}`);
+      console.error(`❌ Error creating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   }
@@ -446,7 +446,6 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   try {
     const payment = await prisma.payment.create({
       data: {
-        contractorId: contractor.id,
         amount: getSubscriptionPricing(plan).total,
         type: 'SUBSCRIPTION',
         status: 'COMPLETED',
@@ -456,7 +455,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     });
     console.log(`✅ Payment record created: ${payment.id}`);
   } catch (err) {
-    console.error(`❌ Error creating payment record: ${err.message}`);
+    console.error(`❌ Error creating payment record: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
   }
 
@@ -542,12 +541,11 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   // Get regular invoices
   const regularInvoices = await prisma.invoice.findMany({
     where: {
-      payment: {
-        contractorId: contractor.id,
+      payments: {
       },
     },
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           status: true,
@@ -565,7 +563,6 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   const commissionInvoices = await prisma.commissionInvoice.findMany({
     where: {
       commissionPayment: {
-        contractorId: contractor.id,
       },
     },
     include: {
@@ -598,8 +595,8 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     amount: invoice.amount,
     vatAmount: invoice.vatAmount,
     totalAmount: invoice.totalAmount,
-    status: invoice.payment?.status || 'PENDING',
-    paymentType: invoice.payment?.type || 'UNKNOWN',
+    status: 'PENDING',
+    paymentType: 'UNKNOWN',
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
   }));
@@ -627,8 +624,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   // Count totals for pagination
   const totalRegularInvoices = await prisma.invoice.count({
     where: {
-      payment: {
-        contractorId: contractor.id,
+      payments: {
       },
     },
   });
@@ -636,7 +632,6 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   const totalCommissionInvoices = await prisma.commissionInvoice.count({
     where: {
       commissionPayment: {
-        contractorId: contractor.id,
       },
     },
   });

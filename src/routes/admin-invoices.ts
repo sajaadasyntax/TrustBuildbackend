@@ -45,7 +45,7 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
       }),
     },
     include: {
-      payment: {
+      payments: {
         select: {
           id: true,
           status: true,
@@ -118,13 +118,13 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
     amount: invoice.amount,
     vatAmount: invoice.vatAmount,
     totalAmount: invoice.totalAmount,
-    status: invoice.payment?.status || 'PENDING',
-    paymentType: invoice.payment?.type || 'UNKNOWN',
+    status: invoice.payments[0]?.status || 'PENDING',
+    paymentType: invoice.payments[0]?.type || 'UNKNOWN',
     recipientName: invoice.recipientName,
     recipientEmail: invoice.recipientEmail,
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
-    contractor: invoice.payment?.contractor || null,
+    contractor: invoice.payments[0]?.contractor || null,
   }));
 
   const formattedCommissionInvoices = commissionInvoices.map(invoice => ({
@@ -202,7 +202,7 @@ export const getInvoiceDetails = catchAsync(async (req: AuthenticatedRequest, re
     invoice = await prisma.invoice.findUnique({
       where: { id },
       include: {
-        payment: {
+        payments: {
           select: {
             id: true,
             status: true,
@@ -280,41 +280,41 @@ export const getInvoiceDetails = catchAsync(async (req: AuthenticatedRequest, re
 
   // Format response based on invoice type
   const formattedInvoice = invoiceType === 'regular' 
-    ? {
+      ? {
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         type: 'regular',
-        description: invoice.description,
-        amount: invoice.amount,
-        vatAmount: invoice.vatAmount,
-        totalAmount: invoice.totalAmount,
-        status: invoice.payment?.status || 'PENDING',
-        paymentType: invoice.payment?.type || 'UNKNOWN',
-        recipientName: invoice.recipientName,
-        recipientEmail: invoice.recipientEmail,
+        description: (invoice as any).description,
+        amount: Number((invoice as any).amount),
+        vatAmount: Number(invoice.vatAmount),
+        totalAmount: Number(invoice.totalAmount),
+        status: (invoice as any).payments[0]?.status || 'PENDING',
+        paymentType: (invoice as any).payments[0]?.type || 'UNKNOWN',
+        recipientName: (invoice as any).recipientName,
+        recipientEmail: (invoice as any).recipientEmail,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
-        contractor: invoice.payment?.contractor || null,
-        payment: invoice.payment,
+        contractor: (invoice as any).payments[0]?.contractor || null,
+        payment: (invoice as any).payments[0],
       }
     : {
         id: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         type: 'commission',
-        description: `Commission for ${invoice.jobTitle}`,
-        amount: invoice.commissionAmount,
-        vatAmount: invoice.vatAmount,
-        totalAmount: invoice.totalAmount,
-        status: invoice.commissionPayment?.status || 'PENDING',
-        dueDate: invoice.commissionPayment?.dueDate,
-        paidAt: invoice.commissionPayment?.paidAt,
-        recipientName: invoice.contractorName,
-        recipientEmail: invoice.contractorEmail,
+        description: (invoice as any).commissionPayment?.description || 'Commission payment',
+        amount: Number((invoice as any).amount),
+        vatAmount: Number(invoice.vatAmount),
+        totalAmount: Number(invoice.totalAmount),
+        status: (invoice as any).commissionPayment?.status || 'PENDING',
+        paymentType: 'COMMISSION',
+        dueDate: (invoice as any).dueAt,
+        paidAt: (invoice as any).paidAt,
+        recipientName: (invoice as any).recipientName,
+        recipientEmail: (invoice as any).recipientEmail,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
-        contractor: invoice.commissionPayment?.contractor || null,
-        commissionPayment: invoice.commissionPayment,
-        job: invoice.commissionPayment?.job,
+        contractor: (invoice as any).commissionPayment?.contractor || null,
+        payment: null,
       };
 
   res.status(200).json({
@@ -625,7 +625,7 @@ export const getInvoiceStatistics = catchAsync(async (req: AuthenticatedRequest,
       vatAmount: true,
       totalAmount: true,
       createdAt: true,
-      payment: {
+      payments: {
         select: {
           status: true,
         },
@@ -655,17 +655,17 @@ export const getInvoiceStatistics = catchAsync(async (req: AuthenticatedRequest,
   const totalAmount = regularTotal + commissionTotal;
 
   const regularPaid = regularInvoices
-    .filter(invoice => invoice.payment?.status === 'COMPLETED')
+    .filter(invoice => invoice.payments[0]?.status === 'COMPLETED')
     .reduce((sum, invoice) => sum + invoice.totalAmount.toNumber(), 0);
     
   const commissionPaid = commissionInvoices
-    .filter(invoice => invoice.commissionPayment?.status === 'PAID')
+    .filter(invoice => (invoice as any).commissionPayment?.status === 'COMPLETED')
     .reduce((sum, invoice) => sum + invoice.totalAmount.toNumber(), 0);
     
   const totalPaid = regularPaid + commissionPaid;
 
   const regularUnpaid = regularInvoices
-    .filter(invoice => invoice.payment?.status !== 'COMPLETED')
+    .filter(invoice => invoice.payments[0]?.status !== 'COMPLETED')
     .reduce((sum, invoice) => sum + invoice.totalAmount.toNumber(), 0);
     
   const commissionUnpaid = commissionInvoices

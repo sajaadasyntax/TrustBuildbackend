@@ -49,15 +49,58 @@ export const rawBodyMiddleware = async (req: Request, res: Response, next: NextF
 
 /**
  * Helper function to send email notifications for subscription events
- * (No emails should be sent after purchase/subscription)
  */
 async function sendSubscriptionNotification(contractor: any, eventType: string, subscriptionDetails: any): Promise<boolean> {
-  // Disabled email sending - subscription info will be available in dashboard only
-  console.log(`✅ Email sending disabled - Subscription ${eventType} for: ${contractor?.user?.email || 'unknown'}`);
-  // Create an in-app notification instead
+  try {
+    const { createServiceEmail } = await import('../services/emailService');
+    const emailService = (await import('../services/emailService')).createEmailService();
+    
+    const isSuccess = eventType.includes('created') || eventType.includes('activated');
+    const subject = isSuccess 
+      ? `✅ Subscription ${eventType} - Welcome to TrustBuild!`
+      : `📋 Subscription ${eventType} - TrustBuild`;
+    
+    const mailOptions = createServiceEmail({
+      to: contractor?.user?.email || 'unknown',
+      subject,
+      heading: `Subscription ${eventType}`,
+      body: `
+        <p>Your TrustBuild subscription has been ${eventType}.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3>Subscription Details</h3>
+          <p><strong>Plan:</strong> ${subscriptionDetails?.plan || 'Unknown'}</p>
+          <p><strong>Status:</strong> ${subscriptionDetails?.status || 'Active'}</p>
+          <p><strong>Amount:</strong> £${subscriptionDetails?.amount?.toFixed(2) || '0.00'}</p>
+          ${subscriptionDetails?.expiresAt ? `<p><strong>Expires:</strong> ${new Date(subscriptionDetails.expiresAt).toLocaleDateString()}</p>` : ''}
+        </div>
+
+        ${isSuccess ? `
+          <h3>What's Next?</h3>
+          <p>Your subscription is now active! You can:</p>
+          <ul>
+            <li>Browse and apply for unlimited jobs</li>
+            <li>Access premium features and tools</li>
+            <li>Build your contractor reputation</li>
+          </ul>
+        ` : `
+          <p>Please check your dashboard for more details about your subscription status.</p>
+        `}
+      `,
+      ctaText: isSuccess ? 'Start Browsing Jobs' : 'View Subscription',
+      ctaUrl: isSuccess ? 'https://trustbuild.uk/dashboard/contractor/jobs' : 'https://trustbuild.uk/dashboard/contractor/payments',
+      footerText: 'Thank you for choosing TrustBuild for your business needs.'
+    });
+
+    await emailService.sendMail(mailOptions);
+    console.log(`📧 Subscription ${eventType} email sent to: ${contractor?.user?.email || 'unknown'}`);
+  } catch (error) {
+    console.error(`Failed to send subscription ${eventType} email:`, error);
+  }
+
+  // Also create an in-app notification
   if (contractor?.userId) {
     try {
-      // Don't await this to keep the process non-blocking
       const notificationType = eventType.includes('created') ? 'SUCCESS' : eventType.includes('updated') ? 'INFO' : 'WARNING';
       
       import('../services/notificationService').then(({ createNotification }) => {
@@ -72,7 +115,6 @@ async function sendSubscriptionNotification(contractor: any, eventType: string, 
       }).catch(err => console.error('Failed to import notification service:', err));
     } catch (err) {
       console.error('Error creating subscription notification:', err);
-      // Don't throw - this shouldn't block the subscription process
     }
   }
   return true;
@@ -83,26 +125,24 @@ async function sendSubscriptionNotification(contractor: any, eventType: string, 
  * (No emails should be sent after purchase/subscription)
  */
 async function sendPaymentFailedNotification(user: any, paymentDetails: any): Promise<boolean> {
-  // Disabled email sending - payment failure info will be available in dashboard only
-  console.log(`✅ Email sending disabled - Payment failed notification for: ${user?.email || 'unknown'}`);
-  
+  // Disabled email sending - payment failures will be available in dashboard only
+  console.log(`✅ Email sending disabled - Payment failed for: ${user?.email || 'unknown'}`);
   // Create an in-app notification instead
   if (user?.id) {
     try {
       // Don't await this to keep the process non-blocking
-      import('../services/notificationService').then(({ createNotification }) => {
-        createNotification({
-          userId: user.id,
-          title: 'Payment Failed',
-          message: 'Your recent payment attempt failed. Please check your payment details and try again.',
-          type: 'WARNING',
-          actionLink: '/dashboard/contractor/payments',
-          actionText: 'Update Payment',
-        }).catch(err => console.error('Failed to create payment notification:', err));
+      import('../services/notificationService').then(({ createPaymentFailedNotification }) => {
+        createPaymentFailedNotification(
+          user.id,
+          paymentDetails.paymentId || 'unknown',
+          paymentDetails.amount || 0,
+          paymentDetails.reason || 'Payment processing failed',
+          paymentDetails.retryUrl
+        ).catch(err => console.error('Failed to create payment failed notification:', err));
       }).catch(err => console.error('Failed to import notification service:', err));
     } catch (err) {
-      console.error('Error creating payment notification:', err);
-      // Don't throw - this shouldn't block the process
+      console.error('Error creating payment failed notification:', err);
+      // Don't throw - this shouldn't block the webhook process
     }
   }
   return true;
@@ -189,11 +229,11 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
               recipientName: dbSubscription.contractor.businessName || dbSubscription.contractor.user.name,
               recipientEmail: dbSubscription.contractor.user.email,
               plan: dbSubscription.plan,
-              amount: createdInvoice.amount,
-              vatAmount: createdInvoice.vatAmount,
-              totalAmount: createdInvoice.totalAmount,
-              dueDate: createdInvoice.dueAt,
-              paidAt: createdInvoice.paidAt,
+              amount: Number(createdInvoice.amount),
+              vatAmount: Number(createdInvoice.vatAmount),
+              totalAmount: Number(createdInvoice.totalAmount),
+              dueDate: createdInvoice.dueAt || new Date(),
+              paidAt: createdInvoice.paidAt || undefined,
             });
             console.log(`📧 Subscription invoice email sent to: ${dbSubscription.contractor.user.email}`);
           } catch (error) {

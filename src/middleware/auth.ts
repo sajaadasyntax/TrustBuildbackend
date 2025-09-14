@@ -8,7 +8,7 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     name: string;
-    role: 'CUSTOMER' | 'CONTRACTOR' | 'ADMIN';
+    role: 'CUSTOMER' | 'CONTRACTOR' | 'ADMIN' | 'SUPER_ADMIN'; // Updated to include SUPER_ADMIN
   };
 }
 
