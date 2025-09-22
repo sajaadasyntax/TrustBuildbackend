@@ -550,24 +550,29 @@ export const getDashboardData = catchAsync(async (req: AuthenticatedRequest, res
       prisma.review.count({
         where: { customerId: customer.id },
       }),
-      prisma.job.aggregate({
+      // Use actual payment data instead of job budget
+      prisma.payment.aggregate({
         where: {
           customerId: customer.id,
           status: 'COMPLETED',
         },
-        _sum: { budget: true },
+        _sum: { amount: true },
       }),
-      prisma.job.aggregate({
-        where: { customerId: customer.id },
-        _avg: { budget: true },
+      // Calculate average based on actual payments made
+      prisma.payment.aggregate({
+        where: {
+          customerId: customer.id,
+          status: 'COMPLETED',
+        },
+        _avg: { amount: true },
       }),
-    ]).then(([totalJobs, activeJobsCount, completedJobs, totalReviews, totalSpentAgg, averageBudgetAgg]) => ({
+    ]).then(([totalJobs, activeJobsCount, completedJobs, totalReviews, totalSpentAgg, averagePaymentAgg]) => ({
       totalJobs,
       activeJobs: activeJobsCount,
       completedJobs,
       totalReviews,
-      totalSpent: totalSpentAgg._sum.budget || 0,
-      averageJobBudget: averageBudgetAgg._avg.budget || 0,
+      totalSpent: totalSpentAgg._sum.amount || 0,
+      averageJobBudget: averagePaymentAgg._avg.amount || 0,
     })),
   ]);
 
