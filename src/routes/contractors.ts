@@ -326,6 +326,7 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
         },
       },
       services: true,
+      subscription: true,
       portfolio: {
         orderBy: { createdAt: 'desc' },
       },
