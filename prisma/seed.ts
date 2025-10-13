@@ -1,10 +1,110 @@
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, UserRole, AdminRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Starting database seeding...');
+
+  // Create Admin accounts
+  console.log('👑 Creating admin accounts...');
+  
+  const superAdminPassword = await bcrypt.hash('SuperAdmin@2024!', 12);
+  const superAdmin = await prisma.admin.upsert({
+    where: { email: 'superadmin@trustbuild.uk' },
+    update: {},
+    create: {
+      email: 'superadmin@trustbuild.uk',
+      passwordHash: superAdminPassword,
+      name: 'Super Administrator',
+      role: AdminRole.SUPER_ADMIN,
+      isActive: true,
+    },
+  });
+  console.log('✅ Super Admin created:', superAdmin.email);
+
+  const financeAdminPassword = await bcrypt.hash('FinanceAdmin@2024!', 12);
+  const financeAdmin = await prisma.admin.upsert({
+    where: { email: 'finance@trustbuild.uk' },
+    update: {},
+    create: {
+      email: 'finance@trustbuild.uk',
+      passwordHash: financeAdminPassword,
+      name: 'Finance Administrator',
+      role: AdminRole.FINANCE_ADMIN,
+      isActive: true,
+    },
+  });
+  console.log('✅ Finance Admin created:', financeAdmin.email);
+
+  const supportAdminPassword = await bcrypt.hash('SupportAdmin@2024!', 12);
+  const supportAdmin = await prisma.admin.upsert({
+    where: { email: 'support@trustbuild.uk' },
+    update: {},
+    create: {
+      email: 'support@trustbuild.uk',
+      passwordHash: supportAdminPassword,
+      name: 'Support Administrator',
+      role: AdminRole.SUPPORT_ADMIN,
+      isActive: true,
+    },
+  });
+  console.log('✅ Support Admin created:', supportAdmin.email);
+
+  // Create default system settings
+  console.log('⚙️ Creating system settings...');
+  
+  await prisma.setting.upsert({
+    where: { key: 'COMMISSION_RATE' },
+    update: {},
+    create: {
+      key: 'COMMISSION_RATE',
+      value: { rate: 5.0, description: 'Commission rate percentage charged on completed jobs' },
+      updatedBy: superAdmin.id,
+    },
+  });
+
+  await prisma.setting.upsert({
+    where: { key: 'FREE_JOB_ALLOCATION' },
+    update: {},
+    create: {
+      key: 'FREE_JOB_ALLOCATION',
+      value: { 
+        standard: 0,
+        premium: 2,
+        enterprise: 5,
+        description: 'Free job leads allocated per contractor tier'
+      },
+      updatedBy: superAdmin.id,
+    },
+  });
+
+  await prisma.setting.upsert({
+    where: { key: 'SUBSCRIPTION_PRICING' },
+    update: {},
+    create: {
+      key: 'SUBSCRIPTION_PRICING',
+      value: {
+        monthly: 49.99,
+        sixMonths: 269.94,
+        yearly: 479.88,
+        currency: 'GBP'
+      },
+      updatedBy: superAdmin.id,
+    },
+  });
+
+  await prisma.setting.upsert({
+    where: { key: 'KYC_DEADLINE_DAYS' },
+    update: {},
+    create: {
+      key: 'KYC_DEADLINE_DAYS',
+      value: { days: 14, description: 'Days allowed for contractors to submit KYC documents' },
+      updatedBy: superAdmin.id,
+    },
+  });
+
+  console.log('✅ System settings created');
 
   // Create services with TrustBuilders pricing model
   const services = [
@@ -145,20 +245,20 @@ async function main() {
     });
   }
 
-  // Create super admin user
-  const superAdminPassword = await bcrypt.hash('superadmin123456', 12);
+  // Create super admin user (User model - for backward compatibility)
+  const legacySuperAdminPassword = await bcrypt.hash('superadmin123456', 12);
   const superAdminUser = await prisma.user.upsert({
     where: { email: 'superadmin@trustbuild.com' },
     update: {},
     create: {
       name: 'TrustBuild Super Admin',
       email: 'superadmin@trustbuild.com',
-      password: superAdminPassword,
+      password: legacySuperAdminPassword,
       role: UserRole.SUPER_ADMIN,
     },
   });
 
-  console.log('🔑 Super Admin user created:', superAdminUser.email);
+  console.log('🔑 Legacy Super Admin user created:', superAdminUser.email);
 
   // Create regular admin user
   const adminPassword = await bcrypt.hash('admin123456', 12);

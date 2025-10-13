@@ -37,11 +37,16 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
 
   // Only charge commission if they used credits and haven't paid commission yet
   if (accessedViaCredits && !job.commissionPaid) {
-    const commissionAmount = finalAmount * 0.05; // 5% commission
+    // Get commission rate from settings
+    const commissionRateSetting = await prisma.setting.findUnique({
+      where: { key: 'COMMISSION_RATE' },
+    });
+    const commissionRatePercent = (commissionRateSetting?.value as any)?.rate || 5.0;
+    const commissionAmount = (finalAmount * commissionRatePercent) / 100;
     const vatAmount = 0; // No additional VAT
     const totalAmount = commissionAmount;
 
-    console.log(`💰 Creating commission: ${commissionAmount} (5% of ${finalAmount})`);
+    console.log(`💰 Creating commission: ${commissionAmount} (${commissionRatePercent}% of ${finalAmount})`);
 
     // Create commission payment record
     const commissionPayment = await prisma.commissionPayment.create({
@@ -50,7 +55,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
         contractorId: job.wonByContractorId!,
         customerId: job.customerId,
         finalJobAmount: finalAmount,
-        commissionRate: 5.0,
+        commissionRate: commissionRatePercent,
         commissionAmount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,

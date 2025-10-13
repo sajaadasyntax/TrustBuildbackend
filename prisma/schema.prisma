@@ -148,6 +148,13 @@ model Customer {
   @@map("customers")
 }
 
+enum ContractorAccountStatus {
+  ACTIVE
+  PAUSED
+  FROZEN
+  SUSPENDED
+}
+
 model Contractor {
   id                    String            @id @default(cuid())
   userId                String            @unique
@@ -183,6 +190,13 @@ model Contractor {
   weeklyCreditsLimit    Int               @default(3)
   lastCreditReset       DateTime?
   
+  // Admin controls
+  accountStatus         ContractorAccountStatus @default(ACTIVE)
+  freeJobAllocation     Int               @default(0) // Admin-configurable free job leads
+  frozenAt              DateTime?
+  frozenBy              String?           // Admin ID who froze account
+  frozenReason          String?           @db.Text
+  
   // Stats
   jobsCompleted         Int               @default(0)
   averageRating         Float             @default(0)
@@ -207,6 +221,8 @@ model Contractor {
   jobInterests  JobInterest[]
   commissionPayments CommissionPayment[]
   stripeCustomerInfo StripeCustomer?
+  kyc           ContractorKyc?
+  manualInvoices ManualInvoice[]
 
   @@map("contractors")
 }
@@ -636,4 +652,158 @@ model AdminSettings {
   updatedAt   DateTime @updatedAt
 
   @@map("admin_settings")
+}
+
+// New Admin System Models
+enum AdminRole {
+  SUPER_ADMIN
+  FINANCE_ADMIN
+  SUPPORT_ADMIN
+}
+
+model Admin {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  role            AdminRole
+  twoFAEnabled    Boolean  @default(false)
+  twoFASecret     String?  // encrypted TOTP secret
+  isActive        Boolean  @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  activityLogs    ActivityLog[]
+  loginActivities LoginActivity[]
+
+  @@map("admins")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  adminId     String
+  admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  action      String   // SETTINGS_UPDATE, JOB_VALUE_ADJUST, INVOICE_CREATE, etc.
+  entityType  String   // Job, Invoice, Contractor, Setting, etc.
+  entityId    String?
+  description String?
+  diff        Json?    // Store before/after changes
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model LoginActivity {
+  id        String   @id @default(cuid())
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  city      String?
+  country   String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("login_activities")
+}
+
+model Setting {
+  key       String   @id // COMMISSION_RATE, SUBSCRIPTION_PRICING, FREE_JOB_ALLOCATION, etc.
+  value     Json     // Flexible JSON storage for any setting
+  updatedBy String?  // Admin ID who last updated
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("settings")
+}
+
+// KYC System
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  OVERDUE
+}
+
+model ContractorKyc {
+  id             String    @id @default(cuid())
+  contractorId   String    @unique
+  contractor     Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  status         KycStatus @default(PENDING)
+  idDocPath      String?
+  utilityDocPath String?
+  companyNumber  String?
+  submittedAt    DateTime?
+  dueBy          DateTime?   // Deadline for submission
+  reviewedBy     String?     // Admin ID
+  reviewedAt     DateTime?
+  rejectionReason String?    @db.Text
+  notes          String?     @db.Text
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([dueBy])
+  @@map("contractor_kyc")
+}
+
+// Manual Invoice System (separate from automated commission invoices)
+enum ManualInvoiceStatus {
+  DRAFT
+  ISSUED
+  OVERDUE
+  PAID
+  CANCELED
+}
+
+model ManualInvoice {
+  id              String              @id @default(cuid())
+  contractorId    String
+  contractor      Contractor          @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  number          String              @unique
+  status          ManualInvoiceStatus @default(DRAFT)
+  subtotal        Int                 // pence
+  tax             Int                 @default(0) // pence
+  total           Int                 // pence
+  currency        String              @default("GBP")
+  reason          String?             @db.Text
+  notes           String?             @db.Text
+  createdByAdminId String?
+  dueDate         DateTime?
+  issuedAt        DateTime?
+  paidAt          DateTime?
+  pdfPath         String?
+  remindersSent   Int                 @default(0)
+  lastReminderAt  DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  items           ManualInvoiceItem[]
+
+  @@index([contractorId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("manual_invoices")
+}
+
+model ManualInvoiceItem {
+  id         String         @id @default(cuid())
+  invoiceId  String
+  invoice    ManualInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  amount     Int            // pence
+  quantity   Int            @default(1)
+  
+  @@map("manual_invoice_items")
 } 

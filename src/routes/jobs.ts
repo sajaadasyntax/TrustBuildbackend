@@ -2478,9 +2478,14 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   });
   
   if (winningContractor && accessedViaCredits && !job.commissionPaid) {
-    commissionAmount = Number(job.finalAmount) * 0.05; // 5% commission
+    // Get commission rate from settings
+    const commissionRateSetting = await prisma.setting.findUnique({
+      where: { key: 'COMMISSION_RATE' },
+    });
+    const commissionRatePercent = (commissionRateSetting?.value as any)?.rate || 5.0;
+    commissionAmount = (Number(job.finalAmount) * commissionRatePercent) / 100;
     
-    console.log(`💰 Creating commission: ${commissionAmount} (5% of ${job.finalAmount})`);
+    console.log(`💰 Creating commission: ${commissionAmount} (${commissionRatePercent}% of ${job.finalAmount})`);
     
     // No additional VAT calculation - commission amount already includes VAT
     const vatAmount = 0; // No additional VAT
@@ -2500,7 +2505,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         contractorId: commissionContractorId, // Use consistent contractor ID from user session
         customerId: job.customerId,
         finalJobAmount: Number(job.finalAmount),
-        commissionRate: 5.0,
+        commissionRate: commissionRatePercent,
         commissionAmount: commissionAmount,
         vatAmount: vatAmount,
         totalAmount: totalAmount,

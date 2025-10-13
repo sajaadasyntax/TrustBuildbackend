@@ -28,6 +28,13 @@ import adminInvoiceRoutesNew from './routes/admin-invoice-routes';
 import adminSubscriptionRoutes from './routes/admin-subscriptions';
 import contractorDashboardRoutes from './routes/contractor-dashboard';
 import webhookRoutes from './routes/webhooks';
+// New admin system routes
+import adminAuthRoutes from './routes/admin-auth';
+import adminSettingsRoutes from './routes/admin-settings';
+import adminActivityRoutes from './routes/admin-activity';
+import adminJobsRoutes from './routes/admin-jobs';
+import adminKycRoutes from './routes/admin-kyc';
+import adminManualInvoicesRoutes from './routes/admin-manual-invoices';
 
 // Load environment variables
 dotenv.config();
@@ -159,6 +166,13 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contractor', contractorDashboardRoutes);
 app.use('/api/webhooks', webhookRoutes);
+// New admin system routes
+app.use('/api/admin-auth', adminAuthRoutes);
+app.use('/api/admin/settings', adminSettingsRoutes);
+app.use('/api/admin/activity', adminActivityRoutes);
+app.use('/api/admin/jobs', adminJobsRoutes);
+app.use('/api/admin/kyc', adminKycRoutes);
+app.use('/api/admin/manual-invoices', adminManualInvoicesRoutes);
 
 // Basic test routes
 app.get('/api/test', (req, res) => {
