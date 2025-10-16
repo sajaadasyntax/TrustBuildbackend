@@ -12,6 +12,7 @@ export interface AdminAuthRequest extends Request {
     email: string;
     name: string;
     role: AdminRole;
+    permissions: string[] | null;
   };
 }
 
@@ -56,6 +57,7 @@ export const protectAdmin = catchAsync(
         email: true,
         name: true,
         role: true,
+        permissions: true,
         isActive: true,
       },
     });
@@ -73,65 +75,39 @@ export const protectAdmin = catchAsync(
     }
 
     // Grant access to protected route
-    req.admin = admin;
+    req.admin = {
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role: admin.role,
+      permissions: admin.permissions as string[] | null,
+    };
     next();
   }
 );
 
-// Permission map for different admin roles
-const PERMISSIONS: Record<AdminRole, string[]> = {
-  SUPER_ADMIN: ['*'], // All permissions
-  FINANCE_ADMIN: [
-    'invoices:read',
-    'invoices:create',
-    'invoices:update',
-    'invoices:delete',
-    'payments:read',
-    'payments:update',
-    'commissions:read',
-    'commissions:update',
-    'jobs:read',
-    'jobs:update_value',
-    'contractors:read',
-    'settings:read',
-    'settings:update_commission',
-    'settings:update_pricing',
-    'activity_logs:read',
-  ],
-  SUPPORT_ADMIN: [
-    'jobs:read',
-    'jobs:cancel',
-    'jobs:reassign',
-    'contractors:read',
-    'contractors:freeze',
-    'contractors:unfreeze',
-    'contractors:update_limits',
-    'kyc:read',
-    'kyc:approve',
-    'kyc:reject',
-    'disputes:read',
-    'disputes:resolve',
-    'activity_logs:read',
-  ],
-};
-
 // Check if admin has specific permission
-export const hasPermission = (role: AdminRole, permission: string): boolean => {
-  const rolePermissions = PERMISSIONS[role];
-  
+export const hasPermission = (admin: AdminAuthRequest['admin'], permission: string): boolean => {
+  if (!admin) {
+    return false;
+  }
+
   // Super Admin has all permissions
-  if (rolePermissions.includes('*')) {
+  if (admin.role === AdminRole.SUPER_ADMIN) {
     return true;
   }
 
+  // Check admin's assigned permissions
+  const adminPermissions = admin.permissions || [];
+  
   // Check for exact permission match
-  if (rolePermissions.includes(permission)) {
+  if (adminPermissions.includes(permission)) {
     return true;
   }
 
   // Check for wildcard permission (e.g., 'jobs:*' for all job permissions)
   const [resource, action] = permission.split(':');
-  if (rolePermissions.includes(`${resource}:*`)) {
+  if (adminPermissions.includes(`${resource}:*`)) {
     return true;
   }
 
@@ -146,7 +122,7 @@ export const requirePermission = (...permissions: string[]) => {
     }
 
     const hasRequiredPermission = permissions.some(permission =>
-      hasPermission(req.admin!.role, permission)
+      hasPermission(req.admin, permission)
     );
 
     if (!hasRequiredPermission) {

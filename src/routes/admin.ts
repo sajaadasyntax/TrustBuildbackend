@@ -1,7 +1,9 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { protectAdmin, requirePermission, AdminAuthRequest, hasPermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
+import { AdminPermission } from '../config/permissions';
 import bcrypt from 'bcryptjs';
 
 const router = Router();
@@ -10,6 +12,38 @@ const router = Router();
 const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   if (!req.user?.role || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
     return next(new AppError('Access denied. Admin only.', 403));
+  }
+  next();
+};
+
+// Adapter middleware to convert AuthenticatedRequest to AdminAuthRequest for permission checks
+const adminAdapter = async (req: any, res: Response, next: NextFunction) => {
+  if (req.user && ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+    try {
+      // Fetch admin permissions if not SUPER_ADMIN
+      if (req.user.role === 'SUPER_ADMIN') {
+        req.admin = {
+          id: req.user.id,
+          email: req.user.email,
+          name: req.user.name,
+          role: 'SUPER_ADMIN' as any,
+          permissions: null // SUPER_ADMIN has all permissions
+        };
+      } else {
+        // For ADMIN role, fetch from User table if they're a regular admin
+        // Note: This is a compatibility layer for existing admin users in User table
+        // New admins should be created in Admin table
+        req.admin = {
+          id: req.user.id,
+          email: req.user.email,
+          name: req.user.name,
+          role: 'SUPPORT_ADMIN' as any, // Default for old admins
+          permissions: [] // Old admins have no specific permissions, deny by default
+        };
+      }
+    } catch (error) {
+      console.error('Error in adminAdapter:', error);
+    }
   }
   next();
 };
@@ -757,7 +791,16 @@ export const getAllUsers = catchAsync(async (req: AuthenticatedRequest, res: Res
   // Build where clause
   const whereClause: any = {};
   
+  // Regular ADMINs cannot see SUPER_ADMIN users
+  if (req.user?.role === 'ADMIN') {
+    whereClause.role = { not: 'SUPER_ADMIN' };
+  }
+  
   if (role && role !== 'all') {
+    // Regular ADMIN trying to filter SUPER_ADMIN - deny
+    if (role === 'SUPER_ADMIN' && req.user?.role === 'ADMIN') {
+      return next(new AppError('Access denied. Cannot view SUPER_ADMIN users.', 403));
+    }
     whereClause.role = role;
   }
   
@@ -2354,47 +2397,60 @@ export const updateJobContractorLimit = catchAsync(async (req: AuthenticatedRequ
 });
 
 // Apply admin middleware to all routes
-router.use(protect, adminOnly);
+router.use(protect, adminOnly, adminAdapter);
 
-// Routes
+// Routes with Permission Checks
+// Dashboard - available to all admins
 router.get('/dashboard', getDashboardStats);
 router.get('/analytics', getAnalytics);
-router.get('/contractors/pending', getPendingContractors);
-router.patch('/contractors/:id/approve', approveContractor);
-router.get('/content/flagged', getFlaggedContent);
-router.patch('/content/:type/:id/moderate', moderateContent);
-router.patch('/users/:id/manage', manageUser);
-router.get('/payments/settings', getSystemSettings);
-router.patch('/payments/settings', updateSystemSettings);
-router.get('/payments/stats', getPaymentStats);
-router.get('/payments/transactions', getPaymentTransactions);
-router.post('/payments/:id/refund', processRefund);
-router.get('/users', getAllUsers);
-router.post('/users/create-admin', createAdmin);
-router.get('/users/:id', getUserById);
-router.get('/contractors', getAllContractors);
-router.patch('/contractors/:id/approval', updateContractorApproval);
-router.patch('/contractors/:id/status', updateContractorStatus);
-router.get('/contractors/stats', getContractorStats);
 
-// Job management routes
-router.get('/jobs', getAllJobsAdmin);
-router.get('/jobs/stats', getJobStats);
-router.patch('/jobs/:id/status', updateJobStatus);
-router.patch('/jobs/:id/flag', toggleJobFlag);
-router.patch('/jobs/:id/lead-price', setJobLeadPrice);
-router.patch('/jobs/:id/budget', setJobBudget);
-router.patch('/jobs/:id/contractor-limit', updateJobContractorLimit);
+// Contractors Management
+router.get('/contractors/pending', requirePermission(AdminPermission.CONTRACTORS_READ), getPendingContractors);
+router.patch('/contractors/:id/approve', requirePermission(AdminPermission.CONTRACTORS_APPROVE), approveContractor);
+router.get('/contractors', requirePermission(AdminPermission.CONTRACTORS_READ), getAllContractors);
+router.patch('/contractors/:id/approval', requirePermission(AdminPermission.CONTRACTORS_APPROVE), updateContractorApproval);
+router.patch('/contractors/:id/status', requirePermission(AdminPermission.CONTRACTORS_WRITE), updateContractorStatus);
+router.get('/contractors/stats', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorStats);
+router.get('/contractors-search', requirePermission(AdminPermission.CONTRACTORS_READ), searchContractorsForCredits);
+router.get('/contractors/:id/credits', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorCredits);
+router.post('/contractors/:id/adjust-credits', requirePermission(AdminPermission.CONTRACTORS_WRITE), adjustContractorCredits);
 
-// Add new admin payment routes
-router.get('/services-pricing', getServicesWithPricing);
-router.put('/services/:id/pricing', updateServicePricing);
-router.get('/contractors-search', searchContractorsForCredits);
-router.get('/contractors/:id/credits', getContractorCredits);
-router.post('/contractors/:id/adjust-credits', adjustContractorCredits);
-router.get('/payment-overview', getPaymentOverview);
-router.get('/reviews', getAllReviewsAdmin);
-router.get('/settings', getAdminSettings);
-router.patch('/settings/:key', updateAdminSetting);
+// Content Management
+router.get('/content/flagged', requirePermission(AdminPermission.CONTENT_READ), getFlaggedContent);
+router.patch('/content/:type/:id/moderate', requirePermission(AdminPermission.CONTENT_WRITE), moderateContent);
+
+// Users Management
+router.patch('/users/:id/manage', requirePermission(AdminPermission.USERS_WRITE), manageUser);
+router.get('/users', requirePermission(AdminPermission.USERS_READ), getAllUsers);
+router.post('/users/create-admin', createAdmin); // Keep SUPER_ADMIN only (handled in function)
+router.get('/users/:id', requirePermission(AdminPermission.USERS_READ), getUserById);
+
+// Payments Management
+router.get('/payments/settings', requirePermission(AdminPermission.SETTINGS_READ), getSystemSettings);
+router.patch('/payments/settings', requirePermission(AdminPermission.SETTINGS_WRITE), updateSystemSettings);
+router.get('/payments/stats', requirePermission(AdminPermission.PAYMENTS_READ), getPaymentStats);
+router.get('/payments/transactions', requirePermission(AdminPermission.PAYMENTS_READ), getPaymentTransactions);
+router.post('/payments/:id/refund', requirePermission(AdminPermission.PAYMENTS_REFUND), processRefund);
+router.get('/payment-overview', requirePermission(AdminPermission.PAYMENTS_READ), getPaymentOverview);
+
+// Job Management
+router.get('/jobs', requirePermission(AdminPermission.JOBS_READ), getAllJobsAdmin);
+router.get('/jobs/stats', requirePermission(AdminPermission.JOBS_READ), getJobStats);
+router.patch('/jobs/:id/status', requirePermission(AdminPermission.JOBS_WRITE), updateJobStatus);
+router.patch('/jobs/:id/flag', requirePermission(AdminPermission.JOBS_WRITE), toggleJobFlag);
+router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_WRITE), setJobLeadPrice);
+router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
+router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
+
+// Pricing Management
+router.get('/services-pricing', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);
+router.put('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing);
+
+// Reviews Management
+router.get('/reviews', requirePermission(AdminPermission.REVIEWS_READ), getAllReviewsAdmin);
+
+// Settings Management
+router.get('/settings', requirePermission(AdminPermission.SETTINGS_READ), getAdminSettings);
+router.patch('/settings/:key', requirePermission(AdminPermission.SETTINGS_WRITE), updateAdminSetting);
 
 export default router; 

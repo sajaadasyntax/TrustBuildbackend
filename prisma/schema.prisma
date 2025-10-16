@@ -667,6 +667,7 @@ model Admin {
   passwordHash    String
   name            String
   role            AdminRole
+  permissions     Json?    // Array of permission strings: ["users:read", "users:write", "jobs:read", etc.]
   twoFAEnabled    Boolean  @default(false)
   twoFASecret     String?  // encrypted TOTP secret
   isActive        Boolean  @default(true)

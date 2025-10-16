@@ -277,9 +277,62 @@ export const updateUser = catchAsync(async (req: AuthenticatedRequest, res: Resp
   });
 });
 
+// @desc    Change password
+// @route   PATCH /api/users/change-password
+// @access  Private
+export const changePassword = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return next(new AppError('Please provide current password, new password, and confirmation', 400));
+  }
+
+  if (newPassword !== confirmPassword) {
+    return next(new AppError('New password and confirmation do not match', 400));
+  }
+
+  if (newPassword.length < 8) {
+    return next(new AppError('Password must be at least 8 characters long', 400));
+  }
+
+  // Get user with password
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      id: true,
+      password: true,
+    },
+  });
+
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+
+  // Check current password
+  const isPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+  if (!isPasswordCorrect) {
+    return next(new AppError('Current password is incorrect', 401));
+  }
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+  // Update password
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: hashedPassword },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Password changed successfully',
+  });
+});
+
 // Routes
 router.get('/', protect, getAllUsers);
 router.get('/me', protect, getMe);
+router.patch('/change-password', protect, changePassword);
 router.patch('/me', protect, updateMe);
 router.patch('/me/password', protect, updatePassword);
 router.delete('/me', protect, deactivateMe);

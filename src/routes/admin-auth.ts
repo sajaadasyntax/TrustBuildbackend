@@ -231,6 +231,40 @@ router.post(
   })
 );
 
+// Get current admin profile
+router.get(
+  '/me',
+  protectAdmin,
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const admin = await prisma.admin.findUnique({
+      where: { id: req.admin!.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        permissions: true,
+        isActive: true,
+        twoFAEnabled: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Admin not found',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: { admin },
+    });
+  })
+);
+
 // List all admins (Super Admin only)
 router.get(
   '/admins',
@@ -243,6 +277,7 @@ router.get(
         email: true,
         name: true,
         role: true,
+        permissions: true,
         isActive: true,
         twoFAEnabled: true,
         lastLoginAt: true,
@@ -264,7 +299,7 @@ router.post(
   protectAdmin,
   restrictToAdminRole(AdminRole.SUPER_ADMIN),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const { email, name, role, password } = req.body;
+    const { email, name, role, password, permissions } = req.body;
 
     if (!email || !name || !role || !password) {
       return res.status(400).json({
@@ -278,6 +313,14 @@ router.post(
       return res.status(400).json({
         status: 'error',
         message: 'Invalid admin role',
+      });
+    }
+
+    // For regular admins (non-SUPER_ADMIN), permissions are required
+    if (role !== 'SUPER_ADMIN' && (!permissions || !Array.isArray(permissions) || permissions.length === 0)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Permissions are required for non-SUPER_ADMIN roles',
       });
     }
 
@@ -301,12 +344,14 @@ router.post(
         name,
         role: role as AdminRole,
         passwordHash,
+        permissions: role === 'SUPER_ADMIN' ? null : permissions, // SUPER_ADMIN doesn't need permissions
       },
       select: {
         id: true,
         email: true,
         name: true,
         role: true,
+        permissions: true,
         isActive: true,
         createdAt: true,
       },
