@@ -1,12 +1,14 @@
-import { PrismaClient, UserRole, AdminRole } from '@prisma/client';
+import { PrismaClient, UserRole, AdminRole, ContractorTier, JobStatus, JobSize, ContractorStatus, SubscriptionPlan } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting database seeding...');
+  console.log('🌱 Starting comprehensive database seeding...\n');
 
-  // Create Admin accounts
+  // ============================================================
+  // 1. CREATE ADMIN ACCOUNTS
+  // ============================================================
   console.log('👑 Creating admin accounts...');
   
   const superAdminPassword = await bcrypt.hash('SuperAdmin@2024!', 12);
@@ -21,7 +23,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log('✅ Super Admin created:', superAdmin.email);
+  console.log('  ✅ Super Admin created:', superAdmin.email);
 
   const financeAdminPassword = await bcrypt.hash('FinanceAdmin@2024!', 12);
   const financeAdmin = await prisma.admin.upsert({
@@ -35,7 +37,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log('✅ Finance Admin created:', financeAdmin.email);
+  console.log('  ✅ Finance Admin created:', financeAdmin.email);
 
   const supportAdminPassword = await bcrypt.hash('SupportAdmin@2024!', 12);
   const supportAdmin = await prisma.admin.upsert({
@@ -49,10 +51,13 @@ async function main() {
       isActive: true,
     },
   });
-  console.log('✅ Support Admin created:', supportAdmin.email);
+  console.log('  ✅ Support Admin created:', supportAdmin.email);
+  console.log('');
 
-  // Create default system settings
-  console.log('⚙️ Creating system settings...');
+  // ============================================================
+  // 2. CREATE SYSTEM SETTINGS
+  // ============================================================
+  console.log('⚙️  Creating system settings...');
   
   await prisma.setting.upsert({
     where: { key: 'COMMISSION_RATE' },
@@ -104,9 +109,35 @@ async function main() {
     },
   });
 
-  console.log('✅ System settings created');
+  await prisma.adminSettings.createMany({
+    data: [
+      {
+        key: 'default_max_contractors_per_job',
+        value: '5',
+        description: 'Default maximum number of contractors that can purchase access to each job',
+      },
+      {
+        key: 'commission_rate',
+        value: '0.05',
+        description: 'Commission rate (5%) charged to contractors who used credits and won jobs',
+      },
+      {
+        key: 'platform_name',
+        value: 'TrustBuild',
+        description: 'Platform name displayed throughout the application',
+      },
+    ],
+    skipDuplicates: true,
+  });
 
-  // Create services with TrustBuilders pricing model
+  console.log('  ✅ System settings created');
+  console.log('');
+
+  // ============================================================
+  // 3. CREATE SERVICES
+  // ============================================================
+  console.log('📋 Creating services...');
+  
   const services = [
     {
       name: 'Bathroom Fitting',
@@ -230,9 +261,9 @@ async function main() {
     },
   ];
 
-  console.log('📋 Creating services...');
+  const createdServices: any[] = [];
   for (const service of services) {
-    await prisma.service.upsert({
+    const created = await prisma.service.upsert({
       where: { name: service.name },
       update: {
         description: service.description,
@@ -243,535 +274,761 @@ async function main() {
       },
       create: service,
     });
+    createdServices.push(created);
   }
+  console.log(`  ✅ Created ${createdServices.length} services`);
+  console.log('');
 
-  // Create super admin user (User model - for backward compatibility)
-  const legacySuperAdminPassword = await bcrypt.hash('superadmin123456', 12);
-  const superAdminUser = await prisma.user.upsert({
-    where: { email: 'superadmin@trustbuild.com' },
-    update: {},
-    create: {
-      name: 'TrustBuild Super Admin',
-      email: 'superadmin@trustbuild.com',
-      password: legacySuperAdminPassword,
-      role: UserRole.SUPER_ADMIN,
-    },
-  });
-
-  console.log('🔑 Legacy Super Admin user created:', superAdminUser.email);
-
-  // Create regular admin user
-  const adminPassword = await bcrypt.hash('admin123456', 12);
-  const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@trustbuild.com' },
-    update: {},
-    create: {
-      name: 'TrustBuild Admin',
-      email: 'admin@trustbuild.com',
-      password: adminPassword,
-      role: UserRole.ADMIN,
-    },
-  });
-
-  console.log('👤 Admin user created:', adminUser.email);
-
-  // Create sample customer
-  const customerPassword = await bcrypt.hash('customer123', 12);
-  const customerUser = await prisma.user.upsert({
-    where: { email: 'customer@example.com' },
-    update: {},
-    create: {
-      name: 'John Customer',
-      email: 'customer@example.com',
-      password: customerPassword,
-      role: UserRole.CUSTOMER,
-    },
-  });
-
-  await prisma.customer.upsert({
-    where: { userId: customerUser.id },
-    update: {},
-    create: {
-      userId: customerUser.id,
+  // ============================================================
+  // 4. CREATE CUSTOMERS
+  // ============================================================
+  console.log('🏠 Creating customers...');
+  
+  const customerData = [
+    {
+      name: 'Sarah Johnson',
+      email: 'sarah.johnson@example.com',
       phone: '+44 20 1234 5678',
-      address: '123 Customer Street',
+      address: '123 High Street',
       city: 'London',
       postcode: 'SW1A 1AA',
     },
-  });
-
-  console.log('🏠 Sample customer created:', customerUser.email);
-
-  // Create sample contractor
-  const contractorPassword = await bcrypt.hash('contractor123', 12);
-  const contractorUser = await prisma.user.upsert({
-    where: { email: 'contractor@example.com' },
-    update: {},
-    create: {
-      name: 'Mike Contractor',
-      email: 'contractor@example.com',
-      password: contractorPassword,
-      role: UserRole.CONTRACTOR,
+    {
+      name: 'Michael Smith',
+      email: 'michael.smith@example.com',
+      phone: '+44 161 234 5678',
+      address: '45 Oak Avenue',
+      city: 'Manchester',
+      postcode: 'M1 1AA',
     },
-  });
+    {
+      name: 'Emma Williams',
+      email: 'emma.williams@example.com',
+      phone: '+44 121 234 5678',
+      address: '78 Park Lane',
+      city: 'Birmingham',
+      postcode: 'B1 1AA',
+    },
+    {
+      name: 'James Brown',
+      email: 'james.brown@example.com',
+      phone: '+44 113 234 5678',
+      address: '12 Victoria Road',
+      city: 'Leeds',
+      postcode: 'LS1 1AA',
+    },
+  ];
 
-  const kitchenService = await prisma.service.findFirst({
-    where: { name: 'Kitchen Renovation' },
-  });
+  const customers: any[] = [];
+  for (const data of customerData) {
+    const password = await bcrypt.hash('customer123', 12);
+    const user = await prisma.user.upsert({
+      where: { email: data.email },
+      update: {},
+      create: {
+        name: data.name,
+        email: data.email,
+        password,
+        role: UserRole.CUSTOMER,
+      },
+    });
 
-  const contractor = await prisma.contractor.upsert({
-    where: { userId: contractorUser.id },
-    update: {},
-    create: {
-      userId: contractorUser.id,
-      businessName: 'Mike\'s Kitchen Solutions',
-      description: 'Professional kitchen renovation specialist with over 10 years of experience.',
+    const customer = await prisma.customer.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        phone: data.phone,
+        address: data.address,
+        city: data.city,
+        postcode: data.postcode,
+      },
+    });
+    customers.push(customer);
+    console.log(`  ✅ Customer created: ${data.name} (${data.email})`);
+  }
+  console.log('');
+
+  // ============================================================
+  // 5. CREATE CONTRACTORS (WITH SUBSCRIPTIONS)
+  // ============================================================
+  console.log('🔨 Creating contractors with subscriptions...');
+  
+  const contractorData = [
+    {
+      name: 'David Thompson',
+      email: 'david@premiumbuilders.co.uk',
+      businessName: 'Premium Builders Ltd',
+      description: 'Award-winning building contractor with 15+ years experience. Specializing in high-end renovations and extensions.',
       phone: '+44 20 9876 5432',
-      website: 'https://mikeskitchens.co.uk',
+      website: 'https://premiumbuilders.co.uk',
       operatingArea: 'London, Surrey, Kent',
-      servicesProvided: 'Kitchen Renovation, Custom Cabinetry, Countertop Installation',
-      yearsExperience: '10+',
-      workSetup: 'team',
-      providesWarranty: true,
-      warrantyPeriod: '2 years',
-      usesContracts: true,
-      unsatisfiedCustomers: 'I always work closely with customers to address any concerns and ensure complete satisfaction. Communication is key.',
-      preferredClients: 'Homeowners looking for high-quality kitchen renovations with attention to detail.',
-      profileApproved: true,
-      status: 'VERIFIED',
-      averageRating: 4.8,
-      reviewCount: 12,
-      jobsCompleted: 25,
+      servicesProvided: 'Kitchen Fitting, Bathroom Fitting, Conversions',
+      yearsExperience: '15+',
+      tier: ContractorTier.PREMIUM,
+      subscriptionPlan: SubscriptionPlan.YEARLY,
+      subscriptionPrice: 39.99,
+      servicesIndexes: [8, 0, 4], // Kitchen, Bathroom, Conversions
     },
-  });
+    {
+      name: 'Lisa Anderson',
+      email: 'lisa@electricpro.co.uk',
+      businessName: 'ElectricPro Services',
+      description: 'Fully qualified electrician with NICEIC certification. Available for domestic and commercial electrical work.',
+      phone: '+44 161 567 8901',
+      website: 'https://electricpro.co.uk',
+      operatingArea: 'Manchester, Greater Manchester',
+      servicesProvided: 'Electrical, Central Heating',
+      yearsExperience: '10',
+      tier: ContractorTier.STANDARD,
+      subscriptionPlan: SubscriptionPlan.MONTHLY,
+      subscriptionPrice: 49.99,
+      servicesIndexes: [5, 3], // Electrical, Central Heating
+    },
+    {
+      name: 'Robert Davies',
+      email: 'rob@daviesplumbing.co.uk',
+      businessName: 'Davies Plumbing & Heating',
+      description: 'Gas Safe registered plumber and heating engineer. Fast, reliable, and competitively priced.',
+      phone: '+44 121 234 9876',
+      website: 'https://daviesplumbing.co.uk',
+      operatingArea: 'Birmingham, West Midlands',
+      servicesProvided: 'Plumbing, Central Heating, Bathroom Fitting',
+      yearsExperience: '12',
+      tier: ContractorTier.PREMIUM,
+      subscriptionPlan: SubscriptionPlan.SIX_MONTHS,
+      subscriptionPrice: 44.99,
+      servicesIndexes: [11, 3, 0], // Plumbing, Heating, Bathroom
+    },
+    {
+      name: 'Jennifer Wilson',
+      email: 'jen@gardenmagic.co.uk',
+      businessName: 'Garden Magic Landscaping',
+      description: 'Creative landscape designer transforming outdoor spaces. From concept to completion.',
+      phone: '+44 113 876 5432',
+      website: 'https://gardenmagic.co.uk',
+      operatingArea: 'Leeds, Yorkshire',
+      servicesProvided: 'Garden Landscaping',
+      yearsExperience: '8',
+      tier: ContractorTier.STANDARD,
+      subscriptionPlan: SubscriptionPlan.MONTHLY,
+      subscriptionPrice: 49.99,
+      servicesIndexes: [7], // Garden Landscaping
+    },
+    {
+      name: 'Thomas Miller',
+      email: 'tom@millerroofing.co.uk',
+      businessName: 'Miller Roofing Specialists',
+      description: 'Third-generation roofing company. All types of roofing work with 10-year guarantees.',
+      phone: '+44 117 234 5678',
+      website: 'https://millerroofing.co.uk',
+      operatingArea: 'Bristol, Somerset, Bath',
+      servicesProvided: 'Roofing, Bricklaying',
+      yearsExperience: '20+',
+      tier: ContractorTier.ENTERPRISE,
+      subscriptionPlan: SubscriptionPlan.YEARLY,
+      subscriptionPrice: 39.99,
+      servicesIndexes: [12, 1], // Roofing, Bricklaying
+    },
+    {
+      name: 'Sophie Turner',
+      email: 'sophie@turnerinteriors.co.uk',
+      businessName: 'Turner Interiors',
+      description: 'Professional painter and decorator. Transforming homes with quality finishes.',
+      phone: '+44 131 567 8901',
+      website: 'https://turnerinteriors.co.uk',
+      operatingArea: 'Edinburgh, Lothian',
+      servicesProvided: 'Painting & Decorating, Plastering, Flooring',
+      yearsExperience: '7',
+      tier: ContractorTier.STANDARD,
+      subscriptionPlan: SubscriptionPlan.MONTHLY,
+      subscriptionPrice: 49.99,
+      servicesIndexes: [9, 10, 6], // Painting, Plastering, Flooring
+    },
+    {
+      name: 'Mark Harrison',
+      email: 'mark@harrisoncarpentry.co.uk',
+      businessName: 'Harrison Custom Carpentry',
+      description: 'Bespoke carpentry and joinery. From fitted wardrobes to custom staircases.',
+      phone: '+44 151 234 9876',
+      website: 'https://harrisoncarpentry.co.uk',
+      operatingArea: 'Liverpool, Merseyside',
+      servicesProvided: 'Carpentry, Flooring',
+      yearsExperience: '14',
+      tier: ContractorTier.PREMIUM,
+      subscriptionPlan: SubscriptionPlan.YEARLY,
+      subscriptionPrice: 39.99,
+      servicesIndexes: [2, 6], // Carpentry, Flooring
+    },
+    {
+      name: 'Rachel Green',
+      email: 'rachel@greenbuild.co.uk',
+      businessName: 'Green Build Solutions',
+      description: 'Eco-friendly building solutions. Sustainable renovations and extensions.',
+      phone: '+44 114 876 5432',
+      website: 'https://greenbuild.co.uk',
+      operatingArea: 'Sheffield, South Yorkshire',
+      servicesProvided: 'Conversions, Windows & Doors, Bricklaying',
+      yearsExperience: '11',
+      tier: ContractorTier.PREMIUM,
+      subscriptionPlan: SubscriptionPlan.SIX_MONTHS,
+      subscriptionPrice: 44.99,
+      servicesIndexes: [4, 14, 1], // Conversions, Windows, Bricklaying
+    },
+  ];
 
-  // Connect contractor to services
-  if (kitchenService) {
+  const contractors: any[] = [];
+  const now = new Date();
+
+  for (const data of contractorData) {
+    const password = await bcrypt.hash('contractor123', 12);
+    const user = await prisma.user.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        password,
+        role: UserRole.CONTRACTOR,
+      },
+    });
+
+    const contractor = await prisma.contractor.create({
+      data: {
+        userId: user.id,
+        businessName: data.businessName,
+        description: data.description,
+        phone: data.phone,
+        website: data.website,
+        operatingArea: data.operatingArea,
+        servicesProvided: data.servicesProvided,
+        yearsExperience: data.yearsExperience,
+        workSetup: 'team',
+        providesWarranty: true,
+        warrantyPeriod: '2 years',
+        usesContracts: true,
+        unsatisfiedCustomers: 'I prioritize customer satisfaction and always work to resolve any concerns professionally.',
+        preferredClients: 'Homeowners and businesses looking for quality workmanship.',
+        profileApproved: true,
+        status: ContractorStatus.VERIFIED,
+        tier: data.tier,
+        creditsBalance: data.tier === ContractorTier.ENTERPRISE ? 5 : data.tier === ContractorTier.PREMIUM ? 2 : 0,
+        weeklyCreditsLimit: data.tier === ContractorTier.ENTERPRISE ? 5 : data.tier === ContractorTier.PREMIUM ? 3 : 3,
+        averageRating: 4.5 + Math.random() * 0.5,
+        reviewCount: Math.floor(Math.random() * 50) + 10,
+        jobsCompleted: Math.floor(Math.random() * 100) + 20,
+        accountStatus: 'ACTIVE',
+      },
+    });
+
+    // Connect contractor to services
+    for (const serviceIndex of data.servicesIndexes) {
+      await prisma.contractor.update({
+        where: { id: contractor.id },
+        data: {
+          services: {
+            connect: { id: createdServices[serviceIndex].id },
+          },
+        },
+      });
+    }
+
+    // Create subscription
+    const monthsToAdd = data.subscriptionPlan === SubscriptionPlan.YEARLY ? 12 : 
+                       data.subscriptionPlan === SubscriptionPlan.SIX_MONTHS ? 6 : 1;
+    const endDate = new Date(now);
+    endDate.setMonth(now.getMonth() + monthsToAdd);
+
+    const subscription = await prisma.subscription.create({
+      data: {
+        contractorId: contractor.id,
+        plan: data.subscriptionPlan,
+        tier: data.tier,
+        status: 'active',
+        isActive: true,
+        monthlyPrice: data.subscriptionPrice,
+        currentPeriodStart: now,
+        currentPeriodEnd: endDate,
+        stripeSubscriptionId: `sub_${Math.random().toString(36).substring(7)}`,
+      },
+    });
+
+    // Create payment for subscription
+    const paymentAmount = data.subscriptionPrice * monthsToAdd;
+    const payment = await prisma.payment.create({
+      data: {
+        contractorId: contractor.id,
+        amount: paymentAmount,
+        type: 'SUBSCRIPTION',
+        status: 'COMPLETED',
+        description: `${data.subscriptionPlan} subscription payment`,
+        stripePaymentId: `pi_${Math.random().toString(36).substring(7)}`,
+      },
+    });
+
+    // Create invoice for the payment
+    await prisma.invoice.create({
+      data: {
+        payments: { connect: { id: payment.id } },
+        invoiceNumber: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        amount: paymentAmount,
+        vatAmount: paymentAmount * 0.2,
+        totalAmount: paymentAmount * 1.2,
+        currency: 'GBP',
+        recipientName: data.businessName,
+        recipientEmail: data.email,
+        description: `${data.subscriptionPlan} subscription payment`,
+        emailSent: true,
+        issuedAt: now,
+        paidAt: now,
+      },
+    });
+
+    contractors.push(contractor);
+    console.log(`  ✅ Contractor created: ${data.businessName} (${data.subscriptionPlan} subscription)`);
+  }
+  console.log('');
+
+  // ============================================================
+  // 6. CREATE JOBS
+  // ============================================================
+  console.log('💼 Creating jobs...');
+  
+  const jobsData = [
+    {
+      customerIndex: 0,
+      serviceIndex: 8, // Kitchen Fitting
+      title: 'Complete Kitchen Renovation',
+      description: 'Looking for a complete kitchen renovation. Need new cabinets, countertops, appliances installed, and tiling. Kitchen is approximately 4m x 3m. High-quality finish required.',
+      budget: 15000,
+      location: 'London, SW1A',
+      postcode: 'SW1A 1AA',
+      urgency: 'within_week',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.LARGE,
+      estimatedValue: 15000,
+    },
+    {
+      customerIndex: 1,
+      serviceIndex: 5, // Electrical
+      title: 'Full House Rewiring',
+      description: 'Need complete rewiring of 3-bedroom semi-detached house. Property is 1960s build and needs updating to modern standards with new consumer unit.',
+      budget: 5000,
+      location: 'Manchester, M1',
+      postcode: 'M1 1AA',
+      urgency: 'asap',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.LARGE,
+      estimatedValue: 5000,
+    },
+    {
+      customerIndex: 2,
+      serviceIndex: 0, // Bathroom Fitting
+      title: 'Bathroom Renovation',
+      description: 'Complete bathroom renovation needed. Remove existing suite, re-tile walls and floor, install new suite with walk-in shower. Approximately 2.5m x 2m.',
+      budget: 6000,
+      location: 'Birmingham, B1',
+      postcode: 'B1 1AA',
+      urgency: 'flexible',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.MEDIUM,
+      estimatedValue: 6000,
+    },
+    {
+      customerIndex: 3,
+      serviceIndex: 7, // Garden Landscaping
+      title: 'Garden Makeover with Patio',
+      description: 'Looking to transform back garden. Need new patio area (approximately 20m²), lawn re-turfing, flower beds, and garden lighting.',
+      budget: 8000,
+      location: 'Leeds, LS1',
+      postcode: 'LS1 1AA',
+      urgency: 'flexible',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.MEDIUM,
+      estimatedValue: 8000,
+    },
+    {
+      customerIndex: 0,
+      serviceIndex: 12, // Roofing
+      title: 'Roof Repair - Missing Tiles',
+      description: 'Several tiles missing from pitched roof after recent storms. Need inspection and repair. Roof is approximately 15 years old.',
+      budget: 800,
+      location: 'London, SW1A',
+      postcode: 'SW1A 1AA',
+      urgency: 'asap',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.SMALL,
+      estimatedValue: 800,
+    },
+    {
+      customerIndex: 1,
+      serviceIndex: 9, // Painting & Decorating
+      title: 'Interior Painting - 3 Bedrooms',
+      description: 'Need 3 bedrooms painted. Walls and ceilings in white, woodwork in brilliant white gloss. Rooms are empty and ready to paint.',
+      budget: 1500,
+      location: 'Manchester, M1',
+      postcode: 'M1 1AA',
+      urgency: 'within_week',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.SMALL,
+      estimatedValue: 1500,
+    },
+    {
+      customerIndex: 2,
+      serviceIndex: 4, // Conversions
+      title: 'Loft Conversion to Bedroom',
+      description: 'Want to convert loft space into a bedroom with ensuite. Roof height is adequate. Need dormer window, stairs, plumbing, and electrics.',
+      budget: 25000,
+      location: 'Birmingham, B1',
+      postcode: 'B1 1AA',
+      urgency: 'flexible',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.LARGE,
+      estimatedValue: 25000,
+    },
+    {
+      customerIndex: 3,
+      serviceIndex: 11, // Plumbing
+      title: 'Leaking Radiator Valve Replacement',
+      description: 'Have a leaking radiator valve in living room. Need it replaced urgently to prevent water damage.',
+      budget: 200,
+      location: 'Leeds, LS1',
+      postcode: 'LS1 1AA',
+      urgency: 'asap',
+      status: JobStatus.POSTED,
+      jobSize: JobSize.SMALL,
+      estimatedValue: 200,
+    },
+    {
+      customerIndex: 0,
+      serviceIndex: 2, // Carpentry
+      title: 'Custom Built-in Wardrobes',
+      description: 'Looking for bespoke fitted wardrobes for master bedroom. Wall is 3.5m wide, floor to ceiling. Need modern design with soft-close doors.',
+      budget: 3500,
+      location: 'London, SW1A',
+      postcode: 'SW1A 1AA',
+      urgency: 'flexible',
+      status: JobStatus.IN_PROGRESS,
+      jobSize: JobSize.MEDIUM,
+      estimatedValue: 3500,
+      wonByContractorIndex: 6, // Mark Harrison - Carpentry
+    },
+    {
+      customerIndex: 1,
+      serviceIndex: 3, // Central Heating
+      title: 'New Boiler Installation',
+      description: 'Current boiler is 18 years old and inefficient. Need new combi boiler installed with 10-year warranty. 3-bed semi with 8 radiators.',
+      budget: 3000,
+      location: 'Manchester, M1',
+      postcode: 'M1 1AA',
+      urgency: 'within_week',
+      status: JobStatus.COMPLETED,
+      jobSize: JobSize.MEDIUM,
+      estimatedValue: 3000,
+      wonByContractorIndex: 1, // Lisa Anderson - Electrical/Heating
+      finalAmount: 2850,
+      customerConfirmed: true,
+      commissionPaid: true,
+    },
+  ];
+
+  const jobs: any[] = [];
+  for (const jobData of jobsData) {
+    const service = createdServices[jobData.serviceIndex];
+    const customer = customers[jobData.customerIndex];
+
+    let leadPrice;
+    if (jobData.jobSize === JobSize.SMALL) {
+      leadPrice = service.smallJobPrice;
+    } else if (jobData.jobSize === JobSize.MEDIUM) {
+      leadPrice = service.mediumJobPrice;
+    } else {
+      leadPrice = service.largeJobPrice;
+    }
+
+    const job = await prisma.job.create({
+      data: {
+        customerId: customer.id,
+        serviceId: service.id,
+        title: jobData.title,
+        description: jobData.description,
+        budget: jobData.budget,
+        location: jobData.location,
+        postcode: jobData.postcode,
+        urgency: jobData.urgency,
+        status: jobData.status,
+        jobSize: jobData.jobSize,
+        leadPrice,
+        estimatedValue: jobData.estimatedValue,
+        maxContractorsPerJob: 5,
+        wonByContractorId: jobData.wonByContractorIndex !== undefined ? contractors[jobData.wonByContractorIndex].id : null,
+        finalAmount: jobData.finalAmount || null,
+        customerConfirmed: jobData.customerConfirmed || false,
+        commissionPaid: jobData.commissionPaid || false,
+      },
+    });
+
+    jobs.push(job);
+    console.log(`  ✅ Job created: ${jobData.title} (${jobData.status})`);
+
+    // Create job applications for posted jobs
+    if (jobData.status === JobStatus.POSTED || jobData.status === JobStatus.IN_PROGRESS) {
+      // Get 2-3 random contractors who provide this service
+      const applicableContractors = contractors.filter(c => 
+        contractorData[contractors.indexOf(c)].servicesIndexes.includes(jobData.serviceIndex)
+      );
+
+      const numApplications = Math.min(3, applicableContractors.length);
+      for (let i = 0; i < numApplications; i++) {
+        const contractor = applicableContractors[i];
+        await prisma.jobApplication.create({
+          data: {
+            jobId: job.id,
+            contractorId: contractor.id,
+            coverLetter: `I would be delighted to work on your ${jobData.title.toLowerCase()} project. With my experience and expertise, I can deliver excellent results.`,
+            proposedRate: jobData.budget * (0.85 + Math.random() * 0.15),
+            timeline: jobData.urgency === 'asap' ? '1 week' : jobData.urgency === 'within_week' ? '2 weeks' : '3-4 weeks',
+            status: jobData.status === JobStatus.IN_PROGRESS && i === 0 ? 'ACCEPTED' : 'PENDING',
+          },
+        });
+      }
+
+      // Create job access for contractors who applied
+      for (let i = 0; i < numApplications; i++) {
+        const contractor = applicableContractors[i];
+        const useCredit = contractor.creditsBalance > 0 && Math.random() > 0.5;
+
+        await prisma.jobAccess.create({
+          data: {
+            jobId: job.id,
+            contractorId: contractor.id,
+            accessMethod: useCredit ? 'CREDIT' : 'PAYMENT',
+            paidAmount: useCredit ? null : leadPrice,
+            creditUsed: useCredit,
+          },
+        });
+
+        if (useCredit) {
+          // Deduct credit
+          await prisma.contractor.update({
+            where: { id: contractor.id },
+            data: { creditsBalance: { decrement: 1 } },
+          });
+
+          // Create credit transaction
+          await prisma.creditTransaction.create({
+            data: {
+              contractorId: contractor.id,
+              amount: -1,
+              type: 'JOB_ACCESS',
+              description: `Credit used to access job: ${jobData.title}`,
+              jobId: job.id,
+            },
+          });
+        } else {
+          // Create payment
+          await prisma.payment.create({
+            data: {
+              contractorId: contractor.id,
+              jobId: job.id,
+              amount: leadPrice,
+              type: 'LEAD_ACCESS',
+              status: 'COMPLETED',
+              description: `Lead access payment for: ${jobData.title}`,
+              stripePaymentId: `pi_${Math.random().toString(36).substring(7)}`,
+            },
+          });
+        }
+      }
+    }
+
+    // Create commission payment for completed job
+    if (jobData.status === JobStatus.COMPLETED && jobData.finalAmount && jobData.wonByContractorIndex !== undefined) {
+      const contractor = contractors[jobData.wonByContractorIndex];
+      const commissionRate = 5.0;
+      const commissionAmount = (jobData.finalAmount * commissionRate) / 100;
+      const vatAmount = commissionAmount * 0.2;
+      const totalAmount = commissionAmount + vatAmount;
+
+      const dueDate = new Date(now);
+      dueDate.setDate(dueDate.getDate() + 30);
+
+      const commissionPayment = await prisma.commissionPayment.create({
+        data: {
+          jobId: job.id,
+          contractorId: contractor.id,
+          customerId: customer.id,
+          finalJobAmount: jobData.finalAmount,
+          commissionRate,
+          commissionAmount,
+          vatAmount,
+          totalAmount,
+          status: 'PAID',
+          dueDate,
+          paidAt: now,
+          stripePaymentId: `pi_${Math.random().toString(36).substring(7)}`,
+        },
+      });
+
+      // Create commission invoice
+      await prisma.commissionInvoice.create({
+        data: {
+          commissionPaymentId: commissionPayment.id,
+          invoiceNumber: `COM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          contractorName: contractorData[jobData.wonByContractorIndex].businessName,
+          contractorEmail: contractorData[jobData.wonByContractorIndex].email,
+          jobTitle: jobData.title,
+          finalJobAmount: jobData.finalAmount,
+          commissionAmount,
+          vatAmount,
+          totalAmount,
+          dueDate,
+          emailSent: true,
+        },
+      });
+    }
+  }
+  console.log('');
+
+  // ============================================================
+  // 7. CREATE REVIEWS
+  // ============================================================
+  console.log('⭐ Creating reviews...');
+  
+  // Add some reviews for contractors
+  const reviewsData = [
+    {
+      contractorIndex: 0,
+      customerIndex: 0,
+      rating: 5,
+      comment: 'Excellent work on our kitchen renovation. David and his team were professional, punctual, and the quality of work exceeded our expectations. Highly recommended!',
+      isVerified: true,
+    },
+    {
+      contractorIndex: 1,
+      customerIndex: 1,
+      rating: 5,
+      comment: 'Lisa did a fantastic job rewiring our house. Very knowledgeable and explained everything clearly. The work was completed on time and to a high standard.',
+      isVerified: true,
+    },
+    {
+      contractorIndex: 2,
+      customerIndex: 2,
+      rating: 4,
+      comment: 'Good work overall. The bathroom looks great. There were a couple of minor issues but Rob sorted them out promptly.',
+      isVerified: true,
+    },
+    {
+      contractorIndex: 6,
+      customerIndex: 0,
+      rating: 5,
+      comment: 'Mark created beautiful custom wardrobes for our bedroom. The craftsmanship is outstanding and they fit perfectly. Worth every penny!',
+      isVerified: true,
+      jobIndex: 8,
+    },
+  ];
+
+  for (const reviewData of reviewsData) {
+    const contractor = contractors[reviewData.contractorIndex];
+    const customer = customers[reviewData.customerIndex];
+    const job = reviewData.jobIndex !== undefined ? jobs[reviewData.jobIndex] : null;
+
+    await prisma.review.create({
+      data: {
+        contractorId: contractor.id,
+        customerId: customer.id,
+        jobId: job?.id,
+        rating: reviewData.rating,
+        comment: reviewData.comment,
+        isVerified: reviewData.isVerified,
+      },
+    });
+
+    // Update contractor stats
     await prisma.contractor.update({
       where: { id: contractor.id },
       data: {
-        services: {
-          connect: { id: kitchenService.id },
-        },
-      },
-    });
-  }
-
-  console.log('🔨 Sample contractor created:', contractorUser.email);
-
-  // Create sample job
-  let job;
-  if (kitchenService) {
-    job = await prisma.job.create({
-      data: {
-        customerId: (await prisma.customer.findFirst({ where: { userId: customerUser.id } }))!.id,
-        serviceId: kitchenService.id,
-        title: 'Modern Kitchen Renovation',
-        description: 'Looking for a complete kitchen renovation. Need new cabinets, countertops, and appliances installed. Kitchen is approximately 3m x 4m.',
-        budget: 15000.00,
-        location: 'London, SW1A 1AA',
-        postcode: 'SW1A 1AA',
-        urgency: 'within_week',
-        status: 'POSTED',
-        requiresQuote: true,
+        reviewCount: { increment: 1 },
+        verifiedReviews: reviewData.isVerified ? { increment: 1 } : undefined,
       },
     });
 
-    console.log('💼 Sample job created:', job.title);
+    console.log(`  ✅ Review created for ${contractorData[reviewData.contractorIndex].businessName}`);
+  }
+  console.log('');
 
-    // Create sample job application
-    await prisma.jobApplication.create({
-      data: {
-        jobId: job.id,
-        contractorId: contractor.id,
-        coverLetter: 'I would be delighted to work on your kitchen renovation project. With over 10 years of experience and a proven track record, I can deliver a high-quality result within your timeline.',
-        proposedRate: 14500.00,
-        timeline: '2-3 weeks',
-        status: 'PENDING',
-      },
-    });
-
-    console.log('📝 Sample job application created');
-  } else {
-    console.log('⚠️ Kitchen service not found - creating basic sample job');
-    // Create a basic job with any available service
-    const anyService = await prisma.service.findFirst();
-    if (anyService) {
-      job = await prisma.job.create({
-        data: {
-          customerId: (await prisma.customer.findFirst({ where: { userId: customerUser.id } }))!.id,
-          serviceId: anyService.id,
-          title: 'Basic Home Improvement',
-          description: 'Looking for general home improvements.',
-          budget: 5000.00,
-          location: 'London, SW1A 1AA',
-          postcode: 'SW1A 1AA',
-          urgency: 'flexible',
-          status: 'POSTED',
-          requiresQuote: true,
-        },
-      });
-      console.log('💼 Basic sample job created:', job.title);
-    } else {
-      console.log('❌ No services available to create sample job');
-    }
-  }
+  // ============================================================
+  // 8. CREATE ADMIN ACTIVITY LOGS
+  // ============================================================
+  console.log('📝 Creating admin activity logs...');
   
-  // Get customer for payments
-  const customer = await prisma.customer.findFirst({
-    where: { userId: customerUser.id },
-  });
-
-  if (!customer) {
-    throw new Error('Customer not found');
-  }
-
-  // Create sample payments
-  console.log('💰 Creating sample payment data...');
-  
-  // Create a few payments for different purposes
-  const paymentTypes = ['LEAD_ACCESS', 'SUBSCRIPTION', 'JOB_PAYMENT', 'COMMISSION'];
-  const paymentStatuses = ['PENDING', 'COMPLETED', 'FAILED'];
-  
-  // Create more sample jobs for testing
-  const additionalJobs = [];
-  for (let i = 0; i < 3; i++) {
-    // Make sure we have a valid service
-    const service = await prisma.service.findFirst({
-      orderBy: { id: 'asc' },
-      skip: i % services.length
-    });
-    
-    if (!service) {
-      console.log(`⚠️ No service found for job ${i+1}, skipping`);
-      continue;
-    }
-    
-    const newJob = await prisma.job.create({
-      data: {
-        customer: { connect: { id: customer.id } },
-        service: { connect: { id: service.id } },
-        title: `Sample Job ${i+1}`,
-        description: `This is a sample job for testing job access.`,
-        budget: 2000.00 + (i * 500),
-        location: 'Manchester, UK',
-        postcode: 'M1 1AA',
-        urgency: 'flexible',
-        status: 'POSTED',
-        jobSize: (['SMALL', 'MEDIUM', 'LARGE'][i % 3] as 'SMALL' | 'MEDIUM' | 'LARGE'),
-      }
-    });
-    additionalJobs.push(newJob);
-    console.log(`📋 Created additional job: ${newJob.title}`);
-  }
-  
-  // Create an array of payment data
-  const paymentData = [
-    {
-      contractorId: contractor.id,
-      amount: 49.99,
-      type: 'SUBSCRIPTION' as const,
-      status: 'COMPLETED' as const,
-      description: 'Monthly subscription payment',
-    },
-    {
-      contractorId: contractor.id,
-      jobId: job?.id,
-      amount: 15.00,
-      type: 'LEAD_ACCESS' as const,
-      status: 'COMPLETED' as const,
-      description: 'Job lead access payment',
-    },
-    {
-      customerId: customer.id,
-      amount: 500.00,
-      type: 'JOB_PAYMENT' as const,
-      status: 'COMPLETED' as const,
-      description: 'Milestone payment for kitchen renovation',
-    },
-    {
-      contractorId: contractor.id,
-      amount: 25.00,
-      type: 'COMMISSION' as const,
-      status: 'PENDING' as const,
-      description: 'Commission payment for completed job',
-    },
-    {
-      contractorId: contractor.id,
-      amount: 29.99,
-      type: 'LEAD_ACCESS' as const,
-      status: 'COMPLETED' as const,
-      description: 'Job lead access payment bundle',
-    }
-  ];
-  
-  // Create each payment
-  for (const payment of paymentData) {
-    // Skip payments that require a job if job is undefined
-    if (payment.jobId && !job) {
-      console.log(`⚠️ Skipping payment requiring job: ${payment.description}`);
-      continue;
-    }
-    
-    const createdPayment = await prisma.payment.create({
-      data: payment,
-    });
-    console.log(`💵 Created ${payment.type} payment: £${payment.amount}`);
-    
-    // Create an invoice for completed payments
-    if (payment.status === 'COMPLETED') {
-      const invoice = await prisma.invoice.create({
-        data: {
-          payments: { connect: { id: createdPayment.id } },
-          invoiceNumber: `INV-${Date.now().toString().substring(0, 10)}-${Math.floor(Math.random() * 1000)}`,
-          amount: payment.amount,
-          vatAmount: payment.amount * 0.2,
-          totalAmount: payment.amount * 1.2,
-          currency: 'GBP',
-          recipientName: 'Sample Recipient',
-          recipientEmail: 'recipient@example.com',
-          description: payment.description,
-          emailSent: true,
-          issuedAt: new Date(),
-          paidAt: payment.status === 'COMPLETED' ? new Date() : null,
-        }
-      });
-      console.log(`📄 Created invoice: ${invoice.invoiceNumber}`);
-      
-      // Create job access record for LEAD_ACCESS payments
-      if (payment.type === 'LEAD_ACCESS' && payment.jobId) {
-        await prisma.jobAccess.create({
-          data: {
-            jobId: payment.jobId,
-            contractorId: payment.contractorId,
-            accessMethod: 'PAYMENT',
-            paidAmount: payment.amount,
-            creditUsed: false,
-          }
-        });
-        console.log(`🔑 Created job access record for job: ${payment.jobId}`);
-      }
-    }
-  }
-  
-  // Create subscriptions for testing
-  console.log('🔄 Creating sample subscription data...');
-  
-  // Create multiple contractors with various subscription types
-  const additionalContractors = [];
-  
-  // Create 5 more contractors with different subscriptions
-  for (let i = 0; i < 5; i++) {
-    // Create user
-    const newUser = await prisma.user.create({
-      data: {
-        name: `Test Contractor ${i+1}`,
-        email: `contractor${i+1}@example.com`,
-        password: await bcrypt.hash('contractor123', 10),
-        role: 'CONTRACTOR',
-      },
-    });
-    
-    // Create contractor profile
-    const newContractor = await prisma.contractor.create({
-      data: {
-        userId: newUser.id,
-        businessName: `Test Business ${i+1}`,
-        description: 'A test contractor business',
-        phone: `+44712345678${i}`,
-        yearsExperience: `${5 + i}`,
-        creditsBalance: 3,
-      },
-    });
-    
-    additionalContractors.push(newContractor);
-    console.log(`👷 Created test contractor: ${newContractor.businessName}`);
-  }
-  
-  // Calculate subscription dates
-  const now = new Date();
-  
-  // Different subscription plans and statuses to create
-  const subscriptionConfigs = [
-    {
-      contractor: contractor,
-      plan: 'MONTHLY',
-      status: 'active',
-      isActive: true,
-      monthsToAdd: 1,
-      monthlyPrice: 49.99
-    },
-    {
-      contractor: additionalContractors[0],
-      plan: 'SIX_MONTHS',
-      status: 'active',
-      isActive: true,
-      monthsToAdd: 6,
-      monthlyPrice: 44.99
-    },
-    {
-      contractor: additionalContractors[1],
-      plan: 'YEARLY',
-      status: 'active',
-      isActive: true,
-      monthsToAdd: 12,
-      monthlyPrice: 39.99
-    },
-    {
-      contractor: additionalContractors[2],
-      plan: 'MONTHLY',
-      status: 'cancelled',
-      isActive: false,
-      monthsToAdd: 1,
-      monthlyPrice: 49.99
-    },
-    {
-      contractor: additionalContractors[3],
-      plan: 'MONTHLY',
-      status: 'pending',
-      isActive: false,
-      monthsToAdd: 1,
-      monthlyPrice: 49.99
-    }
-  ];
-  
-  // Create each subscription
-  for (const config of subscriptionConfigs) {
-    const endDate = new Date(now);
-    endDate.setMonth(now.getMonth() + config.monthsToAdd);
-    
-    const subscription = await prisma.subscription.create({
-      data: {
-        contractorId: config.contractor.id,
-        plan: config.plan as 'BASIC' | 'STANDARD' | 'PREMIUM' as any,
-        tier: 'STANDARD',
-        status: config.status,
-        isActive: config.isActive,
-        monthlyPrice: config.monthlyPrice,
-        currentPeriodStart: now,
-        currentPeriodEnd: endDate,
-      }
-    });
-    
-    // Create payment for active subscriptions
-    if (config.isActive) {
-      const paymentAmount = config.monthlyPrice * config.monthsToAdd;
-      
-      const payment = await prisma.payment.create({
-        data: {
-          contractorId: config.contractor.id,
-          amount: paymentAmount,
-          type: 'SUBSCRIPTION' as const,
-          status: 'COMPLETED' as const,
-          description: `${config.plan} subscription payment`,
-        }
-      });
-      
-      // Create invoice for the payment
-      await prisma.invoice.create({
-        data: {
-          payments: { connect: { id: payment.id } },
-          invoiceNumber: `INV-SUB-${Date.now().toString().substring(0, 10)}-${Math.floor(Math.random() * 1000)}`,
-          amount: paymentAmount,
-          vatAmount: paymentAmount * 0.2,
-          totalAmount: paymentAmount * 1.2,
-          currency: 'GBP',
-          recipientName: config.contractor.businessName || 'Contractor',
-          recipientEmail: `contractor-${config.contractor.id}@example.com`,
-          description: `${config.plan} subscription payment`,
-          emailSent: true,
-          issuedAt: now,
-          paidAt: now,
-        }
-      });
-    }
-    
-    console.log(`✅ Created ${config.plan} subscription (${config.status}) for contractor: ${config.contractor.id}`);
-  }
-  
-  // Create job access records using credits
-  console.log('🎫 Creating job access records with credits...');
-  
-  // Create job access using credits for the additional contractors
-  for (let i = 0; i < Math.min(additionalJobs.length, additionalContractors.length); i++) {
-    const jobId = additionalJobs[i].id;
-    const contractorId = additionalContractors[i].id;
-    
-    // Create job access record
-    await prisma.jobAccess.create({
-      data: {
-        jobId,
-        contractorId,
-        accessMethod: 'CREDIT',
-        creditUsed: true,
-      }
-    });
-    
-    // Create credit transaction record
-    await prisma.creditTransaction.create({
-      data: {
-        contractorId,
-        amount: -1, // Use 1 credit
-        type: 'JOB_ACCESS' as const,
-        description: `Credit used to access job ${additionalJobs[i].title}`,
-        jobId,
-      }
-    });
-    
-    // Update contractor's credit balance
-    await prisma.contractor.update({
-      where: { id: contractorId },
-      data: {
-        creditsBalance: {
-          decrement: 1
-        }
-      }
-    });
-    
-    console.log(`✅ Created job access with credits for job ${additionalJobs[i].title} by contractor ${contractorId}`);
-  }
-
-  // Create admin settings
-  const adminSettings = [
-    { key: 'platform_commission_rate', value: '5.0' },
-    { key: 'max_job_applications', value: '10' },
-    { key: 'contractor_approval_required', value: 'true' },
-    { key: 'min_job_budget', value: '50.00' },
-    { key: 'max_job_budget', value: '50000.00' },
-  ];
-
-  console.log('⚙️ Creating admin settings...');
-  for (const setting of adminSettings) {
-    await prisma.adminSettings.upsert({
-      where: { key: setting.key },
-      update: { value: setting.value },
-      create: setting,
-    });
-  }
-
-  // Create default admin settings
-  await prisma.adminSettings.createMany({
+  await prisma.activityLog.createMany({
     data: [
       {
-        key: 'default_max_contractors_per_job',
-        value: '5',
-        description: 'Default maximum number of contractors that can purchase access to each job',
+        adminId: superAdmin.id,
+        action: 'SETTINGS_UPDATE',
+        entityType: 'Setting',
+        entityId: 'COMMISSION_RATE',
+        description: 'Updated commission rate settings',
+        diff: { before: 4.5, after: 5.0 },
       },
       {
-        key: 'commission_rate',
-        value: '0.05',
-        description: 'Commission rate (5%) charged to contractors who used credits and won jobs',
+        adminId: financeAdmin.id,
+        action: 'INVOICE_CREATE',
+        entityType: 'Invoice',
+        description: 'Created manual invoice for contractor',
       },
       {
-        key: 'platform_name',
-        value: 'TrustBuild',
-        description: 'Platform name displayed throughout the application',
+        adminId: supportAdmin.id,
+        action: 'CONTRACTOR_VERIFY',
+        entityType: 'Contractor',
+        entityId: contractors[0].id,
+        description: 'Verified contractor profile',
       },
     ],
-    skipDuplicates: true,
   });
+  console.log('  ✅ Activity logs created');
+  console.log('');
 
-  console.log('✅ Database seeding completed successfully!');
+  // ============================================================
+  // SUMMARY
+  // ============================================================
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('✅ DATABASE SEEDING COMPLETED SUCCESSFULLY!');
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('');
+  console.log('📊 Summary:');
+  console.log(`   • Admins: 3 (1 Super Admin, 1 Finance Admin, 1 Support Admin)`);
+  console.log(`   • Services: ${createdServices.length}`);
+  console.log(`   • Customers: ${customers.length}`);
+  console.log(`   • Contractors: ${contractors.length} (all with active subscriptions)`);
+  console.log(`   • Jobs: ${jobs.length} (various statuses)`);
+  console.log(`   • Reviews: ${reviewsData.length}`);
+  console.log('');
+  console.log('🔐 Admin Login Credentials:');
+  console.log('   ┌─────────────────────────────────────────────────────┐');
+  console.log('   │ Super Admin:                                        │');
+  console.log('   │   Email: superadmin@trustbuild.uk                   │');
+  console.log('   │   Password: SuperAdmin@2024!                        │');
+  console.log('   ├─────────────────────────────────────────────────────┤');
+  console.log('   │ Finance Admin:                                      │');
+  console.log('   │   Email: finance@trustbuild.uk                      │');
+  console.log('   │   Password: FinanceAdmin@2024!                      │');
+  console.log('   ├─────────────────────────────────────────────────────┤');
+  console.log('   │ Support Admin:                                      │');
+  console.log('   │   Email: support@trustbuild.uk                      │');
+  console.log('   │   Password: SupportAdmin@2024!                      │');
+  console.log('   └─────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log('👤 Test User Credentials (all users):');
+  console.log('   • Customers: customer123');
+  console.log('   • Contractors: contractor123');
+  console.log('');
+  console.log('🚀 Next Steps:');
+  console.log('   1. Visit http://localhost:3000 (frontend)');
+  console.log('   2. Login with admin credentials');
+  console.log('   3. Explore the admin dashboard');
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════════');
 }
 
 main()
