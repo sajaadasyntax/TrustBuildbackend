@@ -2426,6 +2426,48 @@ router.patch('/contractors/:id/approve', requirePermission(AdminPermission.CONTR
 router.get('/contractors', requirePermission(AdminPermission.CONTRACTORS_READ), getAllContractors);
 router.patch('/contractors/:id/approval', requirePermission(AdminPermission.CONTRACTORS_APPROVE), updateContractorApproval);
 router.patch('/contractors/:id/status', requirePermission(AdminPermission.CONTRACTORS_WRITE), updateContractorStatus);
+router.patch('/contractors/:id/featured', requirePermission(AdminPermission.CONTRACTORS_WRITE), catchAsync(async (req: AdminAuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { featuredContractor } = req.body;
+
+  // Validate input
+  if (typeof featuredContractor !== 'boolean') {
+    return res.status(400).json({
+      status: 'error',
+      message: 'featuredContractor must be a boolean value'
+    });
+  }
+
+  // Update contractor featured status
+  const contractor = await prisma.contractor.update({
+    where: { id },
+    data: { featuredContractor },
+    include: {
+      user: {
+        select: {
+          name: true,
+          email: true
+        }
+      }
+    }
+  });
+
+  // Log the activity
+  await logActivity({
+    adminId: req.admin!.id,
+    action: featuredContractor ? 'CONTRACTOR_FEATURED' : 'CONTRACTOR_UNFEATURED',
+    entityType: 'Contractor',
+    entityId: contractor.id,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${featuredContractor ? 'marked as featured' : 'removed from featured'}`,
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  res.json({
+    status: 'success',
+    data: { contractor }
+  });
+}));
 router.get('/contractors/stats', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorStats);
 router.get('/contractors-search', requirePermission(AdminPermission.CONTRACTORS_READ), searchContractorsForCredits);
 router.get('/contractors/:id/credits', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorCredits);

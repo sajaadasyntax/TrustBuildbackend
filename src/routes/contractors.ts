@@ -950,7 +950,74 @@ export const initializeContractorCredits = catchAsync(async (req: AuthenticatedR
   });
 });
 
+// @desc    Get featured contractors (optimized for customer dashboard)
+// @route   GET /api/contractors/featured
+// @access  Public
+export const getFeaturedContractors = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const limit = parseInt(req.query.limit as string) || 20;
+  const { city, service } = req.query;
+
+  // Build filter conditions
+  const where: any = {
+    featuredContractor: true,
+    profileApproved: true,
+    status: 'VERIFIED',
+    user: { isActive: true },
+  };
+
+  if (city) {
+    where.city = { contains: city as string, mode: 'insensitive' };
+  }
+
+  if (service) {
+    where.services = {
+      some: {
+        name: { contains: service as string, mode: 'insensitive' },
+      },
+    };
+  }
+
+  const contractors = await prisma.contractor.findMany({
+    where,
+    take: limit,
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+      services: {
+        select: {
+          name: true,
+        },
+      },
+      portfolio: {
+        take: 3,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          imageUrl: true,
+          title: true,
+        },
+      },
+    },
+    orderBy: [
+      { averageRating: 'desc' },
+      { jobsCompleted: 'desc' },
+      { createdAt: 'desc' },
+    ],
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: contractors,
+  });
+});
+
 // Routes
+router.get('/featured', getFeaturedContractors); // Must be before '/:id' route
 router.get('/', getAllContractors);
 router.get('/me', protect, getMyProfile);
 router.post('/', protect, createContractorProfile);
