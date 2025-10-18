@@ -5,18 +5,16 @@ import {
   requirePermission,
   AdminAuthRequest,
 } from '../middleware/adminAuth';
-import { protect, restrictTo, AuthenticatedRequest } from '../middleware/auth';
 import { getActivityLogs, getLoginActivities } from '../services/auditService';
 import { prisma } from '../config/database';
 
 const router = express.Router();
 
-// Get activity logs with filters (SUPER_ADMIN only)
+// Get activity logs with filters (Admin only)
 router.get(
   '/logs',
-  protect,
-  restrictTo('SUPER_ADMIN'),
-  catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+  protectAdmin,
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const {
       adminId,
       action,
@@ -47,12 +45,11 @@ router.get(
   })
 );
 
-// Get login activities (SUPER_ADMIN only)
+// Get login activities (Admin only)
 router.get(
   '/logins',
-  protect,
-  restrictTo('SUPER_ADMIN'),
-  catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+  protectAdmin,
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const {
       adminId,
       startDate,
@@ -79,12 +76,11 @@ router.get(
   })
 );
 
-// Get activity statistics (SUPER_ADMIN only)
+// Get activity statistics (Admin only)
 router.get(
   '/stats',
-  protect,
-  restrictTo('SUPER_ADMIN'),
-  catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+  protectAdmin,
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { startDate, endDate } = req.query;
 
     const where: any = {};

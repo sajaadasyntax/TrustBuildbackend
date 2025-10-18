@@ -1,8 +1,9 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protectAdmin, requirePermission, AdminAuthRequest, hasPermission } from '../middleware/adminAuth';
+import { protectAdmin, requirePermission, AdminAuthRequest, hasPermission, getClientIp, getClientUserAgent } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
+import { logActivity } from '../services/auditService';
 import bcrypt from 'bcryptjs';
 
 const router = Router();
@@ -2134,6 +2135,8 @@ export const setJobLeadPrice = catchAsync(async (req: AdminAuthRequest, res: Res
     return next(new AppError('Job not found', 404));
   }
 
+  const oldPrice = job.leadPrice ? (typeof job.leadPrice.toNumber === 'function' ? job.leadPrice.toNumber() : job.leadPrice) : 0;
+
   // Update job lead price
   const updatedJob = await prisma.job.update({
     where: { id },
@@ -2161,7 +2164,22 @@ export const setJobLeadPrice = catchAsync(async (req: AdminAuthRequest, res: Res
     },
   });
 
-  // Log the admin action
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'JOB_LEAD_PRICE_UPDATE',
+    entityType: 'Job',
+    entityId: job.id,
+    description: reason,
+    diff: {
+      before: oldPrice,
+      after: price,
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
   console.log(`Admin ${req.admin!.id} updated job ${job.id} lead price to £${price} - Reason: ${reason}`);
 
   res.status(200).json({
@@ -2216,6 +2234,8 @@ export const setJobBudget = catchAsync(async (req: AdminAuthRequest, res: Respon
     return next(new AppError('Job not found', 404));
   }
 
+  const oldBudget = job.budget ? (typeof job.budget.toNumber === 'function' ? job.budget.toNumber() : job.budget) : 0;
+
   // Update job budget
   const updatedJob = await prisma.job.update({
     where: { id },
@@ -2243,7 +2263,22 @@ export const setJobBudget = catchAsync(async (req: AdminAuthRequest, res: Respon
     },
   });
 
-  // Log the admin action
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'JOB_BUDGET_UPDATE',
+    entityType: 'Job',
+    entityId: job.id,
+    description: reason,
+    diff: {
+      before: oldBudget,
+      after: budget,
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
   console.log(`Admin ${req.admin!.id} updated job ${job.id} budget to £${budget} - Reason: ${reason}`);
 
   res.status(200).json({
@@ -2318,10 +2353,14 @@ export const updateAdminSetting = catchAsync(async (req: AdminAuthRequest, res: 
 // @access  Private (Admin only)
 export const updateJobContractorLimit = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
-  const { maxContractorsPerJob } = req.body;
+  const { maxContractorsPerJob, reason } = req.body;
 
   if (!maxContractorsPerJob || maxContractorsPerJob < 1) {
     return next(new AppError('Maximum contractors per job must be at least 1', 400));
+  }
+
+  if (!reason || reason.trim().length === 0) {
+    return next(new AppError('Reason for contractor limit adjustment is required', 400));
   }
 
   const job = await prisma.job.findUnique({
@@ -2340,11 +2379,29 @@ export const updateJobContractorLimit = catchAsync(async (req: AdminAuthRequest,
     return next(new AppError(`Cannot set limit to ${maxContractorsPerJob} as ${job.jobAccess.length} contractors have already purchased this job`, 400));
   }
 
+  const oldLimit = job.maxContractorsPerJob || 5;
+
   const updatedJob = await prisma.job.update({
     where: { id },
     data: {
       maxContractorsPerJob: parseInt(maxContractorsPerJob),
     },
+  });
+
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'JOB_CONTRACTOR_LIMIT_UPDATE',
+    entityType: 'Job',
+    entityId: job.id,
+    description: reason,
+    diff: {
+      before: oldLimit,
+      after: parseInt(maxContractorsPerJob),
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
   });
 
   res.status(200).json({
