@@ -1,6 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { protectAdmin, requirePermission, AdminAuthRequest, hasPermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
@@ -8,50 +7,10 @@ import bcrypt from 'bcryptjs';
 
 const router = Router();
 
-// Middleware to ensure admin access
-const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (!req.user?.role || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
-    return next(new AppError('Access denied. Admin only.', 403));
-  }
-  next();
-};
-
-// Adapter middleware to convert AuthenticatedRequest to AdminAuthRequest for permission checks
-const adminAdapter = async (req: any, res: Response, next: NextFunction) => {
-  if (req.user && ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
-    try {
-      // Fetch admin permissions if not SUPER_ADMIN
-      if (req.user.role === 'SUPER_ADMIN') {
-        req.admin = {
-          id: req.user.id,
-          email: req.user.email,
-          name: req.user.name,
-          role: 'SUPER_ADMIN' as any,
-          permissions: null // SUPER_ADMIN has all permissions
-        };
-      } else {
-        // For ADMIN role, fetch from User table if they're a regular admin
-        // Note: This is a compatibility layer for existing admin users in User table
-        // New admins should be created in Admin table
-        req.admin = {
-          id: req.user.id,
-          email: req.user.email,
-          name: req.user.name,
-          role: 'SUPPORT_ADMIN' as any, // Default for old admins
-          permissions: [] // Old admins have no specific permissions, deny by default
-        };
-      }
-    } catch (error) {
-      console.error('Error in adminAdapter:', error);
-    }
-  }
-  next();
-};
-
 // @desc    Get admin dashboard statistics
 // @route   GET /api/admin/dashboard
 // @access  Private/Admin
-export const getDashboardStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getDashboardStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   // Execute all queries in parallel for better performance
   const [
     totalUsers,
@@ -190,7 +149,7 @@ export const getDashboardStats = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Get platform analytics
 // @route   GET /api/admin/analytics
 // @access  Private/Admin
-export const getAnalytics = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAnalytics = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { period = '30' } = req.query; // days
   const days = parseInt(period as string);
   const startDate = new Date();
@@ -277,7 +236,7 @@ export const getAnalytics = catchAsync(async (req: AuthenticatedRequest, res: Re
 // @desc    Get pending contractor approvals
 // @route   GET /api/admin/contractors/pending
 // @access  Private/Admin
-export const getPendingContractors = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getPendingContractors = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -321,7 +280,7 @@ export const getPendingContractors = catchAsync(async (req: AuthenticatedRequest
 // @desc    Approve/reject contractor
 // @route   PATCH /api/admin/contractors/:id/approve
 // @access  Private/Admin
-export const approveContractor = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { approved, reason } = req.body;
 
   const contractor = await prisma.contractor.findUnique({
@@ -357,7 +316,7 @@ export const approveContractor = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Get flagged content
 // @route   GET /api/admin/content/flagged
 // @access  Private/Admin
-export const getFlaggedContent = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
   const skip = (page - 1) * limit;
@@ -597,7 +556,7 @@ export const getFlaggedContent = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Moderate content
 // @route   PATCH /api/admin/content/:type/:id/moderate
 // @access  Private/Admin
-export const moderateContent = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { type, id } = req.params;
   const { action, reason } = req.body; // 'approve', 'reject', 'delete'
 
@@ -606,7 +565,7 @@ export const moderateContent = catchAsync(async (req: AuthenticatedRequest, res:
   }
 
   // Log the admin action
-  console.log(`Admin ${req.user!.id} ${action}ed ${type} ${id}${reason ? ` - Reason: ${reason}` : ''}`);
+  console.log(`Admin ${req.admin!.id} ${action}ed ${type} ${id}${reason ? ` - Reason: ${reason}` : ''}`);
 
   if (type === 'review') {
     const review = await prisma.review.findUnique({
@@ -700,7 +659,7 @@ export const moderateContent = catchAsync(async (req: AuthenticatedRequest, res:
 // @desc    Manage user account
 // @route   PATCH /api/admin/users/:id/manage
 // @access  Private/Admin
-export const manageUser = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const manageUser = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { action } = req.body; // 'activate', 'deactivate', 'delete'
 
   if (!['activate', 'deactivate', 'delete'].includes(action)) {
@@ -737,7 +696,7 @@ export const manageUser = catchAsync(async (req: AuthenticatedRequest, res: Resp
 // @desc    Get payment settings and Stripe configuration
 // @route   GET /api/admin/payments/settings
 // @access  Private/Admin
-export const getSystemSettings = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getSystemSettings = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const settings = await prisma.adminSettings.findMany({
     orderBy: { key: 'asc' },
   });
@@ -756,7 +715,7 @@ export const getSystemSettings = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Update payment settings and Stripe configuration
 // @route   PATCH /api/admin/payments/settings
 // @access  Private/Admin
-export const updateSystemSettings = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateSystemSettings = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { settings } = req.body;
 
   if (!settings || typeof settings !== 'object') {
@@ -782,7 +741,7 @@ export const updateSystemSettings = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Get all users with filtering and pagination
 // @route   GET /api/admin/users
 // @access  Private/Admin
-export const getAllUsers = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllUsers = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -792,13 +751,13 @@ export const getAllUsers = catchAsync(async (req: AuthenticatedRequest, res: Res
   const whereClause: any = {};
   
   // Regular ADMINs cannot see SUPER_ADMIN users
-  if (req.user?.role === 'ADMIN') {
+  if (req.admin?.role !== 'SUPER_ADMIN') {
     whereClause.role = { not: 'SUPER_ADMIN' };
   }
   
   if (role && role !== 'all') {
     // Regular ADMIN trying to filter SUPER_ADMIN - deny
-    if (role === 'SUPER_ADMIN' && req.user?.role === 'ADMIN') {
+    if (role === 'SUPER_ADMIN' && req.admin?.role !== 'SUPER_ADMIN') {
       return next(new AppError('Access denied. Cannot view SUPER_ADMIN users.', 403));
     }
     whereClause.role = role;
@@ -869,7 +828,7 @@ export const getAllUsers = catchAsync(async (req: AuthenticatedRequest, res: Res
 // @desc    Create new admin user
 // @route   POST /api/admin/users/create-admin
 // @access  Private/Admin
-export const createAdmin = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const createAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
@@ -923,7 +882,7 @@ export const createAdmin = catchAsync(async (req: AuthenticatedRequest, res: Res
 // @desc    Get user details by ID
 // @route   GET /api/admin/users/:id
 // @access  Private/Admin
-export const getUserById = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getUserById = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: {
@@ -991,7 +950,7 @@ export const getUserById = catchAsync(async (req: AuthenticatedRequest, res: Res
 // @desc    Get all contractors with filtering
 // @route   GET /api/admin/contractors
 // @access  Private/Admin
-export const getAllContractors = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -1067,7 +1026,7 @@ export const getAllContractors = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Approve or reject contractor with detailed response
 // @route   PATCH /api/admin/contractors/:id/approval
 // @access  Private/Admin
-export const updateContractorApproval = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateContractorApproval = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { approved, reason, notes } = req.body;
 
   if (typeof approved !== 'boolean') {
@@ -1110,7 +1069,7 @@ export const updateContractorApproval = catchAsync(async (req: AuthenticatedRequ
   });
 
   // Log the admin action (optional - could be implemented later)
-  console.log(`Admin ${req.user!.id} ${approved ? 'approved' : 'rejected'} contractor ${contractor.id}`);
+  console.log(`Admin ${req.admin!.id} ${approved ? 'approved' : 'rejected'} contractor ${contractor.id}`);
 
   res.status(200).json({
     status: 'success',
@@ -1124,7 +1083,7 @@ export const updateContractorApproval = catchAsync(async (req: AuthenticatedRequ
 // @desc    Update contractor status (activate/suspend)
 // @route   PATCH /api/admin/contractors/:id/status
 // @access  Private/Admin
-export const updateContractorStatus = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { status, reason } = req.body;
 
   const validStatuses = ['ACTIVE', 'SUSPENDED', 'INACTIVE'];
@@ -1165,7 +1124,7 @@ export const updateContractorStatus = catchAsync(async (req: AuthenticatedReques
   });
 
   // Log the admin action
-  console.log(`Admin ${req.user!.id} changed contractor ${contractor.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
+  console.log(`Admin ${req.admin!.id} changed contractor ${contractor.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
 
   res.status(200).json({
     status: 'success',
@@ -1179,7 +1138,7 @@ export const updateContractorStatus = catchAsync(async (req: AuthenticatedReques
 // @desc    Get contractor statistics for admin dashboard
 // @route   GET /api/admin/contractors/stats
 // @access  Private/Admin
-export const getContractorStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getContractorStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   try {
     // Use separate queries instead of a long transaction to avoid timeout
     const totalContractors = await prisma.contractor.count();
@@ -1257,7 +1216,7 @@ export const getContractorStats = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Get all jobs for admin management
 // @route   GET /api/admin/jobs
 // @access  Private/Admin
-export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -1377,7 +1336,7 @@ export const getAllJobsAdmin = catchAsync(async (req: AuthenticatedRequest, res:
 // @desc    Update job status (admin only)
 // @route   PATCH /api/admin/jobs/:id/status
 // @access  Private/Admin
-export const updateJobStatus = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateJobStatus = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { status, reason } = req.body;
 
   const validStatuses = ['DRAFT', 'POSTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
@@ -1432,7 +1391,7 @@ export const updateJobStatus = catchAsync(async (req: AuthenticatedRequest, res:
   });
 
   // Log the admin action
-  console.log(`Admin ${req.user!.id} changed job ${job.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
+  console.log(`Admin ${req.admin!.id} changed job ${job.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
 
   res.status(200).json({
     status: 'success',
@@ -1446,7 +1405,7 @@ export const updateJobStatus = catchAsync(async (req: AuthenticatedRequest, res:
 // @desc    Flag/unflag job for review
 // @route   PATCH /api/admin/jobs/:id/flag
 // @access  Private/Admin
-export const toggleJobFlag = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const toggleJobFlag = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { flagged, reason } = req.body;
 
   const job = await prisma.job.findUnique({
@@ -1461,7 +1420,7 @@ export const toggleJobFlag = catchAsync(async (req: AuthenticatedRequest, res: R
   // Since the Job model might not have a flagged field, we'll handle this differently
   
   // Log the admin action
-  console.log(`Admin ${req.user!.id} ${flagged ? 'flagged' : 'unflagged'} job ${job.id}${reason ? ` - Reason: ${reason}` : ''}`);
+  console.log(`Admin ${req.admin!.id} ${flagged ? 'flagged' : 'unflagged'} job ${job.id}${reason ? ` - Reason: ${reason}` : ''}`);
 
   res.status(200).json({
     status: 'success',
@@ -1472,7 +1431,7 @@ export const toggleJobFlag = catchAsync(async (req: AuthenticatedRequest, res: R
 // @desc    Get job statistics for admin dashboard
 // @route   GET /api/admin/jobs/stats
 // @access  Private/Admin
-export const getJobStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getJobStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const stats = await prisma.$transaction(async (tx) => {
     const totalJobs = await tx.job.count();
     const postedJobs = await tx.job.count({ where: { status: 'POSTED' } });
@@ -1534,7 +1493,7 @@ export const getJobStats = catchAsync(async (req: AuthenticatedRequest, res: Res
 // @desc    Get payment statistics and metrics
 // @route   GET /api/admin/payments/stats
 // @access  Private/Admin
-export const getPaymentStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getPaymentStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   try {
     // Get current month start
     const now = new Date();
@@ -1656,7 +1615,7 @@ export const getPaymentStats = catchAsync(async (req: AuthenticatedRequest, res:
 // @desc    Get payment transactions
 // @route   GET /api/admin/payments/transactions
 // @access  Private/Admin
-export const getPaymentTransactions = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
   const { status, type, search } = req.query;
@@ -1784,7 +1743,7 @@ export const getPaymentTransactions = catchAsync(async (req: AuthenticatedReques
 // @desc    Process refund for a payment
 // @route   POST /api/admin/payments/:id/refund
 // @access  Private/Admin
-export const processRefund = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const processRefund = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { amount, reason } = req.body;
   const paymentId = req.params.id;
 
@@ -1800,7 +1759,7 @@ export const processRefund = catchAsync(async (req: AuthenticatedRequest, res: R
     };
 
     // Log the admin action
-    console.log(`Admin ${req.user!.id} processed refund for payment ${paymentId}: ${amount} - ${reason}`);
+    console.log(`Admin ${req.admin!.id} processed refund for payment ${paymentId}: ${amount} - ${reason}`);
 
     res.status(200).json({
       status: 'success',
@@ -1816,7 +1775,7 @@ export const processRefund = catchAsync(async (req: AuthenticatedRequest, res: R
 // @desc    Get all services with pricing
 // @route   GET /api/admin/services-pricing
 // @access  Private/Admin
-export const getServicesWithPricing = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getServicesWithPricing = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const services = await prisma.service.findMany({
     select: {
       id: true,
@@ -1847,7 +1806,7 @@ export const getServicesWithPricing = catchAsync(async (req: AuthenticatedReques
 // @desc    Update service pricing
 // @route   PUT /api/admin/services/:id/pricing
 // @access  Private/Admin
-export const updateServicePricing = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateServicePricing = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { smallJobPrice, mediumJobPrice, largeJobPrice } = req.body;
 
@@ -1882,7 +1841,7 @@ export const updateServicePricing = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Search contractors for credit management
 // @route   GET /api/admin/contractors-search
 // @access  Private/Admin
-export const searchContractorsForCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const searchContractorsForCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { query } = req.query;
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
@@ -1933,7 +1892,7 @@ export const searchContractorsForCredits = catchAsync(async (req: AuthenticatedR
 // @desc    Get contractor credit details
 // @route   GET /api/admin/contractors/:id/credits
 // @access  Private/Admin
-export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getContractorCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
 
   const contractor = await prisma.contractor.findUnique({
@@ -1965,7 +1924,7 @@ export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Adjust contractor credits
 // @route   POST /api/admin/contractors/:id/adjust-credits
 // @access  Private/Admin
-export const adjustContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { amount, reason, type } = req.body;
 
@@ -2009,7 +1968,7 @@ export const adjustContractorCredits = catchAsync(async (req: AuthenticatedReque
         type,
         amount,
         description: `Admin adjustment: ${reason}`,
-        adminUserId: req.user!.id,
+        adminUserId: req.admin!.id,
       },
     });
   });
@@ -2023,7 +1982,7 @@ export const adjustContractorCredits = catchAsync(async (req: AuthenticatedReque
 // @desc    Get payment system overview stats
 // @route   GET /api/admin/payment-overview
 // @access  Private/Admin
-export const getPaymentOverview = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getPaymentOverview = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const [
     totalServices,
     totalContractors,
@@ -2085,7 +2044,7 @@ export const getPaymentOverview = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Get all reviews (Admin only)
 // @route   GET /api/admin/reviews
 // @access  Private/Admin
-export const getAllReviewsAdmin = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllReviewsAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
   const skip = (page - 1) * limit;
@@ -2135,7 +2094,7 @@ export const getAllReviewsAdmin = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Update job lead price
 // @route   PATCH /api/admin/jobs/:id/lead-price
 // @access  Private/Admin
-export const setJobLeadPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const setJobLeadPrice = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { price, reason } = req.body;
 
@@ -2203,7 +2162,7 @@ export const setJobLeadPrice = catchAsync(async (req: AuthenticatedRequest, res:
   });
 
   // Log the admin action
-  console.log(`Admin ${req.user!.id} updated job ${job.id} lead price to £${price} - Reason: ${reason}`);
+  console.log(`Admin ${req.admin!.id} updated job ${job.id} lead price to £${price} - Reason: ${reason}`);
 
   res.status(200).json({
     status: 'success',
@@ -2217,7 +2176,7 @@ export const setJobLeadPrice = catchAsync(async (req: AuthenticatedRequest, res:
 // @desc    Update job budget
 // @route   PATCH /api/admin/jobs/:id/budget
 // @access  Private/Admin
-export const setJobBudget = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const setJobBudget = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { budget, reason } = req.body;
 
@@ -2285,7 +2244,7 @@ export const setJobBudget = catchAsync(async (req: AuthenticatedRequest, res: Re
   });
 
   // Log the admin action
-  console.log(`Admin ${req.user!.id} updated job ${job.id} budget to £${budget} - Reason: ${reason}`);
+  console.log(`Admin ${req.admin!.id} updated job ${job.id} budget to £${budget} - Reason: ${reason}`);
 
   res.status(200).json({
     status: 'success',
@@ -2299,7 +2258,7 @@ export const setJobBudget = catchAsync(async (req: AuthenticatedRequest, res: Re
 // @desc    Get admin settings
 // @route   GET /api/admin/settings
 // @access  Private (Admin only)
-export const getAdminSettings = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAdminSettings = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const settings = await prisma.adminSettings.findMany({
     orderBy: { key: 'asc' },
   });
@@ -2325,7 +2284,7 @@ export const getAdminSettings = catchAsync(async (req: AuthenticatedRequest, res
 // @desc    Update admin setting
 // @route   PATCH /api/admin/settings/:key
 // @access  Private (Admin only)
-export const updateAdminSetting = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateAdminSetting = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { key } = req.params;
   const { value, description } = req.body;
 
@@ -2357,7 +2316,7 @@ export const updateAdminSetting = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Update job contractor limit
 // @route   PATCH /api/admin/jobs/:id/contractor-limit
 // @access  Private (Admin only)
-export const updateJobContractorLimit = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateJobContractorLimit = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { maxContractorsPerJob } = req.body;
 
@@ -2397,7 +2356,7 @@ export const updateJobContractorLimit = catchAsync(async (req: AuthenticatedRequ
 });
 
 // Apply admin middleware to all routes
-router.use(protect, adminOnly, adminAdapter);
+router.use(protectAdmin);
 
 // Routes with Permission Checks
 // Dashboard - available to all admins
