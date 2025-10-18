@@ -2300,8 +2300,17 @@ export const getAdminSettings = catchAsync(async (req: AdminAuthRequest, res: Re
 
   // Convert to key-value object for easier frontend usage
   const settingsObject = settings.reduce((acc, setting) => {
+    // Try to parse JSON values, otherwise use as-is
+    let parsedValue;
+    try {
+      parsedValue = JSON.parse(setting.value);
+    } catch {
+      // If parsing fails, use the raw string value
+      parsedValue = setting.value;
+    }
+
     acc[setting.key] = {
-      value: setting.value,
+      value: parsedValue,
       description: setting.description,
       updatedAt: setting.updatedAt,
     };
@@ -2327,17 +2336,35 @@ export const updateAdminSetting = catchAsync(async (req: AdminAuthRequest, res: 
     return next(new AppError('Setting value is required', 400));
   }
 
+  // Convert value to string - if it's an object, stringify it as JSON
+  const valueString = typeof value === 'object' ? JSON.stringify(value) : value.toString();
+
   const setting = await prisma.adminSettings.upsert({
     where: { key },
     update: {
-      value: value.toString(),
+      value: valueString,
       ...(description && { description }),
     },
     create: {
       key,
-      value: value.toString(),
+      value: valueString,
       ...(description && { description }),
     },
+  });
+
+  // Log the activity
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'SETTINGS_UPDATE',
+    entityType: 'AdminSettings',
+    entityId: setting.id,
+    description: `Updated setting: ${key}`,
+    diff: {
+      key,
+      value: valueString,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
   });
 
   res.status(200).json({
