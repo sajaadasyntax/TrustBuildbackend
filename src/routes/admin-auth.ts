@@ -98,31 +98,6 @@ router.post(
   })
 );
 
-// Get current admin details
-router.get(
-  '/me',
-  protectAdmin,
-  catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const admin = await prisma.admin.findUnique({
-      where: { id: req.admin!.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        twoFAEnabled: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
-    });
-
-    res.status(200).json({
-      status: 'success',
-      data: { admin },
-    });
-  })
-);
-
 // Enable 2FA (step 1 - generate QR code)
 router.post(
   '/2fa/enable',
