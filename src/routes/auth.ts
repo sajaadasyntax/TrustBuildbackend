@@ -161,6 +161,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       // Don't fail registration if email fails
     }
   } else if (role === 'CONTRACTOR') {
+    // Create contractor profile
     const newContractor = await prisma.contractor.create({
       data: {
         userId: newUser.id,
@@ -182,6 +183,20 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         usesContracts: usesContracts || false,
         creditsBalance: 0, // No initial credits for non-subscribers
         lastCreditReset: null, // No credit reset for non-subscribers
+        profileApproved: false, // Requires admin approval
+        accountStatus: 'PAUSED', // Start paused until KYC is completed
+      },
+    });
+
+    // Create KYC record with 14-day deadline
+    const kycDeadline = new Date();
+    kycDeadline.setDate(kycDeadline.getDate() + 14); // 14 days to submit KYC
+
+    await prisma.contractorKyc.create({
+      data: {
+        contractorId: newContractor.id,
+        status: 'PENDING',
+        dueBy: kycDeadline,
       },
     });
 

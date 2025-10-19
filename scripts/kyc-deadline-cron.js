@@ -14,7 +14,7 @@ async function runKycDeadlineJob() {
     const overdueKyc = await prisma.contractorKyc.findMany({
       where: {
         status: {
-          in: ['PENDING', 'SUBMITTED'],
+          in: ['PENDING', 'REJECTED'], // REJECTED also needs resubmission
         },
         dueBy: {
           lt: now,

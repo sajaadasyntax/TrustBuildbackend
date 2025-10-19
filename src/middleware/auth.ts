@@ -8,7 +8,18 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     name: string;
-    role: 'CUSTOMER' | 'CONTRACTOR' | 'ADMIN' | 'SUPER_ADMIN'; // Updated to include SUPER_ADMIN
+    role: 'CUSTOMER' | 'CONTRACTOR' | 'ADMIN' | 'SUPER_ADMIN';
+    contractor?: {
+      id: string;
+      accountStatus: string;
+      profileApproved: boolean;
+      status: string;
+      kyc?: {
+        status: string;
+        dueBy: Date | null;
+        submittedAt: Date | null;
+      } | null;
+    };
   };
 }
 
@@ -29,7 +40,7 @@ export const protect = catchAsync(async (req: AuthenticatedRequest, res: Respons
   // 2) Verification token
   const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; iat: number };
 
-  // 3) Check if user still exists
+  // 3) Check if user still exists with contractor/KYC info
   const currentUser = await prisma.user.findUnique({
     where: { id: decoded.id },
     select: {
@@ -38,6 +49,21 @@ export const protect = catchAsync(async (req: AuthenticatedRequest, res: Respons
       name: true,
       role: true,
       isActive: true,
+      contractor: {
+        select: {
+          id: true,
+          accountStatus: true,
+          profileApproved: true,
+          status: true,
+          kyc: {
+            select: {
+              status: true,
+              dueBy: true,
+              submittedAt: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -50,7 +76,14 @@ export const protect = catchAsync(async (req: AuthenticatedRequest, res: Respons
   }
 
   // 4) Grant access to protected route
-  req.user = currentUser;
+  req.user = {
+    id: currentUser.id,
+    email: currentUser.email,
+    name: currentUser.name,
+    role: currentUser.role,
+    contractor: currentUser.contractor || undefined,
+  };
+  
   next();
 });
 

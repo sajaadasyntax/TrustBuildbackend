@@ -59,6 +59,52 @@ const upload = multer({
   },
 });
 
+// Contractor gets their own KYC status
+router.get(
+  '/my-status',
+  protect,
+  catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    const contractor = await prisma.contractor.findUnique({
+      where: { userId: req.user!.id },
+    });
+
+    if (!contractor) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Contractor profile not found',
+      });
+    }
+
+    const kyc = await prisma.contractorKyc.findUnique({
+      where: { contractorId: contractor.id },
+    });
+
+    if (!kyc) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'KYC record not found',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        kyc: {
+          id: kyc.id,
+          status: kyc.status,
+          dueBy: kyc.dueBy,
+          submittedAt: kyc.submittedAt,
+          reviewedAt: kyc.reviewedAt,
+          rejectionReason: kyc.rejectionReason,
+          hasIdDocument: !!kyc.idDocPath,
+          hasUtilityBill: !!kyc.utilityDocPath,
+          companyNumber: kyc.companyNumber,
+        },
+      },
+    });
+  })
+);
+
 // Contractor uploads KYC documents
 router.post(
   '/upload',
@@ -121,9 +167,41 @@ router.post(
       },
     });
 
+    // Activate account when KYC is submitted (was paused on registration)
+    await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: {
+        accountStatus: 'ACTIVE',
+        status: 'PENDING', // Pending admin review
+      },
+    });
+
+    // Send notification to admin
+    try {
+      const emailService = createEmailService();
+      const emailContent = createServiceEmail({
+        to: process.env.ADMIN_EMAIL || 'admin@trustbuild.uk',
+        subject: '📋 New KYC Submission - TrustBuild Admin',
+        heading: 'New KYC Document Submission',
+        body: `
+          <p>A contractor has submitted KYC documents for review.</p>
+          <p><strong>Contractor:</strong> ${contractor.businessName || req.user!.name}</p>
+          <p><strong>Email:</strong> ${req.user!.email}</p>
+          <p><strong>Company Number:</strong> ${companyNumber || 'Not provided'}</p>
+          <p>Please review the submission in the admin panel.</p>
+        `,
+        ctaText: 'Review KYC',
+        ctaUrl: `${process.env.FRONTEND_URL}/admin/kyc`,
+      });
+
+      await emailService.sendMail(emailContent);
+    } catch (error) {
+      console.error('Failed to send admin notification:', error);
+    }
+
     res.status(200).json({
       status: 'success',
-      message: 'KYC documents uploaded successfully',
+      message: 'KYC documents uploaded successfully. Your account is now active pending admin review.',
       data: {
         kyc: {
           id: kyc.id,
@@ -256,11 +334,13 @@ router.post(
       },
     });
 
-    // Update contractor status
+    // Update contractor status - fully activate account
     await prisma.contractor.update({
       where: { id: kyc.contractorId },
       data: {
         status: 'VERIFIED',
+        profileApproved: true,
+        accountStatus: 'ACTIVE',
       },
     });
 
