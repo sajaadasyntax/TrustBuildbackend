@@ -1380,6 +1380,10 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
     };
   }
   
+  if (flagged !== undefined && flagged !== 'all') {
+    whereClause.isFlagged = flagged === 'true' || flagged === true;
+  }
+  
   if (search) {
     whereClause.OR = [
       { title: { contains: search as string, mode: 'insensitive' } },
@@ -1561,15 +1565,34 @@ export const toggleJobFlag = catchAsync(async (req: AdminAuthRequest, res: Respo
     return next(new AppError('Job not found', 404));
   }
 
-  // For now, we'll store the flag status in a separate admin log or use a custom field
-  // Since the Job model might not have a flagged field, we'll handle this differently
+  // Update the job flagged status
+  const updatedJob = await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      isFlagged: flagged,
+      flaggedAt: flagged ? new Date() : null,
+      flaggedBy: flagged ? req.admin!.id : null,
+      flagReason: flagged ? reason : null,
+    },
+  });
   
   // Log the admin action
-  console.log(`Admin ${req.admin!.id} ${flagged ? 'flagged' : 'unflagged'} job ${job.id}${reason ? ` - Reason: ${reason}` : ''}`);
+  await logAdminAction(
+    req.admin!.id,
+    flagged ? 'JOB_FLAGGED' : 'JOB_UNFLAGGED',
+    'Job',
+    job.id,
+    `${flagged ? 'Flagged' : 'Unflagged'} job: ${job.title}${reason ? ` - Reason: ${reason}` : ''}`,
+    { flagged, reason, jobTitle: job.title },
+    req
+  );
 
   res.status(200).json({
     status: 'success',
     message: `Job ${flagged ? 'flagged' : 'unflagged'} successfully`,
+    data: {
+      job: updatedJob,
+    },
   });
 });
 

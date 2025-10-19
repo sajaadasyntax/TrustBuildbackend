@@ -322,6 +322,12 @@ model Job {
   adminOverrideBy             String?      // Admin user ID who overrode
   finalPriceTimeoutAt         DateTime?    // When final price confirmation times out
   
+  // Admin flags
+  isFlagged        Boolean      @default(false) // Job flagged by admin for review
+  flaggedAt        DateTime?    // When job was flagged
+  flaggedBy        String?      // Admin ID who flagged
+  flagReason       String?      @db.Text // Reason for flagging
+  
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
