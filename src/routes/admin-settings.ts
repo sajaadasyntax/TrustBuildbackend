@@ -7,6 +7,7 @@ import {
   getClientUserAgent,
   AdminAuthRequest,
 } from '../middleware/adminAuth';
+import { AdminPermission } from '../config/permissions';
 import { logActivity } from '../services/auditService';
 import { prisma } from '../config/database';
 
@@ -16,15 +17,36 @@ const router = express.Router();
 router.get(
   '/',
   protectAdmin,
-  requirePermission('settings:read'),
+  requirePermission(AdminPermission.SETTINGS_READ),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const settings = await prisma.setting.findMany({
+    const settings = await prisma.adminSettings.findMany({
       orderBy: { key: 'asc' },
     });
 
+    // Convert to key-value object for easier frontend usage
+    const settingsObject = settings.reduce((acc, setting) => {
+      // Try to parse JSON values, otherwise use as-is
+      let parsedValue;
+      try {
+        parsedValue = JSON.parse(setting.value);
+      } catch {
+        // If parsing fails, use the raw string value
+        parsedValue = setting.value;
+      }
+
+      acc[setting.key] = {
+        value: parsedValue,
+        description: setting.description,
+        updatedAt: setting.updatedAt,
+      };
+      return acc;
+    }, {} as Record<string, any>);
+
     res.status(200).json({
       status: 'success',
-      data: { settings },
+      data: {
+        settings: settingsObject,
+      },
     });
   })
 );
@@ -33,11 +55,11 @@ router.get(
 router.get(
   '/:key',
   protectAdmin,
-  requirePermission('settings:read'),
+  requirePermission(AdminPermission.SETTINGS_READ),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { key } = req.params;
 
-    const setting = await prisma.setting.findUnique({
+    const setting = await prisma.adminSettings.findUnique({
       where: { key: key.toUpperCase() },
     });
 
@@ -48,21 +70,34 @@ router.get(
       });
     }
 
+    // Try to parse JSON value
+    let parsedValue;
+    try {
+      parsedValue = JSON.parse(setting.value);
+    } catch {
+      parsedValue = setting.value;
+    }
+
     res.status(200).json({
       status: 'success',
-      data: { setting },
+      data: {
+        setting: {
+          ...setting,
+          value: parsedValue,
+        },
+      },
     });
   })
 );
 
 // Update setting
-router.put(
+router.patch(
   '/:key',
   protectAdmin,
-  requirePermission('settings:update_commission', 'settings:update_pricing'),
+  requirePermission(AdminPermission.SETTINGS_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { key } = req.params;
-    const { value } = req.body;
+    const { value, description } = req.body;
 
     if (!value) {
       return res.status(400).json({
@@ -71,21 +106,24 @@ router.put(
       });
     }
 
+    // Convert value to string - if it's an object, stringify it as JSON
+    const valueString = typeof value === 'object' ? JSON.stringify(value) : value.toString();
+
     // Get old value for audit log
-    const oldSetting = await prisma.setting.findUnique({
+    const oldSetting = await prisma.adminSettings.findUnique({
       where: { key: key.toUpperCase() },
     });
 
-    const setting = await prisma.setting.upsert({
+    const setting = await prisma.adminSettings.upsert({
       where: { key: key.toUpperCase() },
       update: {
-        value,
-        updatedBy: req.admin!.id,
+        value: valueString,
+        ...(description && { description }),
       },
       create: {
         key: key.toUpperCase(),
-        value,
-        updatedBy: req.admin!.id,
+        value: valueString,
+        ...(description && { description }),
       },
     });
 
@@ -98,12 +136,12 @@ router.put(
     await logActivity({
       adminId: req.admin!.id,
       action,
-      entityType: 'Setting',
-      entityId: setting.key,
+      entityType: 'AdminSettings',
+      entityId: setting.id,
       description: `Updated setting: ${setting.key}`,
       diff: {
         before: oldSetting?.value || null,
-        after: value,
+        after: valueString,
       },
       ipAddress: getClientIp(req),
       userAgent: getClientUserAgent(req),
@@ -121,11 +159,19 @@ router.get(
   '/commission/rate',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const setting = await prisma.setting.findUnique({
+    const setting = await prisma.adminSettings.findUnique({
       where: { key: 'COMMISSION_RATE' },
     });
 
-    const rate = setting?.value ? (setting.value as any).rate : 5.0;
+    let rate = 5.0;
+    if (setting?.value) {
+      try {
+        const parsed = JSON.parse(setting.value);
+        rate = parsed.rate || 5.0;
+      } catch {
+        rate = parseFloat(setting.value) || 5.0;
+      }
+    }
 
     res.status(200).json({
       status: 'success',
@@ -139,16 +185,24 @@ router.get(
   '/subscription/pricing',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const setting = await prisma.setting.findUnique({
+    const setting = await prisma.adminSettings.findUnique({
       where: { key: 'SUBSCRIPTION_PRICING' },
     });
 
-    const pricing = setting?.value || {
+    let pricing = {
       monthly: 49.99,
       sixMonths: 269.94,
       yearly: 479.88,
       currency: 'GBP',
     };
+
+    if (setting?.value) {
+      try {
+        pricing = JSON.parse(setting.value);
+      } catch {
+        // Use default if parsing fails
+      }
+    }
 
     res.status(200).json({
       status: 'success',
@@ -162,15 +216,23 @@ router.get(
   '/jobs/free-allocation',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const setting = await prisma.setting.findUnique({
+    const setting = await prisma.adminSettings.findUnique({
       where: { key: 'FREE_JOB_ALLOCATION' },
     });
 
-    const allocation = setting?.value || {
+    let allocation = {
       standard: 0,
       premium: 2,
       enterprise: 5,
     };
+
+    if (setting?.value) {
+      try {
+        allocation = JSON.parse(setting.value);
+      } catch {
+        // Use default if parsing fails
+      }
+    }
 
     res.status(200).json({
       status: 'success',
