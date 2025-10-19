@@ -1,4 +1,4 @@
-import express, { Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { catchAsync } from '../middleware/errorHandler';
 import { protectAdmin, requirePermission, AdminAuthRequest } from '../middleware/adminAuth';
 import { AdminPermission } from '../config/permissions';
@@ -19,7 +19,7 @@ const router = express.Router();
  */
 router.get(
   '/',
-  catchAsync(async (req, res) => {
+  catchAsync(async (req: Request, res: Response) => {
     const { category } = req.query;
 
     const faqs = await prisma.faq.findMany({
@@ -55,7 +55,7 @@ router.get(
  */
 router.get(
   '/categories',
-  catchAsync(async (req, res) => {
+  catchAsync(async (req: Request, res: Response) => {
     const categories = await prisma.faq.findMany({
       where: {
         isActive: true,

@@ -807,4 +807,20 @@ model ManualInvoiceItem {
   quantity   Int            @default(1)
   
   @@map("manual_invoice_items")
+}
+
+// FAQ System
+model Faq {
+  id           String   @id @default(cuid())
+  question     String
+  answer       String   @db.Text
+  category     String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("faqs")
 } 
