@@ -1381,7 +1381,7 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
   }
   
   if (flagged !== undefined && flagged !== 'all') {
-    whereClause.isFlagged = flagged === 'true' || flagged === true || flagged === 'TRUE';
+    whereClause.isFlagged = flagged === 'true' || flagged === 'TRUE';
   }
   
   if (search) {
