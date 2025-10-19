@@ -575,25 +575,33 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
 // @access  Private/Admin
 export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { type, id } = req.params;
-  const { action, reason } = req.body; // 'approve', 'reject', 'delete'
+  const { action, reason } = req.body; // 'approve', 'reject', 'delete', 'remove'
 
-  if (!['approve', 'reject', 'delete'].includes(action)) {
+  // Accept both 'delete' and 'remove' as the same action
+  const normalizedAction = action === 'remove' ? 'delete' : action;
+
+  if (!['approve', 'reject', 'delete'].includes(normalizedAction)) {
     return next(new AppError('Invalid moderation action', 400));
   }
-
-  // Log the admin action
-  console.log(`Admin ${req.admin!.id} ${action}ed ${type} ${id}${reason ? ` - Reason: ${reason}` : ''}`);
 
   if (type === 'review') {
     const review = await prisma.review.findUnique({
       where: { id },
+      include: {
+        customer: {
+          include: { user: { select: { name: true } } }
+        },
+        contractor: {
+          include: { user: { select: { name: true } } }
+        },
+      },
     });
 
     if (!review) {
       return next(new AppError('Review not found', 404));
     }
 
-    if (action === 'delete') {
+    if (normalizedAction === 'delete') {
       await prisma.review.delete({
         where: { id },
       });
@@ -601,29 +609,52 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
       await prisma.review.update({
         where: { id },
         data: {
-          isVerified: action === 'approve',
+          isVerified: normalizedAction === 'approve',
         },
       });
     }
 
+    // Log the admin action to activity log
+    await logActivity({
+      adminId: req.admin!.id,
+      action: normalizedAction === 'delete' ? 'REVIEW_DELETED' : normalizedAction === 'approve' ? 'REVIEW_APPROVED' : 'REVIEW_REJECTED',
+      entityType: 'Review',
+      entityId: id,
+      description: `Review by ${review.customer?.user?.name} for ${review.contractor?.user?.name} ${normalizedAction}ed${reason ? `: ${reason}` : ''}`,
+      diff: {
+        before: { isVerified: review.isVerified },
+        after: normalizedAction === 'delete' ? null : { isVerified: normalizedAction === 'approve' },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
     res.status(200).json({
       status: 'success',
-      message: `Review ${action}ed successfully`,
+      message: `Review ${normalizedAction}ed successfully`,
     });
   } else if (type === 'job' || type === 'job_description') {
     const job = await prisma.job.findUnique({
       where: { id },
+      include: {
+        customer: {
+          include: { user: { select: { name: true } } }
+        },
+      },
     });
 
     if (!job) {
       return next(new AppError('Job not found', 404));
     }
 
-    if (action === 'delete') {
+    const oldStatus = job.status;
+
+    if (normalizedAction === 'delete') {
       await prisma.job.delete({
         where: { id },
       });
-    } else if (action === 'reject') {
+    } else if (normalizedAction === 'reject') {
       await prisma.job.update({
         where: { id },
         data: {
@@ -633,9 +664,25 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
     }
     // For 'approve', we don't need to change anything - job remains active
 
+    // Log the admin action to activity log
+    await logActivity({
+      adminId: req.admin!.id,
+      action: normalizedAction === 'delete' ? 'JOB_DELETED' : normalizedAction === 'approve' ? 'JOB_APPROVED' : 'JOB_REJECTED',
+      entityType: 'Job',
+      entityId: id,
+      description: `Job "${job.title}" by ${job.customer?.user?.name} ${normalizedAction}ed${reason ? `: ${reason}` : ''}`,
+      diff: {
+        before: { status: oldStatus },
+        after: normalizedAction === 'delete' ? null : normalizedAction === 'reject' ? { status: 'CANCELLED' } : { status: oldStatus },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
     res.status(200).json({
       status: 'success',
-      message: `Job ${action}ed successfully`,
+      message: `Job ${normalizedAction}ed successfully`,
     });
   } else if (type === 'profile') {
     const contractor = await prisma.contractor.findUnique({
@@ -649,7 +696,9 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
       return next(new AppError('Contractor profile not found', 404));
     }
 
-    if (action === 'delete') {
+    const oldData = { profileApproved: contractor.profileApproved, status: contractor.status };
+
+    if (normalizedAction === 'delete') {
       // Delete contractor profile and associated user
       await prisma.contractor.delete({
         where: { id },
@@ -658,15 +707,31 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
       await prisma.contractor.update({
         where: { id },
         data: {
-          profileApproved: action === 'approve',
-          status: action === 'approve' ? 'VERIFIED' : 'REJECTED',
+          profileApproved: normalizedAction === 'approve',
+          status: normalizedAction === 'approve' ? 'VERIFIED' : 'REJECTED',
         },
       });
     }
 
+    // Log the admin action to activity log
+    await logActivity({
+      adminId: req.admin!.id,
+      action: normalizedAction === 'delete' ? 'CONTRACTOR_DELETED' : normalizedAction === 'approve' ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
+      entityType: 'Contractor',
+      entityId: id,
+      description: `Contractor ${contractor.businessName || contractor.user.name} ${normalizedAction}ed from flagged content${reason ? `: ${reason}` : ''}`,
+      diff: {
+        before: oldData,
+        after: normalizedAction === 'delete' ? null : { profileApproved: normalizedAction === 'approve', status: normalizedAction === 'approve' ? 'VERIFIED' : 'REJECTED' },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
     res.status(200).json({
       status: 'success',
-      message: `Contractor profile ${action}ed successfully`,
+      message: `Contractor profile ${normalizedAction}ed successfully`,
     });
   } else {
     return next(new AppError('Invalid content type', 400));
