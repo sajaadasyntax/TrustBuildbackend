@@ -242,6 +242,12 @@ export const login = catchAsync(async (req: express.Request, res: express.Respon
       role: true,
       isActive: true,
       createdAt: true,
+      contractor: {
+        select: {
+          profileApproved: true,
+          status: true,
+        },
+      },
     },
   });
 
@@ -251,6 +257,21 @@ export const login = catchAsync(async (req: express.Request, res: express.Respon
 
   if (!user.isActive) {
     return next(new AppError('Your account has been deactivated. Please contact support.', 401));
+  }
+
+  // Check if contractor account is approved
+  if (user.role === 'CONTRACTOR') {
+    if (user.contractor && !user.contractor.profileApproved) {
+      return next(new AppError('Your contractor account is pending admin approval. You will be notified once approved.', 403));
+    }
+    
+    if (user.contractor && user.contractor.status === 'REJECTED') {
+      return next(new AppError('Your contractor application has been rejected. Please contact support for more information.', 403));
+    }
+
+    if (user.contractor && user.contractor.status === 'SUSPENDED') {
+      return next(new AppError('Your contractor account has been suspended. Please contact support.', 403));
+    }
   }
 
   createSendToken(user, 200, res);
