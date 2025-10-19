@@ -1186,73 +1186,98 @@ export const updateContractorApproval = catchAsync(async (req: AdminAuthRequest,
 // @route   PATCH /api/admin/contractors/:id/status
 // @access  Private/Admin
 export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
-  const { status, reason } = req.body;
-
-  const validStatuses = ['ACTIVE', 'SUSPENDED', 'INACTIVE'];
-  if (!validStatuses.includes(status)) {
-    return next(new AppError('Invalid contractor status', 400));
-  }
-
-  const contractor = await prisma.contractor.findUnique({
-    where: { id: req.params.id },
-    include: {
-      user: {
-        select: {
-          name: true,
-          email: true,
-        },
-      },
-    },
-  });
-
-  if (!contractor) {
-    return next(new AppError('Contractor not found', 404));
-  }
-
-  const updatedContractor = await prisma.contractor.update({
-    where: { id: req.params.id },
-    data: {
-      status: status,
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
-  });
-
-  // Log the admin action to activity log
   try {
-    await logActivity({
-      adminId: req.admin!.id,
-      action: status === 'SUSPENDED' ? 'CONTRACTOR_SUSPENDED' : status === 'ACTIVE' ? 'CONTRACTOR_ACTIVATED' : 'CONTRACTOR_DEACTIVATED',
-      entityType: 'Contractor',
-      entityId: contractor.id,
-      description: `Contractor ${contractor.businessName || contractor.user?.name || 'Unknown'} status changed to ${status}${reason ? `: ${reason}` : ''}`,
-      diff: {
-        before: contractor.status,
-        after: status,
-        reason,
-      },
-      ipAddress: getClientIp(req),
-      userAgent: getClientUserAgent(req),
-    });
-  } catch (logError) {
-    console.error('Failed to log activity:', logError);
-    // Continue even if logging fails
-  }
+    const { status, reason } = req.body;
 
-  res.status(200).json({
-    status: 'success',
-    data: {
-      contractor: updatedContractor,
-    },
-    message: `Contractor status updated to ${status.toLowerCase()} successfully`,
-  });
+    console.log('[updateContractorStatus] Request:', { contractorId: req.params.id, status, reason });
+
+    // Map frontend statuses to database enum values
+    // Frontend sends: ACTIVE, SUSPENDED, INACTIVE
+    // Database has: VERIFIED, SUSPENDED, PENDING, REJECTED
+    const statusMapping: { [key: string]: string } = {
+      'ACTIVE': 'VERIFIED',  // Active means verified and active
+      'SUSPENDED': 'SUSPENDED',
+      'INACTIVE': 'PENDING',  // Inactive can be mapped to pending
+    };
+
+    const validStatuses = ['ACTIVE', 'SUSPENDED', 'INACTIVE'];
+    if (!validStatuses.includes(status)) {
+      console.error('[updateContractorStatus] Invalid status:', status);
+      return next(new AppError('Invalid contractor status', 400));
+    }
+
+    const dbStatus = statusMapping[status];
+
+    const contractor = await prisma.contractor.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!contractor) {
+      console.error('[updateContractorStatus] Contractor not found:', req.params.id);
+      return next(new AppError('Contractor not found', 404));
+    }
+
+    console.log('[updateContractorStatus] Contractor found:', { id: contractor.id, currentStatus: contractor.status });
+
+    const updatedContractor = await prisma.contractor.update({
+      where: { id: req.params.id },
+      data: {
+        status: dbStatus as any,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    console.log('[updateContractorStatus] Status updated successfully');
+
+    // Log the admin action to activity log
+    try {
+      await logActivity({
+        adminId: req.admin!.id,
+        action: status === 'SUSPENDED' ? 'CONTRACTOR_SUSPENDED' : status === 'ACTIVE' ? 'CONTRACTOR_ACTIVATED' : 'CONTRACTOR_DEACTIVATED',
+        entityType: 'Contractor',
+        entityId: contractor.id,
+        description: `Contractor ${contractor.businessName || contractor.user?.name || 'Unknown'} status changed to ${status}${reason ? `: ${reason}` : ''}`,
+        diff: {
+          before: contractor.status,
+          after: dbStatus,
+          reason,
+        },
+        ipAddress: getClientIp(req),
+        userAgent: getClientUserAgent(req),
+      });
+      console.log('[updateContractorStatus] Activity logged successfully');
+    } catch (logError: any) {
+      console.error('[updateContractorStatus] Failed to log activity:', logError.message);
+      // Continue even if logging fails
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        contractor: updatedContractor,
+      },
+      message: `Contractor status updated to ${status.toLowerCase()} successfully`,
+    });
+  } catch (error: any) {
+    console.error('[updateContractorStatus] Error:', error.message, error.stack);
+    return next(new AppError(error.message || 'Failed to update contractor status', 500));
+  }
 });
 
 // @desc    Get contractor statistics for admin dashboard
