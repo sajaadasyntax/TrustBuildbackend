@@ -35,6 +35,7 @@ import adminActivityRoutes from './routes/admin-activity';
 import adminJobsRoutes from './routes/admin-jobs';
 import adminKycRoutes from './routes/admin-kyc';
 import adminManualInvoicesRoutes from './routes/admin-manual-invoices';
+import contentRoutes from './routes/content';
 
 // Load environment variables
 dotenv.config();
@@ -163,6 +164,7 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contractor', contractorDashboardRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/content', contentRoutes);
 
 // Admin system routes - Register more specific routes BEFORE general admin routes
 app.use('/api/admin-auth', adminAuthRoutes);
