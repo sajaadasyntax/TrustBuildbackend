@@ -156,9 +156,6 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/services', serviceRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/admin/invoices', adminInvoiceRoutesNew);
-app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/invoices', invoiceRoutes);
@@ -166,13 +163,18 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contractor', contractorDashboardRoutes);
 app.use('/api/webhooks', webhookRoutes);
-// New admin system routes
+
+// Admin system routes - Register more specific routes BEFORE general admin routes
 app.use('/api/admin-auth', adminAuthRoutes);
 app.use('/api/admin/settings', adminSettingsRoutes);
 app.use('/api/admin/activity', adminActivityRoutes);
 app.use('/api/admin/jobs', adminJobsRoutes);
 app.use('/api/admin/kyc', adminKycRoutes);
 app.use('/api/admin/manual-invoices', adminManualInvoicesRoutes);
+app.use('/api/admin/invoices', adminInvoiceRoutesNew);
+app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
+// General admin routes (catch-all, must be last)
+app.use('/api/admin', adminRoutes);
 
 // Basic test routes
 app.get('/api/test', (req, res) => {
