@@ -303,6 +303,22 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     },
   });
 
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: approved ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
+    entityType: 'Contractor',
+    entityId: contractor.id,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${reason ? `: ${reason}` : ''}`,
+    diff: {
+      before: { profileApproved: contractor.profileApproved, status: contractor.status },
+      after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED' },
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
   // TODO: Send notification email to contractor
 
   res.status(200).json({
@@ -1069,8 +1085,22 @@ export const updateContractorApproval = catchAsync(async (req: AdminAuthRequest,
     },
   });
 
-  // Log the admin action (optional - could be implemented later)
-  console.log(`Admin ${req.admin!.id} ${approved ? 'approved' : 'rejected'} contractor ${contractor.id}`);
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: approved ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
+    entityType: 'Contractor',
+    entityId: contractor.id,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${reason ? `: ${reason}` : ''}`,
+    diff: {
+      before: { profileApproved: contractor.profileApproved, status: contractor.status },
+      after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED' },
+      reason,
+      notes,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
 
   res.status(200).json({
     status: 'success',
@@ -1124,8 +1154,21 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
     },
   });
 
-  // Log the admin action
-  console.log(`Admin ${req.admin!.id} changed contractor ${contractor.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: status === 'SUSPENDED' ? 'CONTRACTOR_SUSPENDED' : status === 'ACTIVE' ? 'CONTRACTOR_ACTIVATED' : 'CONTRACTOR_DEACTIVATED',
+    entityType: 'Contractor',
+    entityId: contractor.id,
+    description: `Contractor ${contractor.businessName || contractor.user.name} status changed to ${status}${reason ? `: ${reason}` : ''}`,
+    diff: {
+      before: contractor.status,
+      after: status,
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
 
   res.status(200).json({
     status: 'success',
@@ -1951,6 +1994,11 @@ export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, 
     return next(new AppError('Insufficient credits for deduction', 400));
   }
 
+  const oldBalance = contractor.creditsBalance;
+  const newBalance = type === 'ADDITION' 
+    ? oldBalance + amount 
+    : oldBalance - amount;
+
   await prisma.$transaction(async (tx) => {
     // Update contractor balance
     await tx.contractor.update({
@@ -1972,6 +2020,24 @@ export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, 
         adminUserId: req.admin!.id,
       },
     });
+  });
+
+  // Log the admin action to activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: type === 'ADDITION' ? 'CONTRACTOR_CREDITS_ADDED' : 'CONTRACTOR_CREDITS_DEDUCTED',
+    entityType: 'Contractor',
+    entityId: id,
+    description: `${type === 'ADDITION' ? 'Added' : 'Deducted'} ${amount} credits: ${reason}`,
+    diff: {
+      before: oldBalance,
+      after: newBalance,
+      amount,
+      type,
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
   });
 
   res.status(200).json({
