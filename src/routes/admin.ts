@@ -1381,7 +1381,7 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
   }
   
   if (flagged !== undefined && flagged !== 'all') {
-    whereClause.isFlagged = flagged === 'true' || flagged === true;
+    whereClause.isFlagged = flagged === 'true' || flagged === true || flagged === 'TRUE';
   }
   
   if (search) {
@@ -1577,15 +1577,14 @@ export const toggleJobFlag = catchAsync(async (req: AdminAuthRequest, res: Respo
   });
   
   // Log the admin action
-  await logAdminAction(
-    req.admin!.id,
-    flagged ? 'JOB_FLAGGED' : 'JOB_UNFLAGGED',
-    'Job',
-    job.id,
-    `${flagged ? 'Flagged' : 'Unflagged'} job: ${job.title}${reason ? ` - Reason: ${reason}` : ''}`,
-    { flagged, reason, jobTitle: job.title },
-    req
-  );
+  await prisma.adminAction.create({
+    data: {
+      action: flagged ? 'JOB_FLAGGED' : 'JOB_UNFLAGGED',
+      description: `${flagged ? 'Flagged' : 'Unflagged'} job: ${job.title}${reason ? ` - Reason: ${reason}` : ''}`,
+      performedBy: req.admin!.id,
+      metadata: { flagged, reason, jobTitle: job.title, jobId: job.id },
+    },
+  });
 
   res.status(200).json({
     status: 'success',
