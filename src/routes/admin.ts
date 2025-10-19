@@ -472,7 +472,7 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
       flaggedBy: 'System Auto-detection',
       flagReason: review.rating <= 2 ? 'Low rating review' : 'Unverified review',
       status: 'pending' as const,
-      severity: review.rating <= 1 ? 'high' as const : review.rating <= 2 ? 'medium' as const : 'low' as const,
+      severity: 'flagged' as const,
       createdDate: review.createdAt,
       flaggedDate: review.createdAt,
       rating: review.rating,
@@ -489,7 +489,7 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
       flaggedBy: 'System Auto-detection',
       flagReason: Number(job.budget) < 50 ? 'Suspiciously low budget' : 'Potential spam content',
       status: 'pending' as const,
-      severity: Number(job.budget) < 50 ? 'high' as const : 'medium' as const,
+      severity: 'flagged' as const,
       createdDate: job.createdAt,
       flaggedDate: job.createdAt,
       budget: job.budget,
@@ -506,7 +506,7 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
       flaggedBy: contractor.profileApproved ? 'System Auto-detection' : 'Admin Review Required',
       flagReason: contractor.profileApproved ? 'Potentially misleading claims' : 'Pending approval',
       status: 'pending' as const,
-      severity: contractor.profileApproved ? 'medium' as const : 'low' as const,
+      severity: 'flagged' as const,
       createdDate: contractor.createdAt,
       flaggedDate: contractor.createdAt,
       businessName: contractor.businessName,
@@ -529,11 +529,8 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
     filteredContent = filteredContent.filter(item => item.severity === severity);
   }
 
-  // Sort by severity and date
+  // Sort by date (most recent first)
   filteredContent.sort((a, b) => {
-    const severityOrder = { high: 3, medium: 2, low: 1 };
-    const severityDiff = severityOrder[b.severity] - severityOrder[a.severity];
-    if (severityDiff !== 0) return severityDiff;
     return new Date(b.flaggedDate).getTime() - new Date(a.flaggedDate).getTime();
   });
 
@@ -547,9 +544,7 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
     pendingReview: transformedContent.filter(item => item.status === 'pending').length,
     approved: 0, // All items are currently pending - this would be updated when moderation is implemented
     rejected: 0, // All items are currently pending - this would be updated when moderation is implemented
-    highSeverity: transformedContent.filter(item => item.severity === 'high').length,
-    mediumSeverity: transformedContent.filter(item => item.severity === 'medium').length,
-    lowSeverity: transformedContent.filter(item => item.severity === 'low').length,
+    flaggedCount: transformedContent.length,
     reviewCount: flaggedReviews.length,
     jobCount: suspiciousJobs.length,
     profileCount: suspiciousContractors.length,
@@ -661,24 +656,35 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
           status: 'CANCELLED',
         },
       });
+    } else if (normalizedAction === 'approve') {
+      // For 'approve', ensure job status is POSTED if it was flagged
+      await prisma.job.update({
+        where: { id },
+        data: {
+          status: oldStatus === 'DRAFT' ? 'POSTED' : oldStatus,
+        },
+      });
     }
-    // For 'approve', we don't need to change anything - job remains active
 
     // Log the admin action to activity log
-    await logActivity({
-      adminId: req.admin!.id,
-      action: normalizedAction === 'delete' ? 'JOB_DELETED' : normalizedAction === 'approve' ? 'JOB_APPROVED' : 'JOB_REJECTED',
-      entityType: 'Job',
-      entityId: id,
-      description: `Job "${job.title}" by ${job.customer?.user?.name} ${normalizedAction}ed${reason ? `: ${reason}` : ''}`,
-      diff: {
-        before: { status: oldStatus },
-        after: normalizedAction === 'delete' ? null : normalizedAction === 'reject' ? { status: 'CANCELLED' } : { status: oldStatus },
-        reason,
-      },
-      ipAddress: getClientIp(req),
-      userAgent: getClientUserAgent(req),
-    });
+    try {
+      await logActivity({
+        adminId: req.admin!.id,
+        action: normalizedAction === 'delete' ? 'JOB_DELETED' : normalizedAction === 'approve' ? 'JOB_APPROVED' : 'JOB_REJECTED',
+        entityType: 'Job',
+        entityId: id,
+        description: `Job "${job.title}" by ${job.customer?.user?.name || 'Unknown'} ${normalizedAction}ed${reason ? `: ${reason}` : ''}`,
+        diff: {
+          before: { status: oldStatus },
+          after: normalizedAction === 'delete' ? null : normalizedAction === 'reject' ? { status: 'CANCELLED' } : { status: oldStatus },
+          reason,
+        },
+        ipAddress: getClientIp(req),
+        userAgent: getClientUserAgent(req),
+      });
+    } catch (logError) {
+      console.error('Failed to log activity:', logError);
+    }
 
     res.status(200).json({
       status: 'success',
@@ -1220,20 +1226,25 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
   });
 
   // Log the admin action to activity log
-  await logActivity({
-    adminId: req.admin!.id,
-    action: status === 'SUSPENDED' ? 'CONTRACTOR_SUSPENDED' : status === 'ACTIVE' ? 'CONTRACTOR_ACTIVATED' : 'CONTRACTOR_DEACTIVATED',
-    entityType: 'Contractor',
-    entityId: contractor.id,
-    description: `Contractor ${contractor.businessName || contractor.user.name} status changed to ${status}${reason ? `: ${reason}` : ''}`,
-    diff: {
-      before: contractor.status,
-      after: status,
-      reason,
-    },
-    ipAddress: getClientIp(req),
-    userAgent: getClientUserAgent(req),
-  });
+  try {
+    await logActivity({
+      adminId: req.admin!.id,
+      action: status === 'SUSPENDED' ? 'CONTRACTOR_SUSPENDED' : status === 'ACTIVE' ? 'CONTRACTOR_ACTIVATED' : 'CONTRACTOR_DEACTIVATED',
+      entityType: 'Contractor',
+      entityId: contractor.id,
+      description: `Contractor ${contractor.businessName || contractor.user?.name || 'Unknown'} status changed to ${status}${reason ? `: ${reason}` : ''}`,
+      diff: {
+        before: contractor.status,
+        after: status,
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+  } catch (logError) {
+    console.error('Failed to log activity:', logError);
+    // Continue even if logging fails
+  }
 
   res.status(200).json({
     status: 'success',
