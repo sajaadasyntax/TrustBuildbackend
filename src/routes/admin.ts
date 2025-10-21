@@ -565,6 +565,153 @@ export const getFlaggedContent = catchAsync(async (req: AdminAuthRequest, res: R
   });
 });
 
+// @desc    Flag content (review, job, etc.)
+// @route   POST /api/admin/content/:type/:id/flag
+// @access  Private/Admin
+export const flagContent = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { type, id } = req.params;
+  const { reason } = req.body;
+
+  if (!reason || reason.trim().length === 0) {
+    return next(new AppError('Reason for flagging is required', 400));
+  }
+
+  if (type === 'review') {
+    const review = await prisma.review.findUnique({
+      where: { id },
+      include: {
+        customer: {
+          include: { user: { select: { name: true, email: true } } }
+        },
+        contractor: {
+          include: { user: { select: { name: true } } }
+        },
+      },
+    });
+
+    if (!review) {
+      return next(new AppError('Review not found', 404));
+    }
+
+    // For now, we'll use the verification field to track flagged status
+    // You could add a separate 'isFlagged' field to the Review model if needed
+    await prisma.review.update({
+      where: { id },
+      data: {
+        isVerified: false, // Unverify flagged reviews
+      },
+    });
+
+    // Log the admin action
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'REVIEW_FLAGGED',
+      entityType: 'Review',
+      entityId: id,
+      description: `Review by ${review.customer?.user?.name} for ${review.contractor?.user?.name} flagged: ${reason}`,
+      diff: {
+        before: { isVerified: review.isVerified },
+        after: { isVerified: false },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Review flagged successfully',
+    });
+  } else if (type === 'job') {
+    const job = await prisma.job.findUnique({
+      where: { id },
+      include: {
+        customer: {
+          include: { user: { select: { name: true } } }
+        },
+      },
+    });
+
+    if (!job) {
+      return next(new AppError('Job not found', 404));
+    }
+
+    // Flag the job
+    await prisma.job.update({
+      where: { id },
+      data: {
+        isFlagged: true,
+        flaggedAt: new Date(),
+        flaggedBy: req.admin!.id,
+        flagReason: reason,
+      },
+    });
+
+    // Log the admin action
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'JOB_FLAGGED',
+      entityType: 'Job',
+      entityId: id,
+      description: `Job "${job.title}" by ${job.customer?.user?.name} flagged: ${reason}`,
+      diff: {
+        before: { isFlagged: job.isFlagged },
+        after: { isFlagged: true },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Job flagged successfully',
+    });
+  } else if (type === 'profile') {
+    const contractor = await prisma.contractor.findUnique({
+      where: { id },
+      include: {
+        user: { select: { name: true, email: true } }
+      },
+    });
+
+    if (!contractor) {
+      return next(new AppError('Contractor not found', 404));
+    }
+
+    // Suspend or flag the contractor profile
+    await prisma.contractor.update({
+      where: { id },
+      data: {
+        status: 'SUSPENDED',
+      },
+    });
+
+    // Log the admin action
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'CONTRACTOR_FLAGGED',
+      entityType: 'Contractor',
+      entityId: id,
+      description: `Contractor ${contractor.businessName || contractor.user.name} flagged: ${reason}`,
+      diff: {
+        before: { status: contractor.status },
+        after: { status: 'SUSPENDED' },
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Contractor profile flagged successfully',
+    });
+  } else {
+    return next(new AppError('Invalid content type', 400));
+  }
+});
+
 // @desc    Moderate content
 // @route   PATCH /api/admin/content/:type/:id/moderate
 // @access  Private/Admin
@@ -2691,6 +2838,7 @@ router.post('/contractors/:id/adjust-credits', requirePermission(AdminPermission
 
 // Content Management
 router.get('/content/flagged', requirePermission(AdminPermission.CONTENT_READ), getFlaggedContent);
+router.post('/content/:type/:id/flag', requirePermission(AdminPermission.CONTENT_WRITE), flagContent);
 router.patch('/content/:type/:id/moderate', requirePermission(AdminPermission.CONTENT_WRITE), moderateContent);
 
 // Users Management
