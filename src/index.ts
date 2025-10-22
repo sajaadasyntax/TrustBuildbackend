@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 import { rawBodyMiddleware } from './routes/webhooks';
 
 import { errorHandler } from './middleware/errorHandler';
@@ -148,7 +149,7 @@ app.get('/api/cors-test', (req, res) => {
 });
 
 // Serve static files from uploads directory
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // API Routes
 app.use('/api/auth', authRoutes);
