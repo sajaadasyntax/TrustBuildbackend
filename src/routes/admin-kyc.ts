@@ -17,6 +17,22 @@ import { createServiceEmail, createEmailService } from '../services/emailService
 
 const router = express.Router();
 
+// Serve KYC documents
+router.get('/documents/:path(*)', (req, res) => {
+  const filePath = path.join(process.cwd(), 'uploads', 'kyc', req.params.path);
+  console.log('📄 Serving KYC document:', filePath);
+  
+  if (require('fs').existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({
+      status: 'fail',
+      message: `File not found: ${filePath}`,
+      requestedPath: req.params.path
+    });
+  }
+});
+
 // Configure multer for KYC document uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
