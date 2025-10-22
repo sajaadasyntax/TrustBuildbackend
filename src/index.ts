@@ -149,7 +149,21 @@ app.get('/api/cors-test', (req, res) => {
 });
 
 // Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+const uploadsPath = path.join(process.cwd(), 'uploads');
+console.log('📁 Static files serving from:', uploadsPath);
+app.use('/uploads', express.static(uploadsPath));
+
+// Debug endpoint to check file existence
+app.get('/debug/file/:path(*)', (req, res) => {
+  const filePath = path.join(uploadsPath, req.params.path);
+  const exists = require('fs').existsSync(filePath);
+  res.json({
+    requestedPath: req.params.path,
+    fullPath: filePath,
+    exists,
+    uploadsPath
+  });
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);
