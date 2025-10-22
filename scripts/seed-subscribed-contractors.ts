@@ -97,7 +97,6 @@ async function main() {
           password,
           role: 'CONTRACTOR',
           isActive: true,
-          emailVerified: true,
         },
       });
 
@@ -114,10 +113,9 @@ async function main() {
           servicesProvided: contractorData.servicesProvided,
           yearsExperience: contractorData.yearsExperience,
           profileApproved: true,
-          status: 'ACTIVE',
+          status: 'VERIFIED',
           averageRating: parseFloat((4 + Math.random()).toFixed(1)), // Random rating between 4.0 and 5.0
-          totalReviews: Math.floor(Math.random() * 50) + 10, // Random reviews between 10 and 60
-          tier: contractorData.plan,
+          tier: contractorData.plan as any,
           creditsBalance: contractorData.plan === 'ENTERPRISE' ? 100 : contractorData.plan === 'PREMIUM' ? 50 : 20,
           weeklyCreditsLimit: contractorData.plan === 'ENTERPRISE' ? 100 : contractorData.plan === 'PREMIUM' ? 50 : 20,
         },
@@ -130,14 +128,14 @@ async function main() {
       await prisma.subscription.create({
         data: {
           contractorId: contractor.id,
-          plan: contractorData.plan as any,
+          tier: contractorData.plan as any,
+          plan: 'MONTHLY',
           status: 'active',
+          isActive: true,
           currentPeriodStart: new Date(),
           currentPeriodEnd,
-          stripeCustomerId: `cus_test_${contractor.id}`,
           stripeSubscriptionId: `sub_test_${contractor.id}`,
-          stripePriceId: `price_test_${contractorData.plan.toLowerCase()}`,
-          cancelAtPeriodEnd: false,
+          monthlyPrice: contractorData.plan === 'ENTERPRISE' ? 99.99 : contractorData.plan === 'PREMIUM' ? 49.99 : 19.99,
         },
       });
 
