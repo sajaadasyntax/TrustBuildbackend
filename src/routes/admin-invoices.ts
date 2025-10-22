@@ -458,7 +458,7 @@ export const sendCommissionReminder = catchAsync(async (req: AuthenticatedReques
               <tr><td><strong>Invoice Number:</strong></td><td>${commission.invoice?.invoiceNumber}</td></tr>
               <tr><td><strong>Job Title:</strong></td><td>${commission.job.title}</td></tr>
               <tr><td><strong>Final Job Amount:</strong></td><td>£${commission.finalJobAmount.toNumber().toFixed(2)}</td></tr>
-              <tr><td><strong>Commission (5%):</strong></td><td>£${commission.commissionAmount.toNumber().toFixed(2)}</td></tr>
+              <tr><td><strong>Commission (${commission.commissionRate}%):</strong></td><td>£${commission.commissionAmount.toNumber().toFixed(2)}</td></tr>
               <tr><td><strong>VAT (included):</strong></td><td>£0.00</td></tr>
               <tr class="amount"><td><strong>Total Due:</strong></td><td><strong>£${commission.totalAmount.toNumber().toFixed(2)}</strong></td></tr>
               <tr><td><strong>Due Date:</strong></td><td class="urgent">${commission.dueDate.toLocaleDateString('en-GB')}</td></tr>

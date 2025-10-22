@@ -219,6 +219,7 @@ export const createEmailNotificationService = () => {
     jobTitle: string;
     finalJobAmount: number;
     commissionAmount: number;
+    commissionRate?: number;
     vatAmount: number;
     totalAmount: number;
     dueDate: Date;
@@ -239,7 +240,7 @@ export const createEmailNotificationService = () => {
             <p><strong>Invoice Number:</strong> ${invoiceData.invoiceNumber}</p>
             <p><strong>Job Title:</strong> ${invoiceData.jobTitle}</p>
             <p><strong>Final Job Amount:</strong> £${invoiceData.finalJobAmount.toFixed(2)}</p>
-            <p><strong>Commission Rate:</strong> 5%</p>
+            <p><strong>Commission Rate:</strong> ${invoiceData.commissionRate || 5}%</p>
             <p><strong>Commission Amount:</strong> £${invoiceData.commissionAmount.toFixed(2)}</p>
             <p><strong>VAT (20%):</strong> £${invoiceData.vatAmount.toFixed(2)}</p>
             <p><strong>Total Amount:</strong> £${invoiceData.totalAmount.toFixed(2)}</p>

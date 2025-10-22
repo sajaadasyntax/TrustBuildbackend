@@ -90,6 +90,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
         jobTitle: job.title,
         finalJobAmount: finalAmount,
         commissionAmount: commissionAmount,
+        commissionRate: commissionRatePercent,
         vatAmount: vatAmount,
         totalAmount: totalAmount,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),

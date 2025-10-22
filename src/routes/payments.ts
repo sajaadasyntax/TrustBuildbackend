@@ -840,9 +840,13 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     let commissionPayment = null;
 
     // Only create commission if contractor has active subscription
-    // This is the key difference: subscribed contractors pay 5% commission, non-subscribed don't
+    // This is the key difference: subscribed contractors pay commission based on settings, non-subscribed don't
     if (contractor.subscription && contractor.subscription.isActive && contractor.subscription.status === 'active') {
-      const commissionRate = 5.0; // 5%
+      // Get commission rate from settings
+      const commissionRateSetting = await prisma.setting.findUnique({
+        where: { key: 'COMMISSION_RATE' },
+      });
+      const commissionRate = (commissionRateSetting?.value as any)?.rate || 5.0;
       const commissionAmount = (finalAmount * commissionRate) / 100;
       const vatAmount = 0; // No additional VAT - commission amount already includes VAT
       const totalAmount = commissionAmount; // Total is just the commission amount
@@ -891,10 +895,13 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     
     try {
       const { createNotification } = await import('../services/notificationService');
+      const commissionRate = result.commissionPayment.commissionRate.toNumber();
+      const commissionAmount = result.commissionPayment.commissionAmount.toNumber();
+      
       await createNotification({
         userId: userId,
         title: '💰 Commission Payment Required',
-        message: `A 5% commission (£${(finalAmount * 0.05).toFixed(2)}) is due for your completed job "${job.title}". This is part of your subscription benefits.`,
+        message: `A ${commissionRate}% commission (£${commissionAmount.toFixed(2)}) is due for your completed job "${job.title}". This is part of your subscription benefits.`,
         type: 'COMMISSION_DUE',
         actionLink: '/dashboard/commissions',
         actionText: 'View Details',

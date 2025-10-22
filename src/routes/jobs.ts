@@ -18,8 +18,34 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   // Build filter conditions
   const where: any = {
-    status: { in: ['DRAFT', 'POSTED', 'IN_PROGRESS'] },
+    // For contractors, exclude IN_PROGRESS jobs (they'll be shown separately if they're assigned)
+    // For others, show DRAFT, POSTED, and IN_PROGRESS
+    status: req.user?.role === 'CONTRACTOR' 
+      ? { in: ['POSTED'] }  // Contractors only see POSTED jobs (available to apply)
+      : { in: ['DRAFT', 'POSTED', 'IN_PROGRESS'] },
   };
+
+  // For contractors, add additional filter to include IN_PROGRESS jobs they're assigned to
+  if (req.user?.role === 'CONTRACTOR') {
+    const contractor = await prisma.contractor.findUnique({
+      where: { userId: req.user.id },
+      select: { id: true }
+    });
+
+    if (contractor) {
+      // Include POSTED jobs OR IN_PROGRESS jobs where this contractor won
+      where.OR = [
+        { status: 'POSTED' },
+        { 
+          AND: [
+            { status: 'IN_PROGRESS' },
+            { wonByContractorId: contractor.id }
+          ]
+        }
+      ];
+      delete where.status; // Remove the status filter since we're using OR
+    }
+  }
 
   if (category) {
     where.category = category as string;
@@ -42,11 +68,23 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
   }
 
   if (search) {
-    where.OR = [
+    // Preserve existing OR condition if it exists (from contractor filter)
+    const searchConditions = [
       { title: { contains: search as string, mode: 'insensitive' } },
       { description: { contains: search as string, mode: 'insensitive' } },
       { location: { contains: search as string, mode: 'insensitive' } },
     ];
+    
+    if (where.OR) {
+      // Combine with existing OR condition
+      where.AND = [
+        { OR: where.OR },
+        { OR: searchConditions }
+      ];
+      delete where.OR;
+    } else {
+      where.OR = searchConditions;
+    }
   }
 
   if (urgent === 'true') {
@@ -1291,6 +1329,19 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
 
   if (!job) {
     return next(new AppError('Job not found', 404));
+  }
+
+  // Prevent contractors from viewing IN_PROGRESS jobs they're not assigned to
+  if (req.user && req.user.role === 'CONTRACTOR' && job.status === 'IN_PROGRESS') {
+    const contractor = await prisma.contractor.findUnique({
+      where: { userId: req.user.id },
+      select: { id: true },
+    });
+
+    // If contractor is not the one assigned to this job, deny access
+    if (!contractor || job.wonByContractorId !== contractor.id) {
+      return next(new AppError('This job is no longer available', 404));
+    }
   }
 
   // Check if user is a contractor and has access
