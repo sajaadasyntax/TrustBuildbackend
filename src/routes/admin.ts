@@ -1261,6 +1261,15 @@ export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: R
             category: true,
           },
         },
+        subscription: {
+          select: {
+            id: true,
+            status: true,
+            plan: true,
+            currentPeriodEnd: true,
+            stripeSubscriptionId: true,
+          },
+        },
         _count: {
           select: {
             applications: true,
