@@ -1951,7 +1951,7 @@ export const getPaymentStats = catchAsync(async (req: AdminAuthRequest, res: Res
       averageTransactionValue: Number(averageTransaction._avg.amount || 0),
       revenueGrowth: Number(revenueGrowth.toFixed(1)),
       subscriptionRevenue: Number(typeRevenue['SUBSCRIPTION'] || 0),
-      jobPaymentRevenue: Number(typeRevenue['JOB_ACCESS'] || 0)
+      jobPaymentRevenue: Number((typeRevenue['JOB_PAYMENT'] || 0) + (typeRevenue['LEAD_ACCESS'] || 0) + (typeRevenue['COMMISSION'] || 0))
     };
 
     res.status(200).json({
@@ -1970,7 +1970,7 @@ export const getPaymentStats = catchAsync(async (req: AdminAuthRequest, res: Res
 export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
-  const { status, type, search } = req.query;
+  const { status, type, search, dateFilter } = req.query;
 
   try {
     // Build where clause for filtering
@@ -1981,7 +1981,43 @@ export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, r
     }
     
     if (type && type !== 'all') {
-      whereClause.type = type.toString().toUpperCase();
+      // Map frontend type names to backend enum values
+      let mappedType = type.toString().toUpperCase();
+      if (mappedType === 'JOB_UNLOCK') {
+        mappedType = 'LEAD_ACCESS';
+      }
+      whereClause.type = mappedType;
+    }
+
+    // Date filtering
+    if (dateFilter && dateFilter !== 'all') {
+      const now = new Date();
+      let startDate: Date;
+
+      switch (dateFilter) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          whereClause.createdAt = { gte: startDate };
+          break;
+        case 'week':
+          // Get start of week (Monday)
+          const dayOfWeek = now.getDay();
+          const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
+          startDate.setHours(0, 0, 0, 0);
+          whereClause.createdAt = { gte: startDate };
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          whereClause.createdAt = { gte: startDate };
+          break;
+        case 'quarter':
+          // Get start of current quarter
+          const currentQuarter = Math.floor(now.getMonth() / 3);
+          startDate = new Date(now.getFullYear(), currentQuarter * 3, 1);
+          whereClause.createdAt = { gte: startDate };
+          break;
+      }
     }
 
     // Search functionality
@@ -2053,26 +2089,34 @@ export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, r
     });
 
     // Transform to match frontend interface
-    const paginatedTransactions = payments.map(payment => ({
-      id: payment.id,
-      amount: Number(payment.amount),
-      currency: 'GBP',
-      status: payment.status.toLowerCase(),
-      type: payment.type.toLowerCase().replace('_', '_'),
-      customer: {
-        name: payment.job?.customer?.user?.name || 'Unknown',
-        email: payment.job?.customer?.user?.email || 'unknown@example.com'
-      },
-      contractor: payment.contractor ? {
-        businessName: payment.contractor.businessName || 'Unknown Business',
-        user: {
-          name: payment.contractor.user.name
-        }
-      } : undefined,
-      description: payment.description || `${payment.type} payment`,
-      createdAt: payment.createdAt.toISOString(),
-      stripePaymentId: payment.stripePaymentId || payment.id
-    }));
+    const paginatedTransactions = payments.map(payment => {
+      // Map backend payment types to frontend display types
+      let displayType = payment.type.toLowerCase();
+      if (payment.type === 'LEAD_ACCESS') {
+        displayType = 'job_unlock';
+      }
+      
+      return {
+        id: payment.id,
+        amount: Number(payment.amount),
+        currency: 'GBP',
+        status: payment.status.toLowerCase(),
+        type: displayType,
+        customer: {
+          name: payment.job?.customer?.user?.name || payment.contractor?.user?.name || 'Unknown',
+          email: payment.job?.customer?.user?.email || payment.contractor?.user?.email || 'unknown@example.com'
+        },
+        contractor: payment.contractor ? {
+          businessName: payment.contractor.businessName || 'Unknown Business',
+          user: {
+            name: payment.contractor.user.name
+          }
+        } : undefined,
+        description: payment.description || `${payment.type} payment`,
+        createdAt: payment.createdAt.toISOString(),
+        stripePaymentId: payment.stripePaymentId || payment.id
+      };
+    });
 
     res.status(200).json({
       status: 'success',
