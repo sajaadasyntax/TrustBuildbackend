@@ -2507,21 +2507,21 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   // Only charge commission if they used credits (creditUsed = true)
   const accessedViaCredits = jobAccess && jobAccess.creditUsed === true;
 
-
-
+  console.log('💳 Job access details:', jobAccess ? {
     accessMethod: jobAccess.accessMethod,
     creditUsed: jobAccess.creditUsed,
     contractorId: jobAccess.contractorId,
     jobId: jobAccess.jobId
   } : 'No jobAccess found');
 
+  console.log('📊 Winning contractor subscription:', winningContractor ? {
     hasSubscription: !!winningContractor.subscription,
     isActive: winningContractor.subscription?.isActive,
     status: winningContractor.subscription?.status
   } : 'No contractor found');
 
   // Only charge commission if they used credits (not if they paid lead price)
-
+  console.log('🔍 Commission check:', {
     hasWinningContractor: !!winningContractor,
     accessedViaCredits,
     commissionNotPaid: !job.commissionPaid,
