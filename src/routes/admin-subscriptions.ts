@@ -256,7 +256,7 @@ export const getSubscriptionStats = catchAsync(async (req: AdminAuthRequest, res
   };
   
   // Log subscription stats for debugging
-  console.log("📊 Subscription stats calculated:", {
+
     activeCount: stats.activeSubscriptions,
     pendingCount: stats.pendingSubscriptions,
     cancelledCount: stats.cancelledSubscriptions,
@@ -303,7 +303,7 @@ export const cancelContractorSubscription = catchAsync(async (req: AdminAuthRequ
           comment: `Cancelled by admin: ${req.admin!.id}`,
         }
       });
-      console.log(`✅ Stripe subscription ${contractor.subscription.stripeSubscriptionId} marked for cancellation at period end`);
+
     } catch (error) {
       console.error('Failed to cancel Stripe subscription:', error);
       // Continue anyway to update our database
@@ -400,7 +400,7 @@ export const reactivateContractorSubscription = catchAsync(async (req: AdminAuth
           cancel_at_period_end: false,
         });
         
-        console.log(`✅ Stripe subscription ${contractor.subscription.stripeSubscriptionId} reactivated`);
+
         
         // Update our database record with Stripe's data
         updatedSubscription = await prisma.subscription.update({
@@ -549,7 +549,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
             updatedBy: `admin:${req.admin!.id}`,
           }
         });
-        console.log(`✅ Updated Stripe subscription: ${stripeSubscriptionId}`);
+
       } else {
         // Create new Stripe subscription
         const newSubscription = await stripe.subscriptions.create({
@@ -578,7 +578,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
         });
         
         stripeSubscriptionId = newSubscription.id;
-        console.log(`✅ Created new Stripe subscription: ${stripeSubscriptionId}`);
+
       }
     } catch (error) {
       console.error('Failed to create/update Stripe subscription:', error);

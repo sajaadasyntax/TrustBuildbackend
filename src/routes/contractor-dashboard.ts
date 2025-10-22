@@ -389,16 +389,16 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Check if contractor already has a subscription
-  console.log(`🔍 Checking for existing subscription for contractor: ${contractor.id}`);
+
   const existingSubscription = await prisma.subscription.findUnique({
     where: { contractorId: contractor.id },
   });
-  console.log(`📊 Existing subscription: ${existingSubscription ? 'Found' : 'Not found'}`);
+
 
   let subscription;
   if (existingSubscription) {
     // Update existing subscription
-    console.log(`🔄 Updating existing subscription ID: ${existingSubscription.id}`);
+
     try {
       subscription = await prisma.subscription.update({
         where: { id: existingSubscription.id },
@@ -411,14 +411,14 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           monthlyPrice: getSubscriptionPricing(plan).monthly,
         },
       });
-      console.log(`✅ Subscription updated successfully: ${subscription.id}`);
+
     } catch (err) {
       console.error(`❌ Error updating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   } else {
     // Create new subscription
-    console.log(`➕ Creating new subscription for contractor: ${contractor.id}`);
+
     try {
       subscription = await prisma.subscription.create({
         data: {
@@ -434,7 +434,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           monthlyPrice: getSubscriptionPricing(plan).monthly,
         },
       });
-      console.log(`✅ New subscription created successfully: ${subscription.id}`);
+
     } catch (err) {
       console.error(`❌ Error creating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
@@ -442,7 +442,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Create payment record
-  console.log(`💰 Creating payment record for subscription`);
+
   try {
     const payment = await prisma.payment.create({
       data: {
@@ -453,14 +453,14 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         description: `${plan} subscription payment`,
       },
     });
-    console.log(`✅ Payment record created: ${payment.id}`);
+
   } catch (err) {
     console.error(`❌ Error creating payment record: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
   }
 
   // Allocate initial credits to the contractor
-  console.log(`🎯 Allocating initial credits to contractor: ${contractor.id}`);
+
   try {
     // Update contractor with initial credits
     const updatedContractor = await prisma.contractor.update({
@@ -481,7 +481,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       }
     });
 
-    console.log(`✅ Credits allocated: ${contractor.weeklyCreditsLimit} credits to contractor ${contractor.id}`);
+
   } catch (err) {
     console.error(`❌ Error allocating credits: ${err instanceof Error ? err.message : 'Unknown error'}`);
     // Don't throw error here as subscription is already created

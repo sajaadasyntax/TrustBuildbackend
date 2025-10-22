@@ -42,7 +42,7 @@ export async function createNotification({
 
     // Check if in-app notifications are enabled
     if (!settings.inApp) {
-      console.log(`In-app notifications disabled for user ${userId}`);
+
       return null;
     }
 
@@ -71,7 +71,7 @@ export async function createNotification({
 
     const settingKey = typeMap[type as NotificationType];
     if (settingKey && settings[settingKey] === false) {
-      console.log(`Notification type ${type} disabled for user ${userId}`);
+
       return null;
     }
 

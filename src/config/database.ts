@@ -21,7 +21,7 @@ if (process.env.NODE_ENV !== 'production') {
 prisma
   .$connect()
   .then(() => {
-    console.log('✅ Database connected successfully');
+
   })
   .catch((error) => {
     console.error('❌ Database connection failed:', error);
@@ -31,7 +31,7 @@ prisma
 // Handle cleanup on app termination
 process.on('beforeExit', async () => {
   await prisma.$disconnect();
-  console.log('📦 Database disconnected');
+
 });
 
 export default prisma; 

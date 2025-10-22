@@ -27,7 +27,7 @@ function getStripeInstance(): Stripe {
       apiVersion: '2023-10-16',
     });
     
-    console.log(`✅ Stripe initialized with ${stripeKey.startsWith('sk_live_') ? 'LIVE' : 'TEST'} key`);
+
   }
   
   return stripe;
@@ -93,7 +93,7 @@ async function sendSubscriptionNotification(contractor: any, eventType: string, 
     });
 
     await emailService.sendMail(mailOptions);
-    console.log(`📧 Subscription ${eventType} email sent to: ${contractor?.user?.email || 'unknown'}`);
+
   } catch (error) {
     console.error(`Failed to send subscription ${eventType} email:`, error);
   }
@@ -126,7 +126,7 @@ async function sendSubscriptionNotification(contractor: any, eventType: string, 
  */
 async function sendPaymentFailedNotification(user: any, paymentDetails: any): Promise<boolean> {
   // Disabled email sending - payment failures will be available in dashboard only
-  console.log(`✅ Email sending disabled - Payment failed for: ${user?.email || 'unknown'}`);
+
   // Create an in-app notification instead
   if (user?.id) {
     try {
@@ -171,7 +171,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
   try {
     // @ts-ignore: accessing rawBody property
     event = getStripeInstance().webhooks.constructEvent(req.rawBody, signature, webhookSecret);
-    console.log(`✅ Webhook received: ${event.type}`);
+
   } catch (err: any) {
     console.error(`❌ Webhook signature verification failed: ${err.message}`);
     return next(new AppError(`Webhook Error: ${err.message}`, 400));
@@ -182,7 +182,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     // ==================== Invoice Events ====================
     case 'invoice.payment_succeeded': {
       const invoice = event.data.object as Stripe.Invoice;
-      console.log('📧 Invoice payment succeeded:', invoice.id);
+
       
       // Only process if subscription related
       if (invoice.subscription) {
@@ -235,7 +235,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
               dueDate: createdInvoice.dueAt || new Date(),
               paidAt: createdInvoice.paidAt || undefined,
             });
-            console.log(`📧 Subscription invoice email sent to: ${dbSubscription.contractor.user.email}`);
+
           } catch (error) {
             console.error('Failed to send subscription invoice email:', error);
             // Don't fail webhook processing if email fails
@@ -259,7 +259,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice;
-      console.log('❌ Invoice payment failed:', invoice.id);
+
       
       // Only process if subscription related
       if (invoice.subscription) {
@@ -297,7 +297,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     // ==================== Subscription Events ====================
     case 'customer.subscription.created': {
       const subscription = event.data.object as Stripe.Subscription;
-      console.log('🔔 Subscription created:', subscription.id);
+
       
       // Get the contractor ID from metadata if available
       const contractorId = subscription.metadata?.contractorId;
@@ -346,7 +346,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
           
           // Email notifications disabled - subscription info will be available in dashboard
           // User can view invoice and subscription details in dashboard
-          console.log(`✅ Subscription created for contractor: ${contractorId}, plan: ${plan}`);
+
         }
       }
       break;
@@ -354,7 +354,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     
     case 'customer.subscription.updated': {
       const subscription = event.data.object as Stripe.Subscription;
-      console.log('🔄 Subscription updated:', subscription.id);
+
       
       // Find the subscription in our database
       const dbSubscription = await prisma.subscription.findFirst({
@@ -377,14 +377,14 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
         });
         
         // Email notifications disabled - subscription status updates visible in dashboard
-        console.log(`✅ Subscription status update - ${dbSubscription.contractor.user?.email || 'unknown'}, status: ${subscription.status}`);
+
       }
       break;
     }
     
     case 'customer.subscription.deleted': {
       const subscription = event.data.object as Stripe.Subscription;
-      console.log('🗑️ Subscription deleted:', subscription.id);
+
       
       // Find the subscription in our database
       const dbSubscription = await prisma.subscription.findFirst({
@@ -403,7 +403,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
         });
         
         // Email notifications disabled - subscription cancellation visible in dashboard
-        console.log(`✅ Subscription cancelled - ${dbSubscription.contractor.user?.email || 'unknown'}`);
+
       }
       break;
     }
@@ -411,7 +411,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     // ==================== Payment Intent Events ====================
     case 'payment_intent.succeeded': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
-      console.log('💰 Payment intent succeeded:', paymentIntent.id);
+
       
       // Check what type of payment this is from metadata
       const paymentType = paymentIntent.metadata?.type;
@@ -513,7 +513,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     
     case 'payment_intent.payment_failed': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
-      console.log('❌ Payment intent failed:', paymentIntent.id);
+
       
       // Check what type of payment this is from metadata
       const paymentType = paymentIntent.metadata?.type;
@@ -554,7 +554,7 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     // Add more event handlers as needed
     
     default:
-      console.log(`⚠️ Unhandled event type: ${event.type}`);
+
   }
   
   // Return a 200 response to acknowledge receipt of the event

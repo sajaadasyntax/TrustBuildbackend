@@ -39,7 +39,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Contractor welcome email sent to: ${contractorData.email}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send contractor welcome email to ${contractorData.email}:`, error);
@@ -80,7 +80,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Customer welcome email sent to: ${customerData.email}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send customer welcome email to ${customerData.email}:`, error);
@@ -141,7 +141,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Subscription invoice email sent to: ${invoiceData.recipientEmail}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send subscription invoice email to ${invoiceData.recipientEmail}:`, error);
@@ -203,7 +203,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Job access invoice email sent to: ${invoiceData.recipientEmail}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send job access invoice email to ${invoiceData.recipientEmail}:`, error);
@@ -262,7 +262,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Commission invoice email sent to: ${invoiceData.contractorEmail}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send commission invoice email to ${invoiceData.contractorEmail}:`, error);
@@ -305,7 +305,7 @@ export const createEmailNotificationService = () => {
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`✅ Payment confirmation email sent to: ${paymentData.recipientEmail}`);
+
       return true;
     } catch (error) {
       console.error(`❌ Failed to send payment confirmation email to ${paymentData.recipientEmail}:`, error);

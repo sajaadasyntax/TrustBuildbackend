@@ -3,7 +3,7 @@ import { processCommissionForJob } from './commissionService';
 
 // Service to handle final price confirmation timeouts
 export const processFinalPriceTimeouts = async (): Promise<void> => {
-  console.log('🔄 Processing final price confirmation timeouts...');
+
   
   const now = new Date();
   
@@ -39,11 +39,11 @@ export const processFinalPriceTimeouts = async (): Promise<void> => {
     },
   });
 
-  console.log(`⏰ Found ${timedOutJobs.length} jobs with timed out final price confirmations`);
+
 
   for (const job of timedOutJobs) {
     try {
-      console.log(`⏰ Processing timeout for job ${job.id} - proposed amount: £${Number(job.contractorProposedAmount).toFixed(2)}`);
+
       
       // Auto-confirm the final price due to timeout
       const updatedJob = await prisma.job.update({
@@ -65,13 +65,13 @@ export const processFinalPriceTimeouts = async (): Promise<void> => {
       // Send timeout notification to both parties
       await sendTimeoutNotification(job);
 
-      console.log(`✅ Job ${job.id} auto-confirmed due to timeout`);
+
     } catch (error) {
       console.error(`❌ Error processing timeout for job ${job.id}:`, error);
     }
   }
 
-  console.log(`✅ Processed ${timedOutJobs.length} final price timeouts`);
+
 };
 
 // Send timeout notification to both customer and contractor
@@ -131,7 +131,7 @@ async function sendTimeoutNotification(jobData: any) {
       emailService.sendMail(contractorMailOptions)
     ]);
     
-    console.log(`📧 Timeout notifications sent to customer and contractor for job ${jobData.id}`);
+
   } catch (error) {
     console.error('Failed to send timeout notifications:', error);
   }

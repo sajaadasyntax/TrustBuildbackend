@@ -43,7 +43,7 @@ export const logActivity = async (data: AuditLogData): Promise<void> => {
       },
     });
 
-    console.log(`📝 Activity logged: ${data.action} by admin ${data.adminId}`);
+
 
     // Check if this action requires Super Admin notification
     if (CRITICAL_ACTIONS.includes(data.action)) {
@@ -128,7 +128,7 @@ const notifySuperAdmin = async (log: any, data: AuditLogData): Promise<void> => 
     const emailService = createEmailService();
     await emailService.sendMail(emailContent);
 
-    console.log(`📧 Super Admin notification sent for action: ${data.action}`);
+
   } catch (error) {
     console.error('❌ Failed to notify Super Admin:', error);
     // Don't throw - notification failures shouldn't break the main operation

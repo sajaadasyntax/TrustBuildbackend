@@ -231,7 +231,7 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
     });
     
     // Email notifications disabled - invoices are now only accessible in-app
-    console.log(`✅ Email sending disabled - Invoice ${invoice.invoiceNumber} for recipient: ${mailOptions.to}`);
+
     
     // Update invoice to mark as sent
     await prisma.invoice.update({

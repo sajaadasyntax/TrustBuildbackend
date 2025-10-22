@@ -37,24 +37,43 @@ async function updateSupportAdminPermissions() {
 
     console.log(`✨ Found ${supportAdmins.length} SUPPORT_ADMIN user(s)\n`);
 
-    // Default permissions for SUPPORT_ADMIN
+    // SUPPORT_ADMIN - Access ONLY these sections:
+    // 1. Contractor Management
+    // 2. Job Oversight
+    // 3. Review Management
+    // 4. User Management
+    // 5. Content Moderation
+    // 6. KYC Review
     const defaultSupportPermissions = [
-      // Read-only access to most data
+      // User Management
       AdminPermission.USERS_READ,
-      AdminPermission.JOBS_READ,
-      AdminPermission.CONTRACTORS_READ,
-      AdminPermission.REVIEWS_READ,
-      AdminPermission.CONTENT_READ,
-      AdminPermission.PAYMENTS_READ,
+      AdminPermission.USERS_WRITE,
       
-      // Write access for support tasks
+      // Contractor Management
+      AdminPermission.CONTRACTORS_READ,
+      AdminPermission.CONTRACTORS_WRITE,
+      
+      // KYC Review
+      AdminPermission.KYC_READ,
+      AdminPermission.KYC_WRITE,
+      
+      // Job Oversight (view and manage jobs for support)
+      AdminPermission.JOBS_READ,
+      AdminPermission.JOBS_WRITE,
+      AdminPermission.PRICING_READ,
+      AdminPermission.PRICING_WRITE, // Can update job lead prices
+      
+      // Review Management
+      AdminPermission.REVIEWS_READ,
+      AdminPermission.REVIEWS_WRITE,
+      
+      // Content Moderation
+      AdminPermission.CONTENT_READ,
+      AdminPermission.CONTENT_WRITE,
+      
+      // Support (internal - not a visible section but needed for tickets)
       AdminPermission.SUPPORT_READ,
       AdminPermission.SUPPORT_WRITE,
-      AdminPermission.CONTENT_WRITE, // Can flag/moderate content
-      AdminPermission.REVIEWS_WRITE, // Can moderate reviews
-      
-      // Job management (for handling customer requests)
-      AdminPermission.JOBS_WRITE,
     ];
 
     // Update each SUPPORT_ADMIN
@@ -90,17 +109,21 @@ async function updateSupportAdminPermissions() {
       console.log(`   ✓ ${permission}`);
     });
     
-    console.log('\n💡 SUPPORT_ADMIN can now:');
-    console.log('   • View all users, jobs, contractors, reviews, and payments');
-    console.log('   • Flag and moderate content and reviews');
-    console.log('   • Manage customer support tickets');
-    console.log('   • Edit jobs (for customer support)');
-    console.log('\n⚠️  SUPPORT_ADMIN CANNOT:');
-    console.log('   • Delete users or jobs');
-    console.log('   • Approve contractors or KYC');
-    console.log('   • Manage pricing or settings');
-    console.log('   • Process refunds');
-    console.log('   • View security logs (SUPER_ADMIN only)');
+    console.log('\n💡 SUPPORT_ADMIN has access to these sections ONLY:');
+    console.log('   1️⃣  User Management - View and edit user accounts');
+    console.log('   2️⃣  Contractor Management - View and edit contractor profiles');
+    console.log('   3️⃣  KYC Review - View KYC submissions and request updates');
+    console.log('   4️⃣  Job Oversight - View, edit, flag jobs, set lead prices');
+    console.log('   5️⃣  Review Management - View and moderate reviews');
+    console.log('   6️⃣  Content Moderation - Manage FAQ, featured contractors, flagged content');
+    console.log('\n⚠️  SUPPORT_ADMIN CANNOT ACCESS:');
+    console.log('   ✗ Payment Dashboard');
+    console.log('   ✗ Platform Settings');
+    console.log('   ✗ Invoice Management');
+    console.log('   ✗ Pricing Management');
+    console.log('   ✗ Security Logs');
+    console.log('   ✗ Final Price Confirmations');
+    console.log('\n✅ Principle: Support admins have ALL permissions for their 6 designated sections!');
 
   } catch (error) {
     console.error('❌ Error updating SUPPORT_ADMIN permissions:', error);

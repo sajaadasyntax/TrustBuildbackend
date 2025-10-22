@@ -14,12 +14,12 @@ function getStripeInstance(): Stripe | null {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     
     if (!stripeKey) {
-      console.log('⚠️ STRIPE_SECRET_KEY is not configured - Stripe functionality will be limited');
+
       return null;
     }
     
     if (!stripeKey.startsWith('sk_test_') && !stripeKey.startsWith('sk_live_')) {
-      console.log('⚠️ Invalid Stripe API key format - Stripe functionality will be limited');
+
       return null;
     }
     
@@ -28,7 +28,7 @@ function getStripeInstance(): Stripe | null {
         apiVersion: '2023-10-16',
       });
       
-      console.log(`✅ Stripe initialized with ${stripeKey.startsWith('sk_live_') ? 'LIVE' : 'TEST'} key`);
+
     } catch (error) {
       console.error('❌ Failed to initialize Stripe:', error);
       return null;
@@ -247,7 +247,7 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
     const stripe = getStripeInstance();
     
     if (!stripe) {
-      console.log('⚠️ Stripe not configured properly, using fallback method');
+
       
       // Return simulated payment intent without actually hitting Stripe API
       res.status(200).json({
@@ -322,7 +322,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   
   // Check if it's a mock payment intent ID (for environments without Stripe)
   if (stripePaymentIntentId.startsWith('mock_pi_')) {
-    console.log(`🔍 Detected mock payment intent: ${stripePaymentIntentId}`);
+
     paymentSucceeded = true;
   } else {
     // It's a real Stripe payment intent - verify it
@@ -331,10 +331,10 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       return next(new AppError('Stripe is not configured but received a Stripe payment intent ID', 400));
     }
     
-    console.log(`🔍 Retrieving payment intent: ${stripePaymentIntentId}`);
+
     try {
       paymentIntent = await stripe!.paymentIntents.retrieve(stripePaymentIntentId);
-      console.log(`✅ Payment intent status: ${paymentIntent.status}`);
+
       paymentSucceeded = paymentIntent.status === 'succeeded';
       
       // Get customer ID or create a Stripe customer if not exists
@@ -345,11 +345,11 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         });
         
         if (existingCustomer) {
-          console.log(`🔍 Found existing Stripe customer: ${existingCustomer.stripeCustomerId}`);
+
           stripeCustomerId = existingCustomer.stripeCustomerId;
         } else {
           // Create a new Stripe customer
-          console.log(`➕ Creating new Stripe customer for contractor: ${contractor.id}`);
+
           const customer = await stripe!.customers.create({
             email: contractor.user.email,
             name: contractor.businessName || contractor.user.name,
@@ -367,7 +367,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
             }
           });
           
-          console.log(`✅ Created new Stripe customer: ${customer.id}`);
+
           stripeCustomerId = customer.id;
         }
       }
@@ -400,11 +400,11 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Check if contractor already has a subscription
-  console.log(`🔍 Checking for existing subscription for contractor: ${contractor.id}`);
+
   const existingSubscription = await prisma.subscription.findUnique({
     where: { contractorId: contractor.id },
   });
-  console.log(`📊 Existing subscription: ${existingSubscription ? 'Found' : 'Not found'}`);
+
 
   let subscription;
   let stripeSubscriptionId = null;
@@ -414,7 +414,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     const stripe = getStripeInstance();
     if (stripe) {
       try {
-        console.log(`🔄 Creating Stripe subscription for customer: ${stripeCustomerId}`);
+
         
         // Get the appropriate price ID based on plan
         // These should be created in your Stripe dashboard
@@ -456,7 +456,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           expand: ['latest_invoice.payment_intent'],
         });
         
-        console.log(`✅ Stripe subscription created: ${stripeSubscription.id}`);
+
         stripeSubscriptionId = stripeSubscription.id;
       } catch (error) {
         console.error(`❌ Failed to create Stripe subscription: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -467,7 +467,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   
   if (existingSubscription) {
     // Update existing subscription
-    console.log(`🔄 Updating existing subscription ID: ${existingSubscription.id}`);
+
     try {
       subscription = await prisma.subscription.update({
         where: { id: existingSubscription.id },
@@ -481,14 +481,14 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
-      console.log(`✅ Subscription updated successfully: ${subscription.id}`);
+
     } catch (err) {
       console.error(`❌ Error updating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
   } else {
     // Create new subscription
-    console.log(`➕ Creating new subscription for contractor: ${contractor.id}`);
+
     try {
       subscription = await prisma.subscription.create({
         data: {
@@ -503,7 +503,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
-      console.log(`✅ New subscription created successfully: ${subscription.id}`);
+
     } catch (err) {
       console.error(`❌ Error creating subscription: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
@@ -511,7 +511,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
   }
 
   // Create payment record
-  console.log(`💰 Creating payment record for subscription`);
+
   let payment;
   try {
     payment = await prisma.payment.create({
@@ -524,14 +524,14 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         description: `${plan} subscription payment`,
       },
     });
-    console.log(`✅ Payment record created: ${payment.id}`);
+
   } catch (err) {
     console.error(`❌ Error creating payment record: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
   }
 
   // Allocate initial credits to the contractor
-  console.log(`🎯 Allocating initial credits to contractor: ${contractor.id}`);
+
   try {
     // Update contractor with initial credits
     const updatedContractor = await prisma.contractor.update({
@@ -552,14 +552,14 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       }
     });
 
-    console.log(`✅ Credits allocated: ${contractor.weeklyCreditsLimit} credits to contractor ${contractor.id}`);
+
   } catch (err) {
     console.error(`❌ Error allocating credits: ${err instanceof Error ? err.message : 'Unknown error'}`);
     // Don't throw error here as subscription is already created
   }
 
   // Create invoice
-  console.log(`📄 Creating invoice for subscription payment`);
+
   let invoice;
   try {
     const pricing = getSubscriptionPricing(plan);
@@ -577,7 +577,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
         paidAt: now,
       },
     });
-    console.log(`✅ Invoice created: ${invoice.id} (VAT included in price)`);
+
   } catch (err) {
     console.error(`❌ Error creating invoice: ${err instanceof Error ? err.message : 'Unknown error'}`);
     throw err;
@@ -616,12 +616,12 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     }).catch(err => console.log('Failed to import notification service:', err));
   } catch (err) {
     // Ignore notification errors - they should not block subscription activation
-    console.log('Error creating notification (non-critical):', err);
+
   }
   
   // Log important subscription data
-  console.log(`✅ Subscription confirmed - ID: ${subscription.id}, Plan: ${plan}, Contractor: ${contractor.id}, Payment ID: ${payment.id}`);
-  console.log(`📊 Subscription period: ${subscription.currentPeriodStart.toISOString()} to ${subscription.currentPeriodEnd.toISOString()}`);
+
+
   
 
   res.status(200).json({
@@ -692,7 +692,7 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
     }).catch(err => console.log('Failed to import notification service:', err));
   } catch (err) {
     // Ignore notification errors - they should not block subscription cancellation
-    console.log('Error creating notification (non-critical):', err);
+
   }
 
   res.status(200).json({

@@ -12,9 +12,9 @@ export const createEmailService = () => {
   const sendGridApiKey = process.env.SENDGRID_API_KEY;
   if (sendGridApiKey) {
     sgMail.setApiKey(sendGridApiKey);
-    console.log('✅ SendGrid API key configured');
+
   } else {
-    console.log('⚠️ SendGrid API key not found, will use fallback methods');
+
   }
   
   // Send email with retry logic and fallbacks
@@ -96,17 +96,17 @@ export const createEmailService = () => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) {
-          console.log(`📨 MailerSend API retry attempt ${attempt} for email to: ${options.to}`);
+
         }
         
-        console.log(`✅ Sending via MailerSend API to: ${options.to}`);
+
         // Add more debugging info
-        console.log('MailerSend API Token length:', apiToken ? apiToken.length : 0);
-        console.log('MailerSend client instance:', Object.keys(mailerSend));
-        console.log('MailerSend email property:', mailerSend.email ? 'exists' : 'missing');
+
+
+
         
         const result = await mailerSend.email.send(emailParams);
-        console.log('✅ MailerSend API success:', result);
+
         
         return {
           messageId: `mailersend_${Date.now()}`,
@@ -137,7 +137,7 @@ export const createEmailService = () => {
     }
     
     // If all MailerSend attempts fail, try nodemailer as fallback
-    console.log('⚠️ All MailerSend API attempts failed, trying Nodemailer fallback...');
+
     return sendWithNodemailer(options, retries);
   };
   
@@ -148,7 +148,7 @@ export const createEmailService = () => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) {
-          console.log(`📨 SendGrid retry attempt ${attempt} for email to: ${options.to}`);
+
         }
         
         // Extract from email and name
@@ -198,14 +198,14 @@ export const createEmailService = () => {
           html: typeof htmlContent === 'string' ? htmlContent : String(htmlContent)
         };
         
-        console.log(`✅ Sending via SendGrid API to: ${recipients.join(', ')}`);
-        console.log(`✅ From: ${fromName} <${fromEmail}>`);
-        console.log(`✅ Subject: ${msg.subject}`);
-        console.log(`✅ HTML content length: ${msg.html && typeof msg.html === 'string' ? msg.html.length : 0}`);
-        console.log(`✅ Text content length: ${msg.text ? msg.text.length : 0}`);
+
+
+
+
+
         
         const result = await sgMail.send(msg);
-        console.log('✅ SendGrid API success:', result[0].statusCode);
+
         
         return {
           messageId: result[0].headers['x-message-id'] || `sendgrid_${Date.now()}`,
@@ -234,7 +234,7 @@ export const createEmailService = () => {
     }
     
     // If all SendGrid attempts fail, try nodemailer as fallback
-    console.log('⚠️ All SendGrid API attempts failed, trying Nodemailer fallback...');
+
     return sendWithNodemailer(options, retries);
   };
   
@@ -245,20 +245,20 @@ export const createEmailService = () => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) {
-          console.log(`📨 Nodemailer retry attempt ${attempt} for email to: ${options.to}`);
+
         }
         
         // First try Gmail if configured
         if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-          console.log(`✅ Using Gmail for email: ${process.env.GMAIL_USER}`);
-          console.log(`✅ App password length: ${process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.length : 0} chars`);
+
+
           
           // For production environments, try alternative port configuration
           const isProduction = process.env.NODE_ENV === 'production';
           const port = isProduction ? 465 : 587;
           const secure = isProduction ? true : false;
           
-          console.log(`📧 Using SMTP config: port ${port}, secure: ${secure}, environment: ${process.env.NODE_ENV}`);
+
           
           const transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
@@ -281,7 +281,7 @@ export const createEmailService = () => {
         
         // Use ethereal for testing in development as fallback
         if (process.env.NODE_ENV !== 'production') {
-          console.log(`⚠️ Using ethereal test account (Gmail not configured)`);
+
           const testAccount = await nodemailer.createTestAccount();
           
           const transporter = nodemailer.createTransport({
@@ -295,7 +295,7 @@ export const createEmailService = () => {
           });
           
           const info = await transporter.sendMail(options);
-          console.log(`📧 Test email preview: ${nodemailer.getTestMessageUrl(info)}`);
+
           return info;
         }
         
@@ -426,8 +426,8 @@ export const sendTestEmail = async () => {
     });
     
     // Send mail with retry logic
-    console.log(`📧 Attempting to send test email to: ${mailOptions.to}`);
-    console.log(`📧 Email options:`, {
+
+
       to: mailOptions.to,
       subject: mailOptions.subject,
       from: mailOptions.from,
@@ -437,7 +437,7 @@ export const sendTestEmail = async () => {
       textLength: mailOptions.text ? mailOptions.text.length : 0
     });
     const info = await emailService.sendMail(mailOptions);
-    console.log('✉️ Test email sent successfully!', info.messageId);
+
     return true;
   } catch (error) {
     console.error('❌ All email sending attempts failed:', error);

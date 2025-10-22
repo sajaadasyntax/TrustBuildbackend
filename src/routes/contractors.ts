@@ -737,7 +737,7 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
         }
       });
 
-      console.log(`Batch credit reset for contractor ${contractor.id}: Balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
+
 
       // Calculate the actual amount added (to handle cases where contractor already had some credits)
       const amountAdded = Math.max(0, contractor.weeklyCreditsLimit - currentBalance);
@@ -757,7 +757,7 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
       resetCount++;
     }
 
-    console.log(`🔄 Reset credits for ${resetCount} contractors`);
+
 
     res.status(200).json({
       status: 'success',
@@ -828,7 +828,7 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
       }
     });
 
-    console.log(`Credit reset for contractor ${contractor.id}: Balance changed from ${currentBalance} to ${updatedContractor.creditsBalance}`);
+
 
     // Calculate the actual amount added (to handle cases where contractor already had some credits)
     const amountAdded = Math.max(0, contractor.weeklyCreditsLimit - currentBalance);

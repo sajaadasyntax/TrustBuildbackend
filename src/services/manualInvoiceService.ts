@@ -178,7 +178,7 @@ export const sendInvoiceEmail = async (invoiceId: string): Promise<void> => {
   const emailService = createEmailService();
   await emailService.sendMail(emailContent);
 
-  console.log(`📧 Invoice ${invoice.number} email sent to ${invoice.contractor.user.email}`);
+
 };
 
 // Send invoice reminder
@@ -234,6 +234,6 @@ export const sendInvoiceReminder = async (invoiceId: string): Promise<void> => {
     },
   });
 
-  console.log(`📧 Invoice ${invoice.number} reminder sent to ${invoice.contractor.user.email}`);
+
 };
 

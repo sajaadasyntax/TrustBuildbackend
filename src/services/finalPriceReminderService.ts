@@ -7,7 +7,7 @@ import { processCommissionForJob } from './commissionService';
  * This should be run as a cron job every few hours
  */
 export async function processFinalPriceReminders(): Promise<void> {
-  console.log('🔄 Processing final price confirmation reminders...');
+
   
   const now = new Date();
   
@@ -80,7 +80,7 @@ export async function processFinalPriceReminders(): Promise<void> {
               Number(job.contractorProposedAmount),
               hoursRemaining
             );
-            console.log(`📧 Final price reminder sent for job ${job.id} (${hoursRemaining}h remaining)`);
+
           } catch (error) {
             console.error(`Failed to send final price reminder for job ${job.id}:`, error);
           }
@@ -90,7 +90,7 @@ export async function processFinalPriceReminders(): Promise<void> {
     }
   }
   
-  console.log(`✅ Processed ${jobs.length} jobs awaiting final price confirmation`);
+
 }
 
 /**
@@ -98,7 +98,7 @@ export async function processFinalPriceReminders(): Promise<void> {
  * This should be run as a cron job every hour
  */
 export async function processFinalPriceTimeouts(): Promise<void> {
-  console.log('🔄 Processing final price timeouts...');
+
   
   const now = new Date();
   
@@ -218,11 +218,11 @@ export async function processFinalPriceTimeouts(): Promise<void> {
         emailService.sendMail(contractorMailOptions)
       ]);
       
-      console.log(`📧 Auto-confirmation notifications sent for job ${job.id}`);
+
     } catch (error) {
       console.error(`Failed to send auto-confirmation notifications for job ${job.id}:`, error);
     }
   }
   
-  console.log(`✅ Processed ${timedOutJobs.length} timed out jobs`);
+
 }

@@ -14,7 +14,7 @@ cloudinary.config({
 if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
   console.warn('⚠️  Cloudinary configuration is incomplete. File uploads may not work properly.');
 } else {
-  console.log('☁️  Cloudinary configured successfully');
+
 }
 
 export interface UploadOptions {

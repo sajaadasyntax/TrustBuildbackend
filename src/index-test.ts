@@ -104,10 +104,10 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-  console.log(`📡 Health check: http://localhost:${PORT}/health`);
+
+
+
+
 });
 
 export default app; 

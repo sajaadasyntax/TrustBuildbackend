@@ -38,7 +38,7 @@ function getStripeInstance(): Stripe {
       apiVersion: '2023-10-16',
     });
     
-    console.log(`✅ Stripe initialized with ${stripeKey.startsWith('sk_live_') ? 'LIVE' : 'TEST'} key`);
+
   }
   
   return stripe;
@@ -58,7 +58,7 @@ async function sendCustomerNotification(customerEmail: string, notificationData:
   maxContractors: number;
 }): Promise<boolean> {
   // Email notifications disabled - purchase notifications will be available in dashboard only
-  console.log(`✅ Email sending disabled - Customer notification for job: ${notificationData.jobTitle}, customer: ${customerEmail}`);
+
     return true;
 }
 
@@ -76,7 +76,7 @@ async function sendInvoiceNotification(recipientEmail: string, invoiceData: {
   paymentMethod?: string;
 }): Promise<boolean> {
   // Email notifications disabled - invoices are now only accessible in-app
-  console.log(`✅ Email sending disabled - Invoice ${invoiceData.invoiceNumber} for recipient: ${recipientEmail}`);
+
     return true;
 }
 
@@ -178,7 +178,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError('You already have access to this job', 400));
   }
 
-  console.log(`🔍 Job Access Check - Job: ${job.id}, Current access: ${job.jobAccess.length}, Max allowed: ${job.maxContractorsPerJob}`);
+
 
   // Check if the maximum number of contractors has been reached
   if (job.jobAccess.length >= job.maxContractorsPerJob) {
@@ -244,7 +244,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Contractor not found', 404);
       }
       
-      console.log(`💳 Credit Purchase - Contractor ${contractor.id}: Current balance = ${currentContractor.creditsBalance}`);
+
       
       if (currentContractor.creditsBalance < 1) {
         throw new AppError(`Insufficient credits. Current balance: ${currentContractor.creditsBalance}. Please top up or use card payment.`, 400);
@@ -260,7 +260,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         select: { creditsBalance: true }
       });
 
-      console.log(`✅ Credit deducted: ${currentContractor.creditsBalance} → ${updatedContractor.creditsBalance}`);
+
 
       // Create credit transaction record (NEGATIVE amount for deduction)
       const creditTransaction = await tx.creditTransaction.create({
@@ -273,7 +273,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      console.log(`📝 Credit transaction recorded: ID=${creditTransaction.id}, Amount=${creditTransaction.amount}`);
+
 
       // Create payment record
       payment = await tx.payment.create({
@@ -305,7 +305,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         data: { invoiceId: invoice.id }
       });
       
-      console.log(`✅ Invoice created and linked: ${invoice.invoiceNumber}`);
+
     } else if (paymentMethod === 'STRIPE') {
       if (!stripePaymentIntentId) {
         throw new AppError('Stripe payment intent ID is required', 400);
@@ -357,10 +357,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         data: { invoiceId: invoice.id }
       });
       
-      console.log(`✅ Stripe invoice created and linked: ${invoice.invoiceNumber}`);
+
     } else if (paymentMethod === 'STRIPE_SUBSCRIBER') {
       // Subscriber paying lead price (no credit deduction, no commission)
-      console.log(`✅ Subscriber paying lead price - Contractor ID: ${contractor.id}, Job ID: ${job.id}, Amount: ${leadPrice}`);
+
       
       // Create payment record with lead price
       payment = await tx.payment.create({
@@ -392,7 +392,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         data: { invoiceId: invoice.id }
       });
       
-      console.log(`✅ Subscriber lead price invoice created and linked: ${invoice.invoiceNumber}`);
+
     } else {
       throw new AppError('Invalid payment method', 400);
     }
@@ -426,7 +426,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       paidAt: transactionResult.invoice.paidAt || undefined,
       accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'STRIPE',
     });
-    console.log(`✅ Job access invoice email sent to: ${contractor.user.email}`);
+
   } catch (error) {
     console.error('Failed to send job access invoice email:', error);
     // Don't fail the transaction if email fails
@@ -438,7 +438,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     select: { creditsBalance: true }
   });
   
-  console.log(`✅ Job access purchase completed. Updated credit balance: ${updatedContractorData?.creditsBalance || 'unknown'}`);
+
   
   // Verify invoice was properly created
   const verifiedInvoice = await prisma.invoice.findUnique({
@@ -447,7 +447,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   });
   
   if (verifiedInvoice && verifiedInvoice.payments && verifiedInvoice.payments.length > 0) {
-    console.log(`✅ Invoice verification successful: ${verifiedInvoice.invoiceNumber}`);
+
   } else {
     console.error(`❌ Invoice verification failed: ${transactionResult.invoice?.id}`);
   }
@@ -542,7 +542,7 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
 
   // Create payment intent
   try {
-    console.log('🔄 Creating Stripe payment intent for amount:', leadPrice * 100, 'pence');
+
     
     const stripe = getStripeInstance();
     const paymentIntent = await stripe.paymentIntents.create({
@@ -561,7 +561,7 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
       },
     });
 
-    console.log('✅ Payment intent created successfully:', paymentIntent.id);
+
 
   res.status(200).json({
     status: 'success',
@@ -710,7 +710,7 @@ router.post('/test-invoice-email', catchAsync(async (req: AuthenticatedRequest, 
     };
     
     // Email notifications are disabled - email sending would normally occur here
-    console.log(`✅ Email sending disabled - Test invoice notification to: ${email}`);
+
     const emailSent = true; // Always return true since emails are disabled
     
     res.status(200).json({
@@ -744,7 +744,7 @@ router.post('/test-customer-notification', catchAsync(async (req: AuthenticatedR
     };
     
     // Email notifications are disabled - email sending would normally occur here
-    console.log(`✅ Email sending disabled - Test customer notification to: ${email}`);
+
     const emailSent = true; // Always return true since emails are disabled
     
     res.status(200).json({
@@ -772,7 +772,7 @@ async function sendCommissionInvoice(recipientEmail: string, invoiceData: {
   dueDate: string;
 }): Promise<boolean> {
   // Email notifications disabled - commission invoices are now only accessible in-app
-  console.log(`✅ Email sending disabled - Commission invoice ${invoiceData.invoiceNumber} for recipient: ${recipientEmail}`);
+
     return true;
 }
 
@@ -891,7 +891,7 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
 
   // Send notification if commission is created
   if (result.commissionPayment) {
-    console.log(`✅ Commission payment created for job: ${job.title}, contractor: ${contractor.user.email}`);
+
     
     try {
       const { createNotification } = await import('../services/notificationService');
@@ -940,7 +940,7 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
 
-  console.log(`🔍 Getting commission payments for user ${userId}, page ${page}, limit ${limit}`);
+
 
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
@@ -949,23 +949,23 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
   });
 
   if (!contractor) {
-    console.log(`❌ Contractor profile not found for user ${userId}`);
+
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  console.log(`✅ Found contractor ${contractor.id} for user ${userId}`);
+
 
   // Get commission payments
-  console.log(`🔍 Searching for commissions with contractorId: ${contractor.id}`);
+
   
   // Debug: Check if there are any jobs won by this contractor
   const wonJobs = await prisma.job.findMany({
     where: { wonByContractorId: contractor.id },
     select: { id: true, title: true, status: true, customerConfirmed: true, finalAmount: true }
   });
-  console.log(`🔍 Jobs won by contractor ${contractor.id}:`, wonJobs.length);
+
   wonJobs.forEach(job => {
-    console.log(`  - Job ${job.id}: ${job.title}, Status: ${job.status}, Confirmed: ${job.customerConfirmed}, FinalAmount: ${job.finalAmount}`);
+
   });
   
   // Debug: Check all commissions in the database
@@ -978,9 +978,9 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
       createdAt: true,
     },
   });
-  console.log(`🗃️ Total commissions in database: ${allCommissions.length}`);
+
   allCommissions.forEach(comm => {
-    console.log(`📄 Commission ${comm.id}: contractorId=${comm.contractorId}, jobId=${comm.jobId}, status=${comm.status}`);
+
   });
   
   const commissions = await prisma.commissionPayment.findMany({
@@ -1005,11 +1005,11 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
     where: { contractorId: contractor.id },
   });
 
-  console.log(`📊 Found ${commissions.length} commissions out of ${total} total for contractor ${contractor.id}`);
+
   
   // Debug: Show commission details if any exist
   if (commissions.length > 0) {
-    console.log(`📊 Commission details:`, commissions.map(c => ({
+
       id: c.id,
       jobId: c.jobId,
       status: c.status,
@@ -1017,12 +1017,12 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
       dueDate: c.dueDate
     })));
   } else {
-    console.log(`❌ No commissions found for contractor ${contractor.id}`);
-    console.log(`🔍 Debugging commission creation conditions:`);
-    console.log(`  - Won jobs: ${wonJobs.length}`);
-    console.log(`  - Completed jobs: ${wonJobs.filter(j => j.status === 'COMPLETED').length}`);
-    console.log(`  - Customer confirmed: ${wonJobs.filter(j => j.customerConfirmed).length}`);
-    console.log(`  - With final amount: ${wonJobs.filter(j => j.finalAmount && Number(j.finalAmount) > 0).length}`);
+
+
+
+
+
+
   }
 
   res.status(200).json({
@@ -1083,7 +1083,7 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   const stripe = getStripeInstance();
   const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
   
-  console.log(`🔍 Payment Intent Status: ${paymentIntent.status}, Amount: ${paymentIntent.amount}, Expected: ${Number(commissionPayment.totalAmount) * 100}`);
+
   
   // For development: allow requires_payment_method status (test mode)
   if (paymentIntent.status !== 'succeeded' && paymentIntent.status !== 'requires_payment_method') {
@@ -1138,7 +1138,7 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
       dueDate: commissionPayment.dueDate,
       paidAt: new Date(),
     });
-    console.log(`📧 Commission payment confirmation email sent to: ${contractor.user.email}`);
+
   } catch (error) {
     console.error('Failed to send commission payment confirmation email:', error);
     // Don't fail the payment if email fails

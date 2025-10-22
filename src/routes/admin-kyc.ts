@@ -20,7 +20,7 @@ const router = express.Router();
 // Serve KYC documents
 router.get('/documents/:path(*)', (req, res) => {
   const filePath = path.join(process.cwd(), 'uploads', 'kyc', req.params.path);
-  console.log('📄 Serving KYC document:', filePath);
+
   
   if (require('fs').existsSync(filePath)) {
     res.sendFile(filePath);

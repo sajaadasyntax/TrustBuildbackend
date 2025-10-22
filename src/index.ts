@@ -84,15 +84,15 @@ const corsOptions = {
       process.env.API_URL
     ].filter(Boolean); // Remove undefined values
     
-    console.log(`🔒 CORS request from origin: ${origin}`);
+
     
     // Check if the origin is in our allowed list
     if (allowedOrigins.includes(origin)) {
-      console.log(`✅ CORS allowed for origin: ${origin}`);
+
       return callback(null, true);
     }
     
-    console.log(`❌ CORS blocked for origin: ${origin}`);
+
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -150,7 +150,7 @@ app.get('/api/cors-test', (req, res) => {
 
 // Serve static files from uploads directory
 const uploadsPath = path.join(process.cwd(), 'uploads');
-console.log('📁 Static files serving from:', uploadsPath);
+
 
 // Serve at both /uploads and /api/uploads for compatibility
 app.use('/uploads', express.static(uploadsPath));
@@ -204,18 +204,18 @@ if (!process.env.STRIPE_SECRET_KEY) {
   process.exit(1);
 }
 
-console.log('🔐 Stripe Configuration:');
-console.log(`   Secret Key: ${process.env.STRIPE_SECRET_KEY.substring(0, 8)}...`);
-console.log(`   Key Type: ${process.env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'LIVE' : 'TEST'}`);
+
+
+
 
 // Import the new email service
 import { sendTestEmail } from './services/emailService';
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+
+
+
   
   // Send test email on startup
   sendTestEmail();

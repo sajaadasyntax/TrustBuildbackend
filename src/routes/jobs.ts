@@ -1375,7 +1375,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         },
       });
       
-      console.log(`🔍 Job Access Check - Job: ${job.id}, Contractor: ${contractor.id}, HasAccess: ${!!existingAccess}`);
+
       
       // Check for active subscription (pricing benefits but still requires access record)
       hasSubscription = !!contractor.subscription && 
@@ -1483,7 +1483,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     })) || [],
   };
 
-  console.log(`📋 Job Response - Job: ${job.id}, HasAccess: ${hasAccess}, CustomerData:`, {
+
     hasCustomer: !!job.customer,
     customerName: job.customer?.user?.name,
     customerPhone: job.customer?.phone,
@@ -1854,7 +1854,7 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
       job.title,
       hasAccess.contractor.user.name
     );
-    console.log(`📧 Contractor selection notification sent to customer`);
+
   } catch (error) {
     console.error('Failed to send contractor selection notification:', error);
   }
@@ -1885,10 +1885,10 @@ export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
   const userId = req.user!.id;
   const { finalPrice } = req.body;
 
-  console.log(`🔍 PROPOSE FINAL PRICE - Received data:`);
-  console.log(`🔍 Job ID: ${jobId}`);
-  console.log(`🔍 User ID: ${userId}`);
-  console.log(`🔍 Final Price: ${finalPrice}`);
+
+
+
+
 
   if (!finalPrice || finalPrice <= 0) {
     return next(new AppError('Please provide a valid final price', 400));
@@ -2014,7 +2014,7 @@ export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
     });
 
     await emailService.sendMail(mailOptions);
-    console.log(`📧 Final price proposal notification sent to customer: ${job.customer.user.email}`);
+
   } catch (error) {
     console.error('Failed to send final price proposal notification:', error);
     // Don't fail the proposal if email fails
@@ -2031,7 +2031,7 @@ export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       contractor.user.name,
       true // isCustomer
     );
-    console.log(`📱 Final price proposal in-app notification sent to customer`);
+
   } catch (error) {
     console.error('Failed to send final price proposal in-app notification:', error);
   }
@@ -2054,10 +2054,10 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   const jobId = req.params.id;
   const userId = req.user!.id;
 
-  console.log(`🔍 COMPLETE JOB WITH AMOUNT - Received data:`);
-  console.log(`🔍 Job ID: ${jobId}`);
-  console.log(`🔍 User ID: ${userId}`);
-  console.log(`🔍 Request body:`, req.body);
+
+
+
+
 
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
@@ -2106,11 +2106,11 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   const finalAmount = job.budget?.toNumber() || 0;
   
   if (finalAmount <= 0) {
-    console.log(`❌ Job budget validation failed - budget: ${job.budget}`);
+
     return next(new AppError('Job budget is not set or invalid', 400));
   }
 
-  console.log(`✅ Using job budget as final amount: ${finalAmount} (from budget: ${job.budget})`);
+
 
   // Get winning contractor with subscription details for commission calculation
   const winningContractor = await prisma.contractor.findUnique({
@@ -2132,19 +2132,19 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
   // Only charge commission if accessed via CREDIT (not if they paid lead price)
   const accessedViaSubscription = jobAccess && jobAccess.accessMethod === 'CREDIT';
 
-  console.log(`🔍 Commission Debug (completeJobWithAmount) - Job: ${job.id}`);
-  console.log(`🔍 WinningContractor: ${!!winningContractor}, ID: ${winningContractor?.id}`);
-  console.log(`🔍 JobAccess: ${!!jobAccess}, Method: ${jobAccess?.accessMethod}`);
-  console.log(`🔍 AccessedViaSubscription: ${accessedViaSubscription}`);
-  console.log(`🔍 Job.commissionPaid: ${job.commissionPaid}`);
+
+
+
+
+
 
   let commissionPayment = null;
   let commissionAmount = 0;
 
   // Commission will be created when customer confirms completion
   // This ensures commission is only created once and only after customer confirmation
-  console.log(`ℹ️ Commission will be created when customer confirms completion - Contractor: ${!!winningContractor}, AccessedViaSubscription: ${accessedViaSubscription}, AlreadyPaid: ${job.commissionPaid}`);
-  console.log(`💾 Saving final amount - Job: ${jobId}, finalAmount: ${finalAmount}, type: ${typeof finalAmount}`);
+
+
 
   const updatedJob = await prisma.job.update({
     where: { id: jobId },
@@ -2176,7 +2176,7 @@ export const completeJobWithAmount = catchAsync(async (req: AuthenticatedRequest
     },
   });
 
-  console.log(`✅ Final amount saved - Job: ${jobId}, saved finalAmount: ${updatedJob.finalAmount}, type: ${typeof updatedJob.finalAmount}`);
+
 
   res.status(200).json({
     status: 'success',
@@ -2290,7 +2290,7 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`📧 Final price confirmation sent to contractor: ${job.wonByContractor?.user?.email || 'contractor@example.com'}`);
+
     } catch (error) {
       console.error('Failed to send final price confirmation email:', error);
     }
@@ -2339,7 +2339,7 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
         false // isCustomer
       );
 
-      console.log(`📱 Job completion notifications sent to customer and contractor`);
+
     } catch (error) {
       console.error('Failed to send job completion notifications:', error);
     }
@@ -2386,7 +2386,7 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       });
 
       await emailService.sendMail(mailOptions);
-      console.log(`📧 Final price rejection sent to contractor: ${job.wonByContractor?.user?.email || 'contractor@example.com'}`);
+
     } catch (error) {
       console.error('Failed to send final price rejection email:', error);
     }
@@ -2462,15 +2462,15 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     return next(new AppError('Job completion already confirmed', 400));
   }
 
-  console.log(`🔍 DEBUG - Job ID: ${job.id}`);
-  console.log(`🔍 DEBUG - Job Status: ${job.status}`);
-  console.log(`🔍 DEBUG - Final Amount: ${job.finalAmount}`);
-  console.log(`🔍 DEBUG - Final Amount Type: ${typeof job.finalAmount}`);
-  console.log(`🔍 DEBUG - Customer Confirmed: ${job.customerConfirmed}`);
-  console.log(`🔍 DEBUG - Won By Contractor ID: ${job.wonByContractorId}`);
+
+
+
+
+
+
   
   if (!job.finalAmount || Number(job.finalAmount) <= 0) {
-    console.log(`❌ Final amount validation failed - finalAmount: ${job.finalAmount}`);
+
     return next(new AppError('No final amount has been set by contractor', 400));
   }
 
@@ -2488,9 +2488,9 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   // This ensures commission is created with the same ID that the contractor's dashboard will query
   const commissionContractorId = job.wonByContractorId!;
   
-  console.log(`🔍 Commission Contractor ID: ${commissionContractorId}`);
-  console.log(`🔍 Job Won By Contractor ID: ${job.wonByContractorId}`);
-  console.log(`🔍 IDs Match: ${commissionContractorId === job.wonByContractorId}`);
+
+
+
 
   let commissionAmount = 0;
   let commissionPayment = null;
@@ -2507,21 +2507,21 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   // Only charge commission if they used credits (creditUsed = true)
   const accessedViaCredits = jobAccess && jobAccess.creditUsed === true;
 
-  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaCredits: ${accessedViaCredits}, HasJobAccess: ${!!jobAccess}`);
-  console.log(`🔍 JobAccess Details:`, jobAccess ? {
+
+
     accessMethod: jobAccess.accessMethod,
     creditUsed: jobAccess.creditUsed,
     contractorId: jobAccess.contractorId,
     jobId: jobAccess.jobId
   } : 'No jobAccess found');
-  console.log(`🔍 Contractor Subscription:`, winningContractor ? {
+
     hasSubscription: !!winningContractor.subscription,
     isActive: winningContractor.subscription?.isActive,
     status: winningContractor.subscription?.status
   } : 'No contractor found');
 
   // Only charge commission if they used credits (not if they paid lead price)
-  console.log(`🔍 Commission Condition Check:`, {
+
     hasWinningContractor: !!winningContractor,
     accessedViaCredits,
     commissionNotPaid: !job.commissionPaid,
@@ -2536,19 +2536,19 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
     const commissionRatePercent = (commissionRateSetting?.value as any)?.rate || 5.0;
     commissionAmount = (Number(job.finalAmount) * commissionRatePercent) / 100;
     
-    console.log(`💰 Creating commission: ${commissionAmount} (${commissionRatePercent}% of ${job.finalAmount})`);
+
     
     // No additional VAT calculation - commission amount already includes VAT
     const vatAmount = 0; // No additional VAT
     const totalAmount = commissionAmount; // Total is just the commission amount
     
     // Create commission payment record (the main record that commissions page looks for)
-    console.log(`🔍 DEBUG Commission Creation:`);
-    console.log(`  - Job ID: ${job.id}`);
-    console.log(`  - Won By Contractor ID: ${job.wonByContractorId}`);
-    console.log(`  - Commission Contractor ID: ${commissionContractorId}`);
-    console.log(`  - Customer ID: ${job.customerId}`);
-    console.log(`  - Commission Amount: ${commissionAmount}`);
+
+
+
+
+
+
     
     commissionPayment = await prisma.commissionPayment.create({
       data: {
@@ -2565,7 +2565,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       },
     });
     
-    console.log(`✅ Commission Payment Created: ID=${commissionPayment.id}, ContractorID=${commissionPayment.contractorId}`);
+
     
     // Create commission invoice linked to the commission payment
     const commissionInvoice = await prisma.commissionInvoice.create({
@@ -2583,7 +2583,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
       },
     });
 
-    console.log(`✅ Commission created: Invoice ${commissionInvoice.invoiceNumber}, Payment ${commissionPayment.id}`);
+
 
     // Send commission invoice email to contractor
     try {
@@ -2599,7 +2599,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         totalAmount: totalAmount,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
-      console.log(`📧 Commission invoice email sent to contractor ${winningContractor.user.email}`);
+
     } catch (emailError) {
       console.error('Failed to send commission invoice email:', emailError);
     }
@@ -2614,12 +2614,12 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         totalAmount, 
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Due in 7 days
       );
-      console.log(`📧 Commission notification sent to contractor ${winningContractor.user.id}`);
+
     } catch (notificationError) {
       console.error('Failed to send commission notification:', notificationError);
     }
   } else {
-    console.log(`ℹ️ No commission charged - Contractor: ${!!winningContractor}, AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
+
   }
 
   const updatedJob = await prisma.job.update({
@@ -2841,7 +2841,7 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
       false // isCustomer
     );
 
-    console.log(`📧 Job start notifications sent to customer and contractor`);
+
   } catch (error) {
     console.error('Failed to send job start notifications:', error);
   }
@@ -2981,7 +2981,7 @@ export const adminOverrideFinalPrice = catchAsync(async (req: AuthenticatedReque
       emailService.sendMail(contractorMailOptions)
     ]);
     
-    console.log(`📧 Admin override notifications sent to customer and contractor for job ${jobId}`);
+
   } catch (error) {
     console.error('Failed to send admin override notifications:', error);
     // Don't fail the override if email fails
@@ -3141,7 +3141,7 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
       job.title,
       contractor.user?.name || 'Your contractor'
     );
-    console.log(`Review request notification sent to customer ${job.customer.user.id} for job ${job.id}`);
+
   } catch (error) {
     console.error('Failed to send review request notification:', error);
     // Don't throw error, continue with success response

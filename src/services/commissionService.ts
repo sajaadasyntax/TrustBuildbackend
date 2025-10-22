@@ -33,7 +33,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
   // Check if contractor accessed the job using credits
   const accessedViaCredits = relevantJobAccess.length > 0 && relevantJobAccess[0].creditUsed === true;
 
-  console.log(`🔍 Commission Check - Job: ${job.id}, Contractor: ${job.wonByContractorId}, AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
+
 
   // Only charge commission if they used credits and haven't paid commission yet
   if (accessedViaCredits && !job.commissionPaid) {
@@ -46,7 +46,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
     const vatAmount = 0; // No additional VAT
     const totalAmount = commissionAmount;
 
-    console.log(`💰 Creating commission: ${commissionAmount} (${commissionRatePercent}% of ${finalAmount})`);
+
 
     // Create commission payment record
     const commissionPayment = await prisma.commissionPayment.create({
@@ -95,7 +95,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
         totalAmount: totalAmount,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
-      console.log(`📧 Commission invoice email sent to contractor ${job.wonByContractor.user.email}`);
+
     } catch (emailError) {
       console.error('Failed to send commission invoice email:', emailError);
     }
@@ -106,9 +106,9 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
       data: { commissionPaid: true }
     });
 
-    console.log(`✅ Commission processed: ${commissionAmount} for job ${jobId}`);
+
   } else {
-    console.log(`ℹ️ No commission charged - AccessedViaCredits: ${accessedViaCredits}, AlreadyPaid: ${job.commissionPaid}`);
+
   }
 }
 
@@ -160,7 +160,7 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
     });
 
     await emailService.sendMail(mailOptions);
-    console.log(`📧 Commission reminder email sent to: ${recipientEmail}`);
+
     return true;
   } catch (error) {
     console.error(`Failed to send commission reminder email to ${recipientEmail}:`, error);
@@ -170,7 +170,7 @@ async function sendCommissionReminder(recipientEmail: string, reminderData: {
 
 // Check for overdue commission payments and send reminders
 export async function processCommissionReminders(): Promise<void> {
-  console.log('🔄 Processing commission payment reminders...');
+
   
   const now = new Date();
   
@@ -199,7 +199,7 @@ export async function processCommissionReminders(): Promise<void> {
     
     // If already overdue, suspend account and mark as overdue
     if (timeUntilDue <= 0) {
-      console.log(`⏰ Commission ${commission.id} is overdue, suspending contractor ${commission.contractorId}`);
+
       
       await prisma.$transaction(async (tx) => {
         // Mark commission as overdue
@@ -277,7 +277,7 @@ export async function processCommissionReminders(): Promise<void> {
     }
   }
   
-  console.log(`✅ Processed ${commissions.length} commission payments`);
+
 }
 
 // Check subscription status and eligibility for commission

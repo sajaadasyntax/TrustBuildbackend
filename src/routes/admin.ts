@@ -1375,7 +1375,7 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
   try {
     const { status, reason } = req.body;
 
-    console.log('[updateContractorStatus] Request:', { contractorId: req.params.id, status, reason });
+
 
     // Map frontend statuses to database enum values
     // Frontend sends: ACTIVE, SUSPENDED, INACTIVE
@@ -1411,7 +1411,7 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
       return next(new AppError('Contractor not found', 404));
     }
 
-    console.log('[updateContractorStatus] Contractor found:', { id: contractor.id, currentStatus: contractor.status });
+
 
     const updatedContractor = await prisma.contractor.update({
       where: { id: req.params.id },
@@ -1429,7 +1429,7 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
       },
     });
 
-    console.log('[updateContractorStatus] Status updated successfully');
+
 
     // Log the admin action to activity log
     try {
@@ -1447,7 +1447,7 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
         ipAddress: getClientIp(req),
         userAgent: getClientUserAgent(req),
       });
-      console.log('[updateContractorStatus] Activity logged successfully');
+
     } catch (logError: any) {
       console.error('[updateContractorStatus] Failed to log activity:', logError.message);
       // Continue even if logging fails
@@ -1726,7 +1726,7 @@ export const updateJobStatus = catchAsync(async (req: AdminAuthRequest, res: Res
   });
 
   // Log the admin action
-  console.log(`Admin ${req.admin!.id} changed job ${job.id} status to ${status}${reason ? ` - Reason: ${reason}` : ''}`);
+
 
   res.status(200).json({
     status: 'success',
@@ -1955,8 +1955,6 @@ export const getPaymentStats = catchAsync(async (req: AdminAuthRequest, res: Res
       jobPaymentRevenue: Number((typeRevenue['JOB_PAYMENT'] || 0) + (typeRevenue['LEAD_ACCESS'] || 0) + (typeRevenue['COMMISSION'] || 0))
     };
 
-    console.log('💰 Payment Stats Response:', JSON.stringify(stats, null, 2));
-
     res.status(200).json({
       status: 'success',
       data: { stats },
@@ -2158,7 +2156,7 @@ export const processRefund = catchAsync(async (req: AdminAuthRequest, res: Respo
     };
 
     // Log the admin action
-    console.log(`Admin ${req.admin!.id} processed refund for payment ${paymentId}: ${amount} - ${reason}`);
+
 
     res.status(200).json({
       status: 'success',
@@ -2601,7 +2599,7 @@ export const setJobLeadPrice = catchAsync(async (req: AdminAuthRequest, res: Res
     userAgent: getClientUserAgent(req),
   });
 
-  console.log(`Admin ${req.admin!.id} updated job ${job.id} lead price to £${price} - Reason: ${reason}`);
+
 
   res.status(200).json({
     status: 'success',
@@ -2700,7 +2698,7 @@ export const setJobBudget = catchAsync(async (req: AdminAuthRequest, res: Respon
     userAgent: getClientUserAgent(req),
   });
 
-  console.log(`Admin ${req.admin!.id} updated job ${job.id} budget to £${budget} - Reason: ${reason}`);
+
 
   res.status(200).json({
     status: 'success',
