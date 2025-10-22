@@ -288,6 +288,7 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     where: { id: req.params.id },
     include: {
       user: true,
+      kyc: true,
     },
   });
 
@@ -300,8 +301,36 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     data: {
       profileApproved: approved,
       status: approved ? 'VERIFIED' : 'REJECTED',
+      // Set account to ACTIVE when approved (was PAUSED during registration)
+      accountStatus: approved ? 'ACTIVE' : contractor.accountStatus,
     },
   });
+
+  // If approving the contractor, create/update KYC record with 14-day deadline
+  if (approved) {
+    const kycDeadline = new Date();
+    kycDeadline.setDate(kycDeadline.getDate() + 14); // 14 days from now
+
+    if (contractor.kyc) {
+      // Update existing KYC record
+      await prisma.contractorKyc.update({
+        where: { contractorId: contractor.id },
+        data: {
+          status: 'PENDING',
+          dueBy: kycDeadline,
+        },
+      });
+    } else {
+      // Create new KYC record
+      await prisma.contractorKyc.create({
+        data: {
+          contractorId: contractor.id,
+          status: 'PENDING',
+          dueBy: kycDeadline,
+        },
+      });
+    }
+  }
 
   // Log the admin action to activity log
   await logActivity({
@@ -309,7 +338,7 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     action: approved ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
     entityType: 'Contractor',
     entityId: contractor.id,
-    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${reason ? `: ${reason}` : ''}`,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${approved ? ' - 14-day KYC deadline set' : ''}${reason ? `: ${reason}` : ''}`,
     diff: {
       before: { profileApproved: contractor.profileApproved, status: contractor.status },
       after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED' },
