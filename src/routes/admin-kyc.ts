@@ -75,14 +75,21 @@ router.get(
       });
     }
 
-    const kyc = await prisma.contractorKyc.findUnique({
+    let kyc = await prisma.contractorKyc.findUnique({
       where: { contractorId: contractor.id },
     });
 
+    // If no KYC record exists, create one with a 14-day deadline
     if (!kyc) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'KYC record not found',
+      const kycDeadline = new Date();
+      kycDeadline.setDate(kycDeadline.getDate() + 14); // 14 days from now
+
+      kyc = await prisma.contractorKyc.create({
+        data: {
+          contractorId: contractor.id,
+          status: 'PENDING',
+          dueBy: kycDeadline,
+        },
       });
     }
 
@@ -220,10 +227,19 @@ router.get(
   protectAdmin,
   requirePermission('kyc:read'),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    const { status = 'SUBMITTED', page = '1', limit = '20' } = req.query;
+    const { status = 'SUBMITTED', page = '1', limit = '100' } = req.query;
 
     const where: any = {};
-    if (status) where.status = status;
+    
+    // Support multiple statuses separated by comma
+    if (status) {
+      const statuses = (status as string).split(',').map(s => s.trim());
+      if (statuses.length > 1) {
+        where.status = { in: statuses };
+      } else {
+        where.status = status;
+      }
+    }
 
     const [kycRecords, total] = await Promise.all([
       prisma.contractorKyc.findMany({
@@ -240,7 +256,10 @@ router.get(
             },
           },
         },
-        orderBy: { submittedAt: 'asc' },
+        orderBy: [
+          { status: 'asc' }, // Sort by status first  
+          { dueBy: 'asc' },  // Then by due date
+        ],
         take: parseInt(limit as string),
         skip: (parseInt(page as string) - 1) * parseInt(limit as string),
       }),
