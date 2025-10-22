@@ -622,12 +622,12 @@ export const flagContent = catchAsync(async (req: AdminAuthRequest, res: Respons
       return next(new AppError('Review not found', 404));
     }
 
-    // For now, we'll use the verification field to track flagged status
-    // You could add a separate 'isFlagged' field to the Review model if needed
+    // Store the flag reason directly on the review
     await prisma.review.update({
       where: { id },
       data: {
         isVerified: false, // Unverify flagged reviews
+        flagReason: reason, // Store the flag reason
       },
     });
 
@@ -781,6 +781,7 @@ export const moderateContent = catchAsync(async (req: AdminAuthRequest, res: Res
         where: { id },
         data: {
           isVerified: normalizedAction === 'approve',
+          flagReason: null, // Clear flag reason when moderated
         },
       });
     }
@@ -1949,10 +1950,12 @@ export const getPaymentStats = catchAsync(async (req: AdminAuthRequest, res: Res
       failedPayments: statusMap['FAILED'] || 0,
       pendingPayments: statusMap['PENDING'] || 0,
       averageTransactionValue: Number(averageTransaction._avg.amount || 0),
-      revenueGrowth: Number(revenueGrowth.toFixed(1)),
+      revenueGrowth: isNaN(revenueGrowth) ? 0 : Number(revenueGrowth.toFixed(1)),
       subscriptionRevenue: Number(typeRevenue['SUBSCRIPTION'] || 0),
       jobPaymentRevenue: Number((typeRevenue['JOB_PAYMENT'] || 0) + (typeRevenue['LEAD_ACCESS'] || 0) + (typeRevenue['COMMISSION'] || 0))
     };
+
+    console.log('💰 Payment Stats Response:', JSON.stringify(stats, null, 2));
 
     res.status(200).json({
       status: 'success',
