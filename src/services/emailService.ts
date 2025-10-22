@@ -426,8 +426,7 @@ export const sendTestEmail = async () => {
     });
     
     // Send mail with retry logic
-
-
+    console.log('📧 Sending test email:', {
       to: mailOptions.to,
       subject: mailOptions.subject,
       from: mailOptions.from,

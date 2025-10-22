@@ -256,7 +256,7 @@ export const getSubscriptionStats = catchAsync(async (req: AdminAuthRequest, res
   };
   
   // Log subscription stats for debugging
-
+  console.log('📊 Subscription stats:', {
     activeCount: stats.activeSubscriptions,
     pendingCount: stats.pendingSubscriptions,
     cancelledCount: stats.cancelledSubscriptions,

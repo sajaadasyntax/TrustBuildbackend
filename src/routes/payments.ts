@@ -1005,11 +1005,9 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
     where: { contractorId: contractor.id },
   });
 
-
-  
   // Debug: Show commission details if any exist
   if (commissions.length > 0) {
-
+    console.log('💰 Found commissions:', commissions.map(c => ({
       id: c.id,
       jobId: c.jobId,
       status: c.status,
@@ -1017,12 +1015,7 @@ export const getCommissionPayments = catchAsync(async (req: AuthenticatedRequest
       dueDate: c.dueDate
     })));
   } else {
-
-
-
-
-
-
+    console.log('💰 No commissions found for contractor');
   }
 
   res.status(200).json({

@@ -1483,7 +1483,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     })) || [],
   };
 
-
+  console.log('🔍 Job access details:', {
     hasCustomer: !!job.customer,
     customerName: job.customer?.user?.name,
     customerPhone: job.customer?.phone,
