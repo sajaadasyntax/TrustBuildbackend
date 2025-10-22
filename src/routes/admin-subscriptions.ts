@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
+import { protectAdmin, AdminAuthRequest } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
 import { getSubscriptionPricing } from './subscriptions.js';
@@ -29,7 +29,7 @@ function getStripeInstance(): Stripe {
 // @desc    Get all subscriptions with filtering
 // @route   GET /api/admin/subscriptions
 // @access  Private (Admin only)
-export const getAllSubscriptions = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllSubscriptions = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -134,7 +134,7 @@ export const getAllSubscriptions = catchAsync(async (req: AuthenticatedRequest, 
 // @desc    Get subscription statistics
 // @route   GET /api/admin/subscriptions/stats
 // @access  Private (Admin only)
-export const getSubscriptionStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getSubscriptionStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const [
     activeSubscriptions,
     pendingSubscriptions,
@@ -273,7 +273,7 @@ export const getSubscriptionStats = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Cancel contractor subscription (admin override)
 // @route   POST /api/admin/subscriptions/:contractorId/cancel
 // @access  Private (Admin only)
-export const cancelContractorSubscription = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const cancelContractorSubscription = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { contractorId } = req.params;
 
   // Get contractor with subscription
@@ -300,7 +300,7 @@ export const cancelContractorSubscription = catchAsync(async (req: Authenticated
       await stripe.subscriptions.update(contractor.subscription.stripeSubscriptionId, {
         cancel_at_period_end: true,
         cancellation_details: {
-          comment: `Cancelled by admin: ${req.user!.id}`,
+          comment: `Cancelled by admin: ${req.admin!.id}`,
         }
       });
       console.log(`✅ Stripe subscription ${contractor.subscription.stripeSubscriptionId} marked for cancellation at period end`);
@@ -324,11 +324,11 @@ export const cancelContractorSubscription = catchAsync(async (req: Authenticated
     data: {
       action: 'CANCEL_SUBSCRIPTION',
       description: `Admin cancelled subscription for contractor ID: ${contractorId}`,
-      performedBy: req.user!.id,
+      performedBy: req.admin!.id,
       metadata: {
         contractorId,
         subscriptionId: updatedSubscription.id,
-        adminId: req.user!.id,
+        adminId: req.admin!.id,
       },
     },
   });
@@ -345,7 +345,7 @@ export const cancelContractorSubscription = catchAsync(async (req: Authenticated
 // @desc    Reactivate contractor subscription (admin override)
 // @route   POST /api/admin/subscriptions/:contractorId/reactivate
 // @access  Private (Admin only)
-export const reactivateContractorSubscription = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const reactivateContractorSubscription = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { contractorId } = req.params;
 
   // Get contractor with subscription
@@ -453,11 +453,11 @@ export const reactivateContractorSubscription = catchAsync(async (req: Authentic
     data: {
       action: 'REACTIVATE_SUBSCRIPTION',
       description: `Admin reactivated subscription for contractor ID: ${contractorId}`,
-      performedBy: req.user!.id,
+      performedBy: req.admin!.id,
       metadata: {
         contractorId,
         subscriptionId: updatedSubscription.id,
-        adminId: req.user!.id,
+        adminId: req.admin!.id,
       },
     },
   });
@@ -474,7 +474,7 @@ export const reactivateContractorSubscription = catchAsync(async (req: Authentic
 // @desc    Create subscription for contractor (admin)
 // @route   POST /api/admin/subscriptions/create
 // @access  Private (Admin only)
-export const createSubscriptionForContractor = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { contractorId, plan } = req.body;
 
   if (!contractorId || !plan || !['MONTHLY', 'SIX_MONTHS', 'YEARLY'].includes(plan)) {
@@ -546,7 +546,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
           ],
           metadata: {
             plan,
-            updatedBy: `admin:${req.user!.id}`,
+            updatedBy: `admin:${req.admin!.id}`,
           }
         });
         console.log(`✅ Updated Stripe subscription: ${stripeSubscriptionId}`);
@@ -573,7 +573,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
           metadata: {
             contractorId,
             plan,
-            createdBy: `admin:${req.user!.id}`,
+            createdBy: `admin:${req.admin!.id}`,
           },
         });
         
@@ -649,11 +649,11 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
     data: {
       action: 'CREATE_SUBSCRIPTION',
       description: `Admin created ${plan} subscription for contractor ID: ${contractorId}`,
-      performedBy: req.user!.id,
+      performedBy: req.admin!.id,
       metadata: {
         contractorId,
         subscriptionId: subscription.id,
-        adminId: req.user!.id,
+        adminId: req.admin!.id,
         plan,
       },
     },
@@ -673,7 +673,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: Authentica
 // @desc    Get subscription by ID
 // @route   GET /api/admin/subscriptions/:id
 // @access  Private (Admin only)
-export const getSubscriptionById = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getSubscriptionById = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
 
   const subscription = await prisma.subscription.findUnique({
@@ -707,7 +707,7 @@ export const getSubscriptionById = catchAsync(async (req: AuthenticatedRequest, 
 // @desc    Update subscription details
 // @route   PATCH /api/admin/subscriptions/:id
 // @access  Private (Admin only)
-export const updateSubscription = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateSubscription = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { plan, status, isActive, currentPeriodEnd } = req.body;
 
@@ -739,10 +739,10 @@ export const updateSubscription = catchAsync(async (req: AuthenticatedRequest, r
     data: {
       action: 'UPDATE_SUBSCRIPTION',
       description: `Admin updated subscription ID: ${id}`,
-      performedBy: req.user!.id,
+      performedBy: req.admin!.id,
       metadata: {
         subscriptionId: id,
-        adminId: req.user!.id,
+        adminId: req.admin!.id,
         changes: req.body,
       },
     },
@@ -757,8 +757,7 @@ export const updateSubscription = catchAsync(async (req: AuthenticatedRequest, r
 });
 
 // Routes
-router.use(protect);
-router.use(restrictTo('ADMIN', 'SUPER_ADMIN'));
+router.use(protectAdmin);
 
 router.get('/stats', getSubscriptionStats);
 router.get('/', getAllSubscriptions);
