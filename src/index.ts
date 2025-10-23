@@ -36,6 +36,7 @@ import adminActivityRoutes from './routes/admin-activity';
 import adminJobsRoutes from './routes/admin-jobs';
 import adminKycRoutes from './routes/admin-kyc';
 import adminManualInvoicesRoutes from './routes/admin-manual-invoices';
+import adminPaymentsRoutes from './routes/admin-payments';
 import contentRoutes from './routes/content';
 import faqRoutes from './routes/faq';
 
@@ -181,6 +182,7 @@ app.use('/api/admin/activity', adminActivityRoutes);
 app.use('/api/admin/jobs', adminJobsRoutes);
 app.use('/api/admin/kyc', adminKycRoutes);
 app.use('/api/admin/manual-invoices', adminManualInvoicesRoutes);
+app.use('/api/admin/payments', adminPaymentsRoutes);
 app.use('/api/admin/invoices', adminInvoiceRoutesNew);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 // General admin routes (catch-all, must be last)

@@ -1,22 +1,15 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { protectAdmin, AdminAuthRequest, requirePermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
+import { AdminPermission } from '../config/permissions';
 
 const router = Router();
-
-// Middleware to ensure admin access
-const adminOnly = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (!req.user?.role || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
-    return next(new AppError('Access denied. Admin only.', 403));
-  }
-  next();
-};
 
 // @desc    Get all services with pricing
 // @route   GET /api/admin/payments/services
 // @access  Private/Admin
-export const getServicesWithPricing = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getServicesWithPricing = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const services = await prisma.service.findMany({
     select: {
       id: true,
@@ -47,7 +40,7 @@ export const getServicesWithPricing = catchAsync(async (req: AuthenticatedReques
 // @desc    Update service pricing
 // @route   PUT /api/admin/payments/services/:id/pricing
 // @access  Private/Admin
-export const updateServicePricing = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateServicePricing = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { smallJobPrice, mediumJobPrice, largeJobPrice } = req.body;
 
@@ -82,7 +75,7 @@ export const updateServicePricing = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Search contractors for credit management
 // @route   GET /api/admin/payments/contractors/search
 // @access  Private/Admin
-export const searchContractors = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const searchContractors = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { query } = req.query;
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
@@ -133,7 +126,7 @@ export const searchContractors = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Get contractor credit details
 // @route   GET /api/admin/payments/contractors/:id/credits
 // @access  Private/Admin
-export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getContractorCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
 
   const contractor = await prisma.contractor.findUnique({
@@ -165,7 +158,7 @@ export const getContractorCredits = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Adjust contractor credits
 // @route   POST /api/admin/payments/contractors/:id/adjust-credits
 // @access  Private/Admin
-export const adjustContractorCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { amount, reason, type } = req.body;
 
@@ -223,7 +216,7 @@ export const adjustContractorCredits = catchAsync(async (req: AuthenticatedReque
 // @desc    Update contractor weekly credit limit
 // @route   PUT /api/admin/payments/contractors/:id/credit-limit
 // @access  Private/Admin
-export const updateCreditLimit = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateCreditLimit = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { weeklyCreditsLimit } = req.body;
 
@@ -245,7 +238,7 @@ export const updateCreditLimit = catchAsync(async (req: AuthenticatedRequest, re
 // @desc    Reset all contractors' weekly credits
 // @route   POST /api/admin/payments/reset-weekly-credits
 // @access  Private/Admin
-export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const resetWeeklyCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const now = new Date();
 
   // Get all contractors with subscriptions
@@ -291,7 +284,7 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Get payment system overview stats
 // @route   GET /api/admin/payments/overview
 // @access  Private/Admin
-export const getPaymentOverview = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getPaymentOverview = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const [
     totalServices,
     totalContractors,
@@ -353,7 +346,7 @@ export const getPaymentOverview = catchAsync(async (req: AuthenticatedRequest, r
 // @desc    Override job lead price
 // @route   PUT /api/admin/payments/jobs/:jobId/price
 // @access  Private/Admin
-export const overrideJobPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const overrideJobPrice = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { jobId } = req.params;
   const { currentLeadPrice } = req.body;
 
@@ -372,18 +365,17 @@ export const overrideJobPrice = catchAsync(async (req: AuthenticatedRequest, res
   });
 });
 
-// Routes
-router.use(protect); // All routes require authentication
-router.use(adminOnly); // All routes require admin access
+// Routes with proper admin authentication and permissions
+router.use(protectAdmin); // All routes require admin authentication
 
-router.get('/services', getServicesWithPricing);
-router.put('/services/:id/pricing', updateServicePricing);
-router.get('/contractors/search', searchContractors);
-router.get('/contractors/:id/credits', getContractorCredits);
-router.post('/contractors/:id/adjust-credits', adjustContractorCredits);
-router.put('/contractors/:id/credit-limit', updateCreditLimit);
-router.post('/reset-weekly-credits', resetWeeklyCredits);
-router.get('/overview', getPaymentOverview);
-router.put('/jobs/:jobId/price', overrideJobPrice);
+router.get('/services', requirePermission(AdminPermission.PAYMENTS_READ), getServicesWithPricing);
+router.put('/services/:id/pricing', requirePermission(AdminPermission.PAYMENTS_WRITE), updateServicePricing);
+router.get('/contractors/search', requirePermission(AdminPermission.PAYMENTS_READ), searchContractors);
+router.get('/contractors/:id/credits', requirePermission(AdminPermission.PAYMENTS_READ), getContractorCredits);
+router.post('/contractors/:id/adjust-credits', requirePermission(AdminPermission.PAYMENTS_WRITE), adjustContractorCredits);
+router.put('/contractors/:id/credit-limit', requirePermission(AdminPermission.PAYMENTS_WRITE), updateCreditLimit);
+router.post('/reset-weekly-credits', requirePermission(AdminPermission.PAYMENTS_WRITE), resetWeeklyCredits);
+router.get('/overview', requirePermission(AdminPermission.PAYMENTS_READ), getPaymentOverview);
+router.put('/jobs/:jobId/price', requirePermission(AdminPermission.PRICING_WRITE), overrideJobPrice);
 
 export default router; 
