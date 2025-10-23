@@ -202,7 +202,7 @@ export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, 
         type,
         amount,
         description: `Admin adjustment: ${reason}`,
-        adminUserId: req.user!.id,
+        adminUserId: req.admin!.id,
       },
     });
   });
@@ -269,7 +269,7 @@ export const resetWeeklyCredits = catchAsync(async (req: AdminAuthRequest, res: 
           type: 'ADDITION',
           amount: contractor.weeklyCreditsLimit,
           description: 'Weekly credit reset',
-          adminUserId: req.user!.id,
+          adminUserId: req.admin!.id,
         },
       });
     }
