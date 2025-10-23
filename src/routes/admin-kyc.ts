@@ -37,7 +37,7 @@ router.get('/documents/:path(*)', (req, res) => {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const contractorId = (req as any).user?.contractor?.id || 'unknown';
-    const uploadPath = path.join('uploads', 'kyc', contractorId);
+    const uploadPath = path.join(process.cwd(), 'uploads', 'kyc', contractorId);
     
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadPath)) {

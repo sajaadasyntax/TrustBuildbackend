@@ -10,7 +10,7 @@ const router = Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads');
+    const uploadDir = path.join(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -92,7 +92,7 @@ router.post('/multiple', protect, upload.array('files', 10), catchAsync(async (r
 // Delete file
 router.delete('/:filename', protect, catchAsync(async (req: any, res: any) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, '../../uploads', filename);
+  const filePath = path.join(process.cwd(), 'uploads', filename);
 
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);

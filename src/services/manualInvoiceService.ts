@@ -76,7 +76,7 @@ export const generateAndSaveInvoicePDF = async (invoiceId: string): Promise<stri
   const pdfBuffer = await generateInvoicePDF(invoiceData);
 
   // Save PDF to disk
-  const invoiceDir = path.join('uploads', 'invoices');
+  const invoiceDir = path.join(process.cwd(), 'uploads', 'invoices');
   if (!fs.existsSync(invoiceDir)) {
     fs.mkdirSync(invoiceDir, { recursive: true });
   }
