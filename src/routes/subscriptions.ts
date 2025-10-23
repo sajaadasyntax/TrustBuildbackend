@@ -212,7 +212,7 @@ export const getCurrentSubscription = catchAsync(async (req: AuthenticatedReques
     status: 'success',
     data: {
       subscription: subscriptionDetails,
-      hasActiveSubscription: !!subscriptionDetails && subscriptionDetails.isActive,
+      hasSubscription: !!subscriptionDetails && subscriptionDetails.isActive,
     },
   });
 });
