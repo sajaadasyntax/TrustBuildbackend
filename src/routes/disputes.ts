@@ -230,25 +230,13 @@ router.post('/:id/responses', protect, upload.array('attachments', 5), async (re
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Upload attachments
+    // Get uploaded file URLs from local storage
     const attachments: string[] = [];
     if (req.files && Array.isArray(req.files)) {
       for (const file of req.files) {
-        const result = await new Promise<any>((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'dispute-responses',
-              resource_type: 'auto',
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-          uploadStream.end(file.buffer);
-        });
-
-        attachments.push(result.secure_url);
+        // Files are already saved to disk by multer
+        const fileUrl = `/uploads/disputes/${file.filename}`;
+        attachments.push(fileUrl);
       }
     }
 
