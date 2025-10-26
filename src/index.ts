@@ -39,6 +39,8 @@ import adminManualInvoicesRoutes from './routes/admin-manual-invoices';
 import adminPaymentsRoutes from './routes/admin-payments';
 import contentRoutes from './routes/content';
 import faqRoutes from './routes/faq';
+import disputeRoutes from './routes/disputes';
+import adminDisputeRoutes from './routes/admin-disputes';
 
 // Load environment variables
 dotenv.config();
@@ -174,6 +176,7 @@ app.use('/api/contractor', contractorDashboardRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/faq', faqRoutes);
+app.use('/api/disputes', disputeRoutes);
 
 // Admin system routes - Register more specific routes BEFORE general admin routes
 app.use('/api/admin-auth', adminAuthRoutes);
@@ -185,6 +188,7 @@ app.use('/api/admin/manual-invoices', adminManualInvoicesRoutes);
 app.use('/api/admin/payments', adminPaymentsRoutes);
 app.use('/api/admin/invoices', adminInvoiceRoutesNew);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
+app.use('/api/admin/disputes', adminDisputeRoutes);
 // General admin routes (catch-all, must be last)
 app.use('/api/admin', adminRoutes);
 

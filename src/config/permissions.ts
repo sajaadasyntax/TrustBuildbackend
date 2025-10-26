@@ -60,6 +60,11 @@ export enum AdminPermission {
   // Final Price Confirmations
   FINAL_PRICE_READ = 'final_price:read',
   FINAL_PRICE_WRITE = 'final_price:write',
+  
+  // Disputes Management
+  DISPUTES_READ = 'disputes:read',
+  DISPUTES_WRITE = 'disputes:write',
+  DISPUTES_RESOLVE = 'disputes:resolve',
 }
 
 // Group permissions by section for easier UI rendering
@@ -167,6 +172,15 @@ export const PERMISSION_GROUPS = {
       AdminPermission.FINAL_PRICE_WRITE,
     ],
   },
+  disputes: {
+    label: 'Disputes Management',
+    description: 'View and resolve customer/contractor disputes',
+    permissions: [
+      AdminPermission.DISPUTES_READ,
+      AdminPermission.DISPUTES_WRITE,
+      AdminPermission.DISPUTES_RESOLVE,
+    ],
+  },
 };
 
 // Helper function to check if admin has a specific permission
@@ -239,6 +253,9 @@ export function getPermissionLabel(permission: AdminPermission): string {
     [AdminPermission.SECURITY_LOGS_WRITE]: 'Manage Security Logs',
     [AdminPermission.FINAL_PRICE_READ]: 'View Final Price',
     [AdminPermission.FINAL_PRICE_WRITE]: 'Manage Final Price',
+    [AdminPermission.DISPUTES_READ]: 'View Disputes',
+    [AdminPermission.DISPUTES_WRITE]: 'Manage Disputes',
+    [AdminPermission.DISPUTES_RESOLVE]: 'Resolve Disputes',
   };
   
   return labels[permission] || permission;

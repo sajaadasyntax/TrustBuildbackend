@@ -110,15 +110,15 @@ enum NotificationType {
 }
 
 model User {
-  id                  String   @id @default(cuid())
-  email               String   @unique
-  password            String
-  name                String
-  role                UserRole @default(CUSTOMER)
-  isActive            Boolean  @default(true)
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  password             String
+  name                 String
+  role                 UserRole @default(CUSTOMER)
+  isActive             Boolean  @default(true)
   notificationSettings Json     @default("{\"email\": true, \"inApp\": true, \"commission\": true, \"subscription\": true, \"jobs\": true, \"reviews\": true}")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   // Relationships
   customer      Customer?
@@ -139,10 +139,10 @@ model Customer {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobs    Job[]
-  reviews Review[]
-  payments Payment[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs               Job[]
+  reviews            Review[]
+  payments           Payment[]
   commissionPayments CommissionPayment[]
 
   @@map("customers")
@@ -156,86 +156,86 @@ enum ContractorAccountStatus {
 }
 
 model Contractor {
-  id                    String            @id @default(cuid())
-  userId                String            @unique
-  businessName          String?
-  description           String?           @db.Text
-  businessAddress       String?
-  city                  String?
-  postcode              String?
-  phone                 String?
-  website               String?
-  instagramHandle       String?
-  operatingArea         String?
-  servicesProvided      String?
-  yearsExperience       String?
-  logoUrl               String?
-  workSetup             String? // "alone" or "team"
-  providesWarranty      Boolean           @default(false)
-  warrantyPeriod        String?
-  unsatisfiedCustomers  String?           @db.Text
-  preferredClients      String?           @db.Text
-  usesContracts         Boolean           @default(false)
-  profileApproved       Boolean           @default(false)
-  status                ContractorStatus  @default(PENDING)
-  tier                  ContractorTier    @default(STANDARD)
-  featuredContractor    Boolean           @default(false)
-  
+  id                   String           @id @default(cuid())
+  userId               String           @unique
+  businessName         String?
+  description          String?          @db.Text
+  businessAddress      String?
+  city                 String?
+  postcode             String?
+  phone                String?
+  website              String?
+  instagramHandle      String?
+  operatingArea        String?
+  servicesProvided     String?
+  yearsExperience      String?
+  logoUrl              String?
+  workSetup            String? // "alone" or "team"
+  providesWarranty     Boolean          @default(false)
+  warrantyPeriod       String?
+  unsatisfiedCustomers String?          @db.Text
+  preferredClients     String?          @db.Text
+  usesContracts        Boolean          @default(false)
+  profileApproved      Boolean          @default(false)
+  status               ContractorStatus @default(PENDING)
+  tier                 ContractorTier   @default(STANDARD)
+  featuredContractor   Boolean          @default(false)
+
   // Payment and subscription
-  stripeCustomerId      String?
-  stripeAccountId       String?
-  
+  stripeCustomerId String?
+  stripeAccountId  String?
+
   // Credit system
-  creditsBalance        Int               @default(0)
-  weeklyCreditsLimit    Int               @default(3)
-  lastCreditReset       DateTime?
-  
+  creditsBalance     Int       @default(0)
+  weeklyCreditsLimit Int       @default(3)
+  lastCreditReset    DateTime?
+
   // Admin controls
-  accountStatus         ContractorAccountStatus @default(ACTIVE)
-  freeJobAllocation     Int               @default(0) // Admin-configurable free job leads
-  frozenAt              DateTime?
-  frozenBy              String?           // Admin ID who froze account
-  frozenReason          String?           @db.Text
-  
+  accountStatus     ContractorAccountStatus @default(ACTIVE)
+  freeJobAllocation Int                     @default(0) // Admin-configurable free job leads
+  frozenAt          DateTime?
+  frozenBy          String? // Admin ID who froze account
+  frozenReason      String?                 @db.Text
+
   // Stats
-  jobsCompleted         Int               @default(0)
-  averageRating         Float             @default(0)
-  reviewCount           Int               @default(0)
-  verifiedReviews       Int               @default(0)
-  
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  jobsCompleted   Int   @default(0)
+  averageRating   Float @default(0)
+  reviewCount     Int   @default(0)
+  verifiedReviews Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  services      Service[]         @relation("ContractorToService")
-  portfolio     PortfolioItem[]
-  applications  JobApplication[]
-  reviews       Review[]          @relation("ContractorReviews")
-  documents     ContractorDocument[]
-  subscription  Subscription?
-  payments      Payment[]
-  jobAccess     JobAccess[]
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services           Service[]            @relation("ContractorToService")
+  portfolio          PortfolioItem[]
+  applications       JobApplication[]
+  reviews            Review[]             @relation("ContractorReviews")
+  documents          ContractorDocument[]
+  subscription       Subscription?
+  payments           Payment[]
+  jobAccess          JobAccess[]
   creditTransactions CreditTransaction[]
-  jobsWon       Job[]             @relation("JobWonBy")
-  jobInterests  JobInterest[]
+  jobsWon            Job[]                @relation("JobWonBy")
+  jobInterests       JobInterest[]
   commissionPayments CommissionPayment[]
   stripeCustomerInfo StripeCustomer?
-  kyc           ContractorKyc?
-  manualInvoices ManualInvoice[]
+  kyc                ContractorKyc?
+  manualInvoices     ManualInvoice[]
 
   @@map("contractors")
 }
 
 model ContractorDocument {
-  id              String   @id @default(cuid())
-  contractorId    String
-  documentType    String   // "insurance", "hmrc", "address", "work_photo"
-  fileName        String
-  fileUrl         String
-  cloudinaryId    String?
-  isVerified      Boolean  @default(false)
-  uploadedAt      DateTime @default(now())
+  id           String   @id @default(cuid())
+  contractorId String
+  documentType String // "insurance", "hmrc", "address", "work_photo"
+  fileName     String
+  fileUrl      String
+  cloudinaryId String?
+  isVerified   Boolean  @default(false)
+  uploadedAt   DateTime @default(now())
 
   // Relationships
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
@@ -244,19 +244,19 @@ model ContractorDocument {
 }
 
 model Service {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id          String  @id @default(cuid())
+  name        String  @unique
   description String?
   category    String?
-  isActive    Boolean  @default(true)
-  
+  isActive    Boolean @default(true)
+
   // Lead pricing for different job sizes
-  smallJobPrice   Decimal @default(15.00) @db.Decimal(8, 2)
-  mediumJobPrice  Decimal @default(30.00) @db.Decimal(8, 2)
-  largeJobPrice   Decimal @default(50.00) @db.Decimal(8, 2)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  smallJobPrice  Decimal @default(15.00) @db.Decimal(8, 2)
+  mediumJobPrice Decimal @default(30.00) @db.Decimal(8, 2)
+  largeJobPrice  Decimal @default(50.00) @db.Decimal(8, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
   contractors Contractor[] @relation("ContractorToService")
@@ -266,15 +266,15 @@ model Service {
 }
 
 model PortfolioItem {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   contractorId String
   title        String
-  description  String?  @db.Text
+  description  String?   @db.Text
   imageUrl     String
   cloudinaryId String?
   projectDate  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Relationships
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
@@ -283,76 +283,77 @@ model PortfolioItem {
 }
 
 model Job {
-  id               String       @id @default(cuid())
-  customerId       String
-  serviceId        String
-  title            String
-  description      String       @db.Text
-  budget           Decimal?     @db.Decimal(10, 2)
-  location         String
-  postcode         String?
-  urgency          String? // "flexible", "within_week", "asap"
-  status           JobStatus    @default(DRAFT)
-  startDate        DateTime?
-  completionDate   DateTime?
-  isUrgent         Boolean      @default(false)
-  requiresQuote    Boolean      @default(true)
-  
+  id             String    @id @default(cuid())
+  customerId     String
+  serviceId      String
+  title          String
+  description    String    @db.Text
+  budget         Decimal?  @db.Decimal(10, 2)
+  location       String
+  postcode       String?
+  urgency        String? // "flexible", "within_week", "asap"
+  status         JobStatus @default(DRAFT)
+  startDate      DateTime?
+  completionDate DateTime?
+  isUrgent       Boolean   @default(false)
+  requiresQuote  Boolean   @default(true)
+
   // Lead pricing system
-  jobSize          JobSize      @default(MEDIUM)
-  leadPrice        Decimal?     @db.Decimal(8, 2) // Override price set by admin
-  estimatedValue   Decimal?     @db.Decimal(10, 2) // For determining job size
-  
+  jobSize        JobSize  @default(MEDIUM)
+  leadPrice      Decimal? @db.Decimal(8, 2) // Override price set by admin
+  estimatedValue Decimal? @db.Decimal(10, 2) // For determining job size
+
   // Job purchase limits
-  maxContractorsPerJob Int      @default(5) // How many contractors can buy this job
-  
+  maxContractorsPerJob Int @default(5) // How many contractors can buy this job
+
   // Job completion tracking
-  wonByContractorId String?     // Which contractor won the job
-  finalAmount      Decimal?     @db.Decimal(10, 2) // Final job amount entered by contractor
-  customerConfirmed Boolean     @default(false) // Customer confirmed completion and amount
-  commissionPaid   Boolean      @default(false) // Whether 5% commission was charged
-  
+  wonByContractorId String? // Which contractor won the job
+  finalAmount       Decimal? @db.Decimal(10, 2) // Final job amount entered by contractor
+  customerConfirmed Boolean  @default(false) // Customer confirmed completion and amount
+  commissionPaid    Boolean  @default(false) // Whether 5% commission was charged
+
   // Final price workflow
-  contractorProposedAmount    Decimal?     @db.Decimal(10, 2) // Amount proposed by contractor
-  finalPriceProposedAt        DateTime?    // When contractor proposed final price
-  finalPriceConfirmedAt       DateTime?    // When customer confirmed final price
-  finalPriceRejectedAt        DateTime?    // When customer rejected final price
-  finalPriceRejectionReason   String?      @db.Text // Reason for rejection
-  adminOverrideAt             DateTime?    // When admin overrode customer confirmation
-  adminOverrideBy             String?      // Admin user ID who overrode
-  finalPriceTimeoutAt         DateTime?    // When final price confirmation times out
-  
+  contractorProposedAmount  Decimal?  @db.Decimal(10, 2) // Amount proposed by contractor
+  finalPriceProposedAt      DateTime? // When contractor proposed final price
+  finalPriceConfirmedAt     DateTime? // When customer confirmed final price
+  finalPriceRejectedAt      DateTime? // When customer rejected final price
+  finalPriceRejectionReason String?   @db.Text // Reason for rejection
+  adminOverrideAt           DateTime? // When admin overrode customer confirmation
+  adminOverrideBy           String? // Admin user ID who overrode
+  finalPriceTimeoutAt       DateTime? // When final price confirmation times out
+
   // Admin flags
-  isFlagged        Boolean      @default(false) // Job flagged by admin for review
-  flaggedAt        DateTime?    // When job was flagged
-  flaggedBy        String?      // Admin ID who flagged
-  flagReason       String?      @db.Text // Reason for flagging
-  
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  isFlagged  Boolean   @default(false) // Job flagged by admin for review
+  flaggedAt  DateTime? // When job was flagged
+  flaggedBy  String? // Admin ID who flagged
+  flagReason String?   @db.Text // Reason for flagging
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
-  customer     Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  service      Service          @relation(fields: [serviceId], references: [id])
-  applications JobApplication[]
-  reviews      Review[]
-  jobAccess    JobAccess[]
-  payments     Payment[]
-  milestones   Milestone[]
-  wonByContractor Contractor?  @relation("JobWonBy", fields: [wonByContractorId], references: [id])
-  jobInterests JobInterest[]
+  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service           Service            @relation(fields: [serviceId], references: [id])
+  applications      JobApplication[]
+  reviews           Review[]
+  jobAccess         JobAccess[]
+  payments          Payment[]
+  milestones        Milestone[]
+  wonByContractor   Contractor?        @relation("JobWonBy", fields: [wonByContractorId], references: [id])
+  jobInterests      JobInterest[]
   commissionPayment CommissionPayment?
+  disputes          Dispute[]
 
   @@map("jobs")
 }
 
 model JobInterest {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   jobId        String
   contractorId String
-  message      String?   @db.Text
-  createdAt    DateTime  @default(now())
-  
+  message      String?  @db.Text
+  createdAt    DateTime @default(now())
+
   // Relationships
   job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
@@ -370,14 +371,14 @@ enum AccessMethod {
 }
 
 model JobAccess {
-  id           String        @id @default(cuid())
+  id           String       @id @default(cuid())
   jobId        String
   contractorId String
-  accessMethod AccessMethod  @default(PAYMENT)
-  paidAmount   Decimal?      @db.Decimal(8, 2)
-  creditUsed   Boolean       @default(false)
-  accessedAt   DateTime      @default(now())
-  
+  accessMethod AccessMethod @default(PAYMENT)
+  paidAmount   Decimal?     @db.Decimal(8, 2)
+  creditUsed   Boolean      @default(false)
+  accessedAt   DateTime     @default(now())
+
   // Relationships
   job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
@@ -418,110 +419,110 @@ model Milestone {
   updatedAt   DateTime        @updatedAt
 
   // Relationships
-  job         Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("milestones")
 }
 
 model Payment {
-  id              String        @id @default(cuid())
-  amount          Decimal       @db.Decimal(10, 2)
-  currency        String        @default("GBP")
-  status          PaymentStatus @default(PENDING)
-  type            PaymentType
-  description     String
-  
+  id          String        @id @default(cuid())
+  amount      Decimal       @db.Decimal(10, 2)
+  currency    String        @default("GBP")
+  status      PaymentStatus @default(PENDING)
+  type        PaymentType
+  description String
+
   // Stripe data
-  stripePaymentId String?
+  stripePaymentId  String?
   stripeCustomerId String?
-  
-  // Relationships
-  customerId      String?
-  contractorId    String?
-  jobId           String?
-  jobAccessId     String?       @unique
-  
-  // Invoice
-  invoiceId       String?
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
 
   // Relationships
-  customer    Customer?   @relation(fields: [customerId], references: [id])
-  contractor  Contractor? @relation(fields: [contractorId], references: [id])
-  job         Job?        @relation(fields: [jobId], references: [id])
-  jobAccess   JobAccess?  @relation(fields: [jobAccessId], references: [id])
-  invoice     Invoice?    @relation(fields: [invoiceId], references: [id])
+  customerId   String?
+  contractorId String?
+  jobId        String?
+  jobAccessId  String? @unique
+
+  // Invoice
+  invoiceId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  customer   Customer?   @relation(fields: [customerId], references: [id])
+  contractor Contractor? @relation(fields: [contractorId], references: [id])
+  job        Job?        @relation(fields: [jobId], references: [id])
+  jobAccess  JobAccess?  @relation(fields: [jobAccessId], references: [id])
+  invoice    Invoice?    @relation(fields: [invoiceId], references: [id])
 
   @@map("payments")
 }
 
 model Invoice {
-  id            String   @id @default(cuid())
-  invoiceNumber String   @unique
-  amount        Decimal  @db.Decimal(10, 2)
-  currency      String   @default("GBP")
-  vatRate       Decimal  @default(20.00) @db.Decimal(5, 2)
-  vatAmount     Decimal  @db.Decimal(10, 2)
-  totalAmount   Decimal  @db.Decimal(10, 2)
-  
+  id            String  @id @default(cuid())
+  invoiceNumber String  @unique
+  amount        Decimal @db.Decimal(10, 2)
+  currency      String  @default("GBP")
+  vatRate       Decimal @default(20.00) @db.Decimal(5, 2)
+  vatAmount     Decimal @db.Decimal(10, 2)
+  totalAmount   Decimal @db.Decimal(10, 2)
+
   // Invoice details
-  description   String
-  recipientName String
-  recipientEmail String
+  description      String
+  recipientName    String
+  recipientEmail   String
   recipientAddress String?
-  
+
   // File storage
-  pdfUrl        String?
-  emailSent     Boolean  @default(false)
-  
-  issuedAt      DateTime @default(now())
-  dueAt         DateTime?
-  paidAt        DateTime?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  pdfUrl    String?
+  emailSent Boolean @default(false)
+
+  issuedAt DateTime  @default(now())
+  dueAt    DateTime?
+  paidAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
-  payments      Payment[]
+  payments Payment[]
 
   @@map("invoices")
 }
 
 model CreditTransaction {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   contractorId String
-  amount       Int      // Credits added (+) or used (-)
-  type         String   // "WEEKLY_ALLOCATION", "ADMIN_ADJUSTMENT", "JOB_ACCESS", "BONUS"
+  amount       Int // Credits added (+) or used (-)
+  type         String // "WEEKLY_ALLOCATION", "ADMIN_ADJUSTMENT", "JOB_ACCESS", "BONUS"
   description  String
   jobId        String?
   adminUserId  String?
-  
-  createdAt    DateTime @default(now())
-  
+
+  createdAt DateTime @default(now())
+
   // Relationships
-  contractor   Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
 
   @@map("credit_transactions")
 }
 
 model Review {
-  id           String   @id @default(cuid())
-  jobId        String?
-  customerId   String?
-  contractorId String
-  rating       Int      @db.SmallInt
-  comment      String?  @db.Text
-  isVerified   Boolean  @default(false)
-  isExternal   Boolean  @default(false) // For external reviews
-  customerName String? // For external reviews
+  id            String    @id @default(cuid())
+  jobId         String?
+  customerId    String?
+  contractorId  String
+  rating        Int       @db.SmallInt
+  comment       String?   @db.Text
+  isVerified    Boolean   @default(false)
+  isExternal    Boolean   @default(false) // For external reviews
+  customerName  String? // For external reviews
   customerEmail String? // For external reviews
-  projectType  String?
-  projectDate  DateTime?
-  flagReason   String?  @db.Text // Reason for flagging the review
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  projectType   String?
+  projectDate   DateTime?
+  flagReason    String?   @db.Text // Reason for flagging the review
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   // Relationships
   job        Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -533,18 +534,18 @@ model Review {
 }
 
 model Subscription {
-  id                 String           @id @default(cuid())
-  contractorId       String           @unique
-  tier               ContractorTier
-  plan               SubscriptionPlan @default(MONTHLY)
-  monthlyPrice       Decimal          @default(0.00) @db.Decimal(8, 2)
-  stripeSubscriptionId String?        @unique
-  status             String           @default("active") // active, cancelled, past_due, etc.
-  isActive           Boolean          @default(true)
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  id                   String           @id @default(cuid())
+  contractorId         String           @unique
+  tier                 ContractorTier
+  plan                 SubscriptionPlan @default(MONTHLY)
+  monthlyPrice         Decimal          @default(0.00) @db.Decimal(8, 2)
+  stripeSubscriptionId String?          @unique
+  status               String           @default("active") // active, cancelled, past_due, etc.
+  isActive             Boolean          @default(true)
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   // Relationships
   contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
@@ -553,61 +554,61 @@ model Subscription {
 }
 
 model StripeCustomer {
-  id                String     @id @default(cuid())
-  contractorId      String     @unique
-  stripeCustomerId  String     @unique
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  id               String   @id @default(cuid())
+  contractorId     String   @unique
+  stripeCustomerId String   @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   // Relationships
-  contractor        Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
 
   @@map("stripe_customers")
 }
 
 model CommissionPayment {
-  id              String           @id @default(cuid())
-  jobId           String           @unique
-  contractorId    String
-  customerId      String
-  finalJobAmount  Decimal          @db.Decimal(10, 2)
-  commissionRate  Decimal          @default(5.00) @db.Decimal(4, 2)
-  commissionAmount Decimal         @db.Decimal(10, 2)
-  vatAmount       Decimal          @db.Decimal(10, 2)
-  totalAmount     Decimal          @db.Decimal(10, 2)
-  status          CommissionStatus @default(PENDING)
-  dueDate         DateTime
-  paidAt          DateTime?
-  stripePaymentId String?
-  remindersSent   Int              @default(0)
+  id               String           @id @default(cuid())
+  jobId            String           @unique
+  contractorId     String
+  customerId       String
+  finalJobAmount   Decimal          @db.Decimal(10, 2)
+  commissionRate   Decimal          @default(5.00) @db.Decimal(4, 2)
+  commissionAmount Decimal          @db.Decimal(10, 2)
+  vatAmount        Decimal          @db.Decimal(10, 2)
+  totalAmount      Decimal          @db.Decimal(10, 2)
+  status           CommissionStatus @default(PENDING)
+  dueDate          DateTime
+  paidAt           DateTime?
+  stripePaymentId  String?
+  remindersSent    Int              @default(0)
   lastReminderSent DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   // Relationships
-  job        Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  contractor Contractor          @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  customer   Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  job        Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor         @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  customer   Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
   invoice    CommissionInvoice?
 
   @@map("commission_payments")
 }
 
 model CommissionInvoice {
-  id                  String    @id @default(cuid())
-  commissionPaymentId String    @unique
-  invoiceNumber       String    @unique
+  id                  String   @id @default(cuid())
+  commissionPaymentId String   @unique
+  invoiceNumber       String   @unique
   contractorName      String
   contractorEmail     String
   jobTitle            String
-  finalJobAmount      Decimal   @db.Decimal(10, 2)
-  commissionAmount    Decimal   @db.Decimal(10, 2)
-  vatAmount           Decimal   @db.Decimal(10, 2)
-  totalAmount         Decimal   @db.Decimal(10, 2)
+  finalJobAmount      Decimal  @db.Decimal(10, 2)
+  commissionAmount    Decimal  @db.Decimal(10, 2)
+  vatAmount           Decimal  @db.Decimal(10, 2)
+  totalAmount         Decimal  @db.Decimal(10, 2)
   dueDate             DateTime
-  emailSent           Boolean   @default(false)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  emailSent           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   // Relationships
   commissionPayment CommissionPayment @relation(fields: [commissionPaymentId], references: [id], onDelete: Cascade)
@@ -630,7 +631,7 @@ model Notification {
   updatedAt  DateTime         @updatedAt
 
   // Relationships
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isRead])
@@ -669,19 +670,19 @@ enum AdminRole {
 }
 
 model Admin {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  passwordHash    String
-  name            String
-  role            AdminRole
-  permissions     Json?    // Array of permission strings: ["users:read", "users:write", "jobs:read", etc.]
-  twoFAEnabled    Boolean  @default(false)
-  twoFASecret     String?  // encrypted TOTP secret
-  isActive        Boolean  @default(true)
-  lastLoginAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole
+  permissions  Json? // Array of permission strings: ["users:read", "users:write", "jobs:read", etc.]
+  twoFAEnabled Boolean   @default(false)
+  twoFASecret  String? // encrypted TOTP secret
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   activityLogs    ActivityLog[]
   loginActivities LoginActivity[]
 
@@ -692,11 +693,11 @@ model ActivityLog {
   id          String   @id @default(cuid())
   adminId     String
   admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  action      String   // SETTINGS_UPDATE, JOB_VALUE_ADJUST, INVOICE_CREATE, etc.
-  entityType  String   // Job, Invoice, Contractor, Setting, etc.
+  action      String // SETTINGS_UPDATE, JOB_VALUE_ADJUST, INVOICE_CREATE, etc.
+  entityType  String // Job, Invoice, Contractor, Setting, etc.
   entityId    String?
   description String?
-  diff        Json?    // Store before/after changes
+  diff        Json? // Store before/after changes
   ipAddress   String?
   userAgent   String?
   createdAt   DateTime @default(now())
@@ -726,8 +727,8 @@ model LoginActivity {
 
 model Setting {
   key       String   @id // COMMISSION_RATE, SUBSCRIPTION_PRICING, FREE_JOB_ALLOCATION, etc.
-  value     Json     // Flexible JSON storage for any setting
-  updatedBy String?  // Admin ID who last updated
+  value     Json // Flexible JSON storage for any setting
+  updatedBy String? // Admin ID who last updated
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
@@ -745,21 +746,21 @@ enum KycStatus {
 }
 
 model ContractorKyc {
-  id             String    @id @default(cuid())
-  contractorId   String    @unique
-  contractor     Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  status         KycStatus @default(PENDING)
-  idDocPath      String?
-  utilityDocPath String?
-  companyNumber  String?
-  submittedAt    DateTime?
-  dueBy          DateTime?   // Deadline for submission
-  reviewedBy     String?     // Admin ID
-  reviewedAt     DateTime?
+  id              String     @id @default(cuid())
+  contractorId    String     @unique
+  contractor      Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  status          KycStatus  @default(PENDING)
+  idDocPath       String?
+  utilityDocPath  String?
+  companyNumber   String?
+  submittedAt     DateTime?
+  dueBy           DateTime? // Deadline for submission
+  reviewedBy      String? // Admin ID
+  reviewedAt      DateTime?
   rejectionReason String?    @db.Text
-  notes          String?     @db.Text
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  notes           String?    @db.Text
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@index([status])
   @@index([dueBy])
@@ -776,28 +777,28 @@ enum ManualInvoiceStatus {
 }
 
 model ManualInvoice {
-  id              String              @id @default(cuid())
-  contractorId    String
-  contractor      Contractor          @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  number          String              @unique
-  status          ManualInvoiceStatus @default(DRAFT)
-  subtotal        Int                 // pence
-  tax             Int                 @default(0) // pence
-  total           Int                 // pence
-  currency        String              @default("GBP")
-  reason          String?             @db.Text
-  notes           String?             @db.Text
+  id               String              @id @default(cuid())
+  contractorId     String
+  contractor       Contractor          @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  number           String              @unique
+  status           ManualInvoiceStatus @default(DRAFT)
+  subtotal         Int // pence
+  tax              Int                 @default(0) // pence
+  total            Int // pence
+  currency         String              @default("GBP")
+  reason           String?             @db.Text
+  notes            String?             @db.Text
   createdByAdminId String?
-  dueDate         DateTime?
-  issuedAt        DateTime?
-  paidAt          DateTime?
-  pdfPath         String?
-  remindersSent   Int                 @default(0)
-  lastReminderAt  DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  
-  items           ManualInvoiceItem[]
+  dueDate          DateTime?
+  issuedAt         DateTime?
+  paidAt           DateTime?
+  pdfPath          String?
+  remindersSent    Int                 @default(0)
+  lastReminderAt   DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  items ManualInvoiceItem[]
 
   @@index([contractorId])
   @@index([status])
@@ -806,28 +807,125 @@ model ManualInvoice {
 }
 
 model ManualInvoiceItem {
-  id         String         @id @default(cuid())
-  invoiceId  String
-  invoice    ManualInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id          String        @id @default(cuid())
+  invoiceId   String
+  invoice     ManualInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   description String
-  amount     Int            // pence
-  quantity   Int            @default(1)
-  
+  amount      Int // pence
+  quantity    Int           @default(1)
+
   @@map("manual_invoice_items")
 }
 
 // FAQ System
 model Faq {
-  id           String   @id @default(cuid())
-  question     String
-  answer       String   @db.Text
-  category     String?
-  sortOrder    Int      @default(0)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  category  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([isActive])
   @@index([sortOrder])
   @@map("faqs")
-} 
+}
+
+// Dispute System
+enum DisputeType {
+  WORK_QUALITY
+  JOB_CONFIRMATION
+  CREDIT_REFUND
+  PROJECT_DELAY
+  PAYMENT_ISSUE
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  AWAITING_EVIDENCE
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum DisputeResolution {
+  CUSTOMER_FAVOR
+  CONTRACTOR_FAVOR
+  MUTUAL_AGREEMENT
+  CREDIT_REFUNDED
+  COMMISSION_ADJUSTED
+  NO_ACTION
+}
+
+model Dispute {
+  id             String        @id @default(cuid())
+  jobId          String
+  raisedByUserId String // Customer or Contractor who raised dispute
+  raisedByRole   UserRole // CUSTOMER or CONTRACTOR
+  type           DisputeType
+  status         DisputeStatus @default(OPEN)
+  priority       String        @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+
+  // Dispute details
+  title        String
+  description  String @db.Text
+  evidenceUrls Json? // Array of evidence URLs (photos, documents)
+
+  // Resolution
+  resolution        DisputeResolution?
+  resolutionNotes   String?            @db.Text
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+
+  // Credit refund tracking
+  creditRefunded     Boolean @default(false)
+  creditRefundAmount Int? // Number of credits refunded
+
+  // Commission adjustment
+  commissionAdjusted Boolean  @default(false)
+  commissionAmount   Decimal? @db.Decimal(10, 2)
+
+  // Job completion override
+  jobCompletedOverride Boolean @default(false)
+
+  // Communication
+  adminNotes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  job       Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  responses DisputeResponse[]
+
+  @@index([jobId])
+  @@index([status])
+  @@index([type])
+  @@index([raisedByUserId])
+  @@index([createdAt])
+  @@map("disputes")
+}
+
+model DisputeResponse {
+  id          String   @id @default(cuid())
+  disputeId   String
+  userId      String // Customer, Contractor, or Admin
+  userRole    UserRole // To identify who responded
+  message     String   @db.Text
+  attachments Json? // Array of attachment URLs
+  isInternal  Boolean  @default(false) // Admin-only notes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("dispute_responses")
+}
