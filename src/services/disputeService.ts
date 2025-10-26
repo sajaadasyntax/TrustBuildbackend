@@ -360,22 +360,35 @@ export const disputeService = {
    * Notify admins when a dispute is created
    */
   async notifyDisputeCreated(dispute: any) {
-    // Get all admins with dispute permissions
+    // Get all admins with dispute permissions who have associated user accounts
     const admins = await prisma.admin.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        userId: { not: null }, // Only admins with user accounts
+      },
+      select: {
+        id: true,
+        userId: true,
+        permissions: true,
+      },
     });
 
     for (const admin of admins) {
       const permissions = admin.permissions as string[] || [];
-      if (permissions.includes('disputes:read')) {
-        await createNotification({
-          userId: admin.id,
-          title: 'New Dispute Created',
-          message: `A new dispute has been created: ${dispute.title}`,
-          type: 'WARNING',
-          actionLink: `/admin/disputes/${dispute.id}`,
-          actionText: 'Review Dispute',
-        });
+      if (permissions.includes('disputes:read') && admin.userId) {
+        try {
+          await createNotification({
+            userId: admin.userId, // Use the user ID, not admin ID
+            title: 'New Dispute Created',
+            message: `A new dispute has been created: ${dispute.title}`,
+            type: 'WARNING',
+            actionLink: `/admin/disputes/${dispute.id}`,
+            actionText: 'Review Dispute',
+          });
+        } catch (error) {
+          console.error(`Failed to notify admin ${admin.id}:`, error);
+          // Continue with other notifications
+        }
       }
     }
 
@@ -386,14 +399,18 @@ export const disputeService = {
       : job.customer.userId;
 
     if (notifyUserId) {
-      await createNotification({
-        userId: notifyUserId,
-        title: 'Dispute Created',
-        message: `A dispute has been created for job: ${job.title}`,
-        type: 'WARNING',
-        actionLink: `/disputes/${dispute.id}`,
-        actionText: 'View Dispute',
-      });
+      try {
+        await createNotification({
+          userId: notifyUserId,
+          title: 'Dispute Created',
+          message: `A dispute has been created for job: ${job.title}`,
+          type: 'WARNING',
+          actionLink: `/disputes/${dispute.id}`,
+          actionText: 'View Dispute',
+        });
+      } catch (error) {
+        console.error(`Failed to notify user ${notifyUserId}:`, error);
+      }
     }
   },
 
