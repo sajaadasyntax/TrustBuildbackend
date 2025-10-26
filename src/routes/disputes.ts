@@ -3,17 +3,45 @@ import { PrismaClient, DisputeType, UserRole } from '@prisma/client';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { disputeService } from '../services/disputeService';
 import multer from 'multer';
-import { v2 as cloudinary } from 'cloudinary';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// Configure multer for file uploads
+// Configure multer for file uploads to disk
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'disputes');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'dispute-' + uniqueSuffix + ext);
+  }
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
+  fileFilter: (req, file, cb) => {
+    // Allow images and documents
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and documents are allowed'));
+    }
+  }
 });
 
 /**
@@ -67,25 +95,14 @@ router.post('/', protect, upload.array('evidence', 10), async (req: Authenticate
       return res.status(403).json({ error: 'You are not involved in this job' });
     }
 
-    // Upload evidence files to Cloudinary
+    // Get uploaded file URLs from local storage
     const evidenceUrls: string[] = [];
     if (req.files && Array.isArray(req.files)) {
       for (const file of req.files) {
-        const result = await new Promise<any>((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'disputes',
-              resource_type: 'auto',
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-          uploadStream.end(file.buffer);
-        });
-
-        evidenceUrls.push(result.secure_url);
+        // Files are already saved to disk by multer
+        const fileUrl = `/uploads/disputes/${file.filename}`;
+        evidenceUrls.push(fileUrl);
+        console.log('✅ File saved:', fileUrl);
       }
     }
 

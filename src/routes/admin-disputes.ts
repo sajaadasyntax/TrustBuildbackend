@@ -4,17 +4,45 @@ import { protectAdmin, requirePermission, AdminAuthRequest } from '../middleware
 import { AdminPermission } from '../config/permissions';
 import { disputeService } from '../services/disputeService';
 import multer from 'multer';
-import { v2 as cloudinary } from 'cloudinary';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// Configure multer for file uploads
+// Configure multer for file uploads to disk
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'disputes');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'admin-dispute-' + uniqueSuffix + ext);
+  }
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
+  fileFilter: (req, file, cb) => {
+    // Allow images and documents
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and documents are allowed'));
+    }
+  }
 });
 
 // Middleware to check dispute permissions
@@ -164,25 +192,13 @@ router.post('/:id/responses', requireDisputeWrite, upload.array('attachments', 5
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Upload attachments
+    // Get uploaded file URLs from local storage
     const attachments: string[] = [];
     if (req.files && Array.isArray(req.files)) {
       for (const file of req.files) {
-        const result = await new Promise<any>((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'admin-dispute-responses',
-              resource_type: 'auto',
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-          uploadStream.end(file.buffer);
-        });
-
-        attachments.push(result.secure_url);
+        // Files are already saved to disk by multer
+        const fileUrl = `/uploads/disputes/${file.filename}`;
+        attachments.push(fileUrl);
       }
     }
 
