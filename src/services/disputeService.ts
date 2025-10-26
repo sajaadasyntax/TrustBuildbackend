@@ -360,39 +360,13 @@ export const disputeService = {
    * Notify admins when a dispute is created
    */
   async notifyDisputeCreated(dispute: any) {
-    // Get all admins with dispute permissions who have associated user accounts
-    const admins = await prisma.admin.findMany({
-      where: { 
-        isActive: true,
-        userId: { not: null }, // Only admins with user accounts
-      },
-      select: {
-        id: true,
-        userId: true,
-        permissions: true,
-      },
-    });
+    // Note: Admin notifications are not sent through the user notification system
+    // as admins have separate accounts. Admins can view disputes in their dashboard.
+    
+    // Log dispute creation for admin dashboard
+    console.log(`New dispute created: ${dispute.id} - ${dispute.title}`);
 
-    for (const admin of admins) {
-      const permissions = admin.permissions as string[] || [];
-      if (permissions.includes('disputes:read') && admin.userId) {
-        try {
-          await createNotification({
-            userId: admin.userId, // Use the user ID, not admin ID
-            title: 'New Dispute Created',
-            message: `A new dispute has been created: ${dispute.title}`,
-            type: 'WARNING',
-            actionLink: `/admin/disputes/${dispute.id}`,
-            actionText: 'Review Dispute',
-          });
-        } catch (error) {
-          console.error(`Failed to notify admin ${admin.id}:`, error);
-          // Continue with other notifications
-        }
-      }
-    }
-
-    // Notify the other party
+    // Notify the other party (customer or contractor)
     const job = dispute.job;
     const notifyUserId = dispute.raisedByRole === 'CUSTOMER' 
       ? job.wonByContractor?.userId 
