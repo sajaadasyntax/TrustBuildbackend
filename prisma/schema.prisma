@@ -752,6 +752,8 @@ model ContractorKyc {
   status          KycStatus  @default(PENDING)
   idDocPath       String?
   utilityDocPath  String?
+  insuranceDocPath String?   // Public liability insurance certificate
+  companyDocPath  String?    // Company registration documents
   companyNumber   String?
   submittedAt     DateTime?
   dueBy           DateTime? // Deadline for submission

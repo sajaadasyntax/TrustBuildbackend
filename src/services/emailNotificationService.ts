@@ -14,28 +14,40 @@ export const createEmailNotificationService = () => {
     try {
       const mailOptions = createServiceEmail({
         to: contractorData.email,
-        subject: 'Welcome to TrustBuild - Your Contractor Journey Starts Here!',
+        subject: 'Welcome to TrustBuild - Registration Received',
         heading: `Welcome to TrustBuild, ${contractorData.name}!`,
         body: `
-          <p>Congratulations on joining TrustBuild! We're excited to have you as part of our trusted contractor community.</p>
+          <p>Thank you for registering with TrustBuild! We've received your contractor application and our team is currently reviewing it.</p>
           
-          <h3>What's Next?</h3>
+          <h3>What Happens Next?</h3>
+          <ol>
+            <li><strong>Profile Review:</strong> Our team will review your registration details (typically within 1-2 business days)</li>
+            <li><strong>Approval Notification:</strong> You'll receive an email once your profile is approved</li>
+            <li><strong>Identity Verification:</strong> After approval, you'll need to complete KYC verification by uploading:
+              <ul>
+                <li>Government-issued ID (passport or driver's license)</li>
+                <li>Proof of address (utility bill or bank statement)</li>
+                <li>Company registration documents (if applicable)</li>
+                <li>Insurance certificate (public liability insurance)</li>
+              </ul>
+            </li>
+            <li><strong>Choose Your Plan:</strong> Once verified, you can subscribe to a plan to start accessing jobs</li>
+          </ol>
+
+          <h3>Important Information</h3>
+          <p><strong>Please note:</strong> You won't be able to access your dashboard or apply for jobs until:</p>
           <ul>
-            <li><strong>Complete Your Profile:</strong> Add your business details, services, and portfolio to attract more customers</li>
-            <li><strong>Get Approved:</strong> Our team will review your profile and approve it for job applications</li>
-            <li><strong>Start Browsing Jobs:</strong> Once approved, you can browse and apply for jobs in your area</li>
-            <li><strong>Build Your Reputation:</strong> Complete jobs successfully to build reviews and increase your visibility</li>
+            <li>Your profile is approved by our admin team</li>
+            <li>You complete the KYC verification process</li>
+            <li>You subscribe to one of our contractor plans</li>
           </ul>
 
-          <h3>Your Free Credits</h3>
-          <p>As a welcome gift, we've given you <strong>3 free credits</strong> to get started. Use these to access job details and apply for your first jobs!</p>
-
           <h3>Need Help?</h3>
-          <p>If you have any questions or need assistance getting started, don't hesitate to reach out to our support team.</p>
+          <p>If you have any questions or need assistance, don't hesitate to reach out to our support team.</p>
         `,
-        ctaText: 'Complete Your Profile',
-        ctaUrl: 'https://trustbuild.uk/dashboard/contractor/profile',
-        footerText: 'Welcome to the TrustBuild family! We look forward to helping you grow your business.'
+        ctaText: 'Visit TrustBuild',
+        ctaUrl: 'https://trustbuild.uk',
+        footerText: 'Welcome to TrustBuild! We'll notify you as soon as your profile is approved.'
       });
 
       await emailService.sendMail(mailOptions);
@@ -43,6 +55,69 @@ export const createEmailNotificationService = () => {
       return true;
     } catch (error) {
       console.error(`❌ Failed to send contractor welcome email to ${contractorData.email}:`, error);
+      return false;
+    }
+  };
+
+  // Send contractor approval email
+  const sendContractorApprovalEmail = async (contractorData: {
+    name: string;
+    email: string;
+    businessName?: string;
+    kycDeadline: Date;
+  }) => {
+    try {
+      const deadlineDays = Math.ceil((contractorData.kycDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      
+      const mailOptions = createServiceEmail({
+        to: contractorData.email,
+        subject: '✅ Your TrustBuild Contractor Profile Has Been Approved!',
+        heading: `Congratulations, ${contractorData.name}!`,
+        body: `
+          <p>Great news! Your contractor profile has been approved by our team. You're one step closer to accessing job opportunities on TrustBuild.</p>
+          
+          <h3>⚠️ Important: Complete Your KYC Verification</h3>
+          <p>Before you can start accessing jobs, you must complete your identity verification within <strong>${deadlineDays} days</strong> (deadline: ${contractorData.kycDeadline.toLocaleDateString()}).</p>
+          
+          <h3>Required Documents:</h3>
+          <ul>
+            <li><strong>Government-issued ID:</strong> Valid passport or driver's license</li>
+            <li><strong>Proof of Address:</strong> Recent utility bill or bank statement (within last 3 months)</li>
+            <li><strong>Company Documents:</strong> Registration certificate or proof of business (if applicable)</li>
+            <li><strong>Insurance Certificate:</strong> Valid public liability insurance</li>
+          </ul>
+
+          <h3>What Happens After KYC Verification?</h3>
+          <ol>
+            <li>Our team will review your documents (typically within 24-48 hours)</li>
+            <li>Once approved, your account status will be set to ACTIVE</li>
+            <li>You can then subscribe to a plan and start accessing job leads</li>
+            <li>Upload work photos to showcase your portfolio (up to 20 images)</li>
+          </ol>
+
+          <h3>Subscription Plans</h3>
+          <p>After KYC verification, you'll need to subscribe to one of our plans to receive weekly job credits:</p>
+          <ul>
+            <li><strong>Standard Plan:</strong> 3 job leads per week</li>
+            <li><strong>Premium Plan:</strong> 6 job leads per week</li>
+            <li><strong>Enterprise Plan:</strong> Unlimited job leads</li>
+          </ul>
+
+          <p><strong>Note:</strong> Job credits are only allocated through active subscriptions. No free credits are provided automatically.</p>
+
+          <h3>Need Help?</h3>
+          <p>If you have any questions about the KYC process or need assistance uploading documents, please contact our support team.</p>
+        `,
+        ctaText: 'Complete KYC Verification',
+        ctaUrl: 'https://trustbuild.uk/dashboard/contractor/kyc',
+        footerText: 'Welcome to the TrustBuild contractor community! Complete your verification to get started.'
+      });
+
+      await emailService.sendMail(mailOptions);
+
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to send contractor approval email to ${contractorData.email}:`, error);
       return false;
     }
   };
@@ -315,6 +390,7 @@ export const createEmailNotificationService = () => {
 
   return {
     sendContractorWelcomeEmail,
+    sendContractorApprovalEmail,
     sendCustomerWelcomeEmail,
     sendSubscriptionInvoiceEmail,
     sendJobAccessInvoiceEmail,
@@ -326,6 +402,7 @@ export const createEmailNotificationService = () => {
 // Export individual functions for easy importing
 export const {
   sendContractorWelcomeEmail,
+  sendContractorApprovalEmail,
   sendCustomerWelcomeEmail,
   sendSubscriptionInvoiceEmail,
   sendJobAccessInvoiceEmail,

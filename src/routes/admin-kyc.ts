@@ -121,6 +121,8 @@ router.get(
           rejectionReason: kyc.rejectionReason,
           hasIdDocument: !!kyc.idDocPath,
           hasUtilityBill: !!kyc.utilityDocPath,
+          hasInsurance: !!kyc.insuranceDocPath,
+          hasCompanyDoc: !!kyc.companyDocPath,
           companyNumber: kyc.companyNumber,
         },
       },
@@ -135,15 +137,26 @@ router.post(
   upload.fields([
     { name: 'idDocument', maxCount: 1 },
     { name: 'utilityBill', maxCount: 1 },
+    { name: 'insuranceDoc', maxCount: 1 },
+    { name: 'companyDoc', maxCount: 1 },
   ]),
   catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     const { companyNumber } = req.body;
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
+    // ID document and utility bill are mandatory
     if (!files.idDocument || !files.utilityBill) {
       return res.status(400).json({
         status: 'error',
-        message: 'Both ID document and utility bill are required',
+        message: 'ID document and utility bill (proof of address) are required',
+      });
+    }
+
+    // Insurance document is now mandatory for contractor verification
+    if (!files.insuranceDoc) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Public liability insurance certificate is required',
       });
     }
 
@@ -174,6 +187,8 @@ router.post(
       update: {
         idDocPath: files.idDocument[0].path,
         utilityDocPath: files.utilityBill[0].path,
+        insuranceDocPath: files.insuranceDoc?.[0]?.path,
+        companyDocPath: files.companyDoc?.[0]?.path,
         companyNumber,
         status: 'SUBMITTED',
         submittedAt: new Date(),
@@ -183,6 +198,8 @@ router.post(
         contractorId: contractor.id,
         idDocPath: files.idDocument[0].path,
         utilityDocPath: files.utilityBill[0].path,
+        insuranceDocPath: files.insuranceDoc?.[0]?.path,
+        companyDocPath: files.companyDoc?.[0]?.path,
         companyNumber,
         status: 'SUBMITTED',
         submittedAt: new Date(),
@@ -190,12 +207,13 @@ router.post(
       },
     });
 
-    // Activate account when KYC is submitted (was paused on registration)
+    // Keep account PAUSED until admin approves KYC
+    // Only update status to indicate KYC is under review
     await prisma.contractor.update({
       where: { id: contractor.id },
       data: {
-        accountStatus: 'ACTIVE',
-        status: 'PENDING', // Pending admin review
+        status: 'PENDING', // Pending admin KYC review
+        accountStatus: 'PAUSED', // Remains paused until KYC approval
       },
     });
 
@@ -224,7 +242,7 @@ router.post(
 
     res.status(200).json({
       status: 'success',
-      message: 'KYC documents uploaded successfully. Your account is now active pending admin review.',
+      message: 'KYC documents uploaded successfully. Our team will review your documents and notify you once approved. Your account will be activated after KYC approval.',
       data: {
         kyc: {
           id: kyc.id,

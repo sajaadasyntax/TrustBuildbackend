@@ -301,14 +301,16 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     data: {
       profileApproved: approved,
       status: approved ? 'VERIFIED' : 'REJECTED',
-      // Set account to ACTIVE when approved (was PAUSED during registration)
-      accountStatus: approved ? 'ACTIVE' : contractor.accountStatus,
+      // Keep account PAUSED when approved - it will be activated after KYC verification
+      // Only reject status changes accountStatus to rejected state
+      accountStatus: approved ? 'PAUSED' : 'SUSPENDED',
     },
   });
 
   // If approving the contractor, create/update KYC record with 14-day deadline
+  let kycDeadline: Date | undefined;
   if (approved) {
-    const kycDeadline = new Date();
+    kycDeadline = new Date();
     kycDeadline.setDate(kycDeadline.getDate() + 14); // 14 days from now
 
     if (contractor.kyc) {
@@ -330,6 +332,21 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
         },
       });
     }
+
+    // Send approval email to contractor with KYC instructions
+    try {
+      const { sendContractorApprovalEmail } = await import('../services/emailNotificationService');
+      await sendContractorApprovalEmail({
+        name: contractor.user.name,
+        email: contractor.user.email,
+        businessName: contractor.businessName || undefined,
+        kycDeadline: kycDeadline,
+      });
+      console.log(`✅ Sent approval email to contractor: ${contractor.user.email}`);
+    } catch (error) {
+      console.error(`❌ Failed to send approval email to contractor ${contractor.user.email}:`, error);
+      // Don't fail the approval if email fails - log it for manual follow-up
+    }
   }
 
   // Log the admin action to activity log
@@ -338,24 +355,22 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     action: approved ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
     entityType: 'Contractor',
     entityId: contractor.id,
-    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${approved ? ' - 14-day KYC deadline set' : ''}${reason ? `: ${reason}` : ''}`,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${approved ? ' - 14-day KYC deadline set, approval email sent' : ''}${reason ? `: ${reason}` : ''}`,
     diff: {
-      before: { profileApproved: contractor.profileApproved, status: contractor.status },
-      after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED' },
+      before: { profileApproved: contractor.profileApproved, status: contractor.status, accountStatus: contractor.accountStatus },
+      after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED', accountStatus: approved ? 'PAUSED' : 'SUSPENDED' },
       reason,
     },
     ipAddress: getClientIp(req),
     userAgent: getClientUserAgent(req),
   });
 
-  // TODO: Send notification email to contractor
-
   res.status(200).json({
     status: 'success',
     data: {
       contractor: updatedContractor,
     },
-    message: `Contractor ${approved ? 'approved' : 'rejected'} successfully`,
+    message: `Contractor ${approved ? 'approved and notified via email. Account will remain PAUSED until KYC verification is complete' : 'rejected'} successfully`,
   });
 });
 

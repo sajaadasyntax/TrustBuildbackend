@@ -558,13 +558,21 @@ export const deleteMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
 export const addPortfolioItem = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const contractor = await prisma.contractor.findUnique({
     where: { userId: req.user!.id },
+    include: {
+      portfolio: true,
+    },
   });
 
   if (!contractor) {
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  const { title, description, imageUrl, projectDate } = req.body;
+  // Enforce maximum of 20 portfolio items (work photos)
+  if (contractor.portfolio.length >= 20) {
+    return next(new AppError('Maximum of 20 portfolio items allowed. Please delete some existing items before adding new ones.', 400));
+  }
+
+  const { title, description, imageUrl, cloudinaryId, projectDate } = req.body;
 
   const portfolioItem = await prisma.portfolioItem.create({
     data: {
@@ -572,6 +580,7 @@ export const addPortfolioItem = catchAsync(async (req: AuthenticatedRequest, res
       title,
       description,
       imageUrl,
+      cloudinaryId,
       projectDate: projectDate ? new Date(projectDate) : undefined,
     },
   });
@@ -581,6 +590,7 @@ export const addPortfolioItem = catchAsync(async (req: AuthenticatedRequest, res
     data: {
       portfolioItem,
     },
+    message: `Portfolio item added successfully. You have ${contractor.portfolio.length + 1} of 20 items.`,
   });
 });
 
