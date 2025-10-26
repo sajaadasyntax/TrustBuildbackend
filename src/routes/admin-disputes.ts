@@ -1,6 +1,6 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { PrismaClient, DisputeStatus, DisputeResolution } from '@prisma/client';
-import { authenticateAdmin } from '../middleware/adminAuth';
+import { protectAdmin, requirePermission, AdminAuthRequest } from '../middleware/adminAuth';
 import { AdminPermission } from '../config/permissions';
 import { disputeService } from '../services/disputeService';
 import multer from 'multer';
@@ -18,15 +18,15 @@ const upload = multer({
 });
 
 // Middleware to check dispute permissions
-const requireDisputeRead = authenticateAdmin([AdminPermission.DISPUTES_READ]);
-const requireDisputeWrite = authenticateAdmin([AdminPermission.DISPUTES_WRITE]);
-const requireDisputeResolve = authenticateAdmin([AdminPermission.DISPUTES_RESOLVE]);
+const requireDisputeRead = [protectAdmin, requirePermission(AdminPermission.DISPUTES_READ)];
+const requireDisputeWrite = [protectAdmin, requirePermission(AdminPermission.DISPUTES_WRITE)];
+const requireDisputeResolve = [protectAdmin, requirePermission(AdminPermission.DISPUTES_RESOLVE)];
 
 /**
  * Get all disputes with filters
  * GET /api/admin/disputes
  */
-router.get('/', requireDisputeRead, async (req, res) => {
+router.get('/', requireDisputeRead, async (req: AdminAuthRequest, res: Response) => {
   try {
     const { status, type, priority, search } = req.query;
 
@@ -48,7 +48,7 @@ router.get('/', requireDisputeRead, async (req, res) => {
  * Get dispute statistics
  * GET /api/admin/disputes/stats
  */
-router.get('/stats', requireDisputeRead, async (req, res) => {
+router.get('/stats', requireDisputeRead, async (req: AdminAuthRequest, res: Response) => {
   try {
     const stats = await disputeService.getDisputeStats();
     res.json(stats);
@@ -62,7 +62,7 @@ router.get('/stats', requireDisputeRead, async (req, res) => {
  * Get a single dispute with full details
  * GET /api/admin/disputes/:id
  */
-router.get('/:id', requireDisputeRead, async (req, res) => {
+router.get('/:id', requireDisputeRead, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
 
@@ -82,7 +82,7 @@ router.get('/:id', requireDisputeRead, async (req, res) => {
  * Update dispute status
  * PATCH /api/admin/disputes/:id/status
  */
-router.patch('/:id/status', requireDisputeWrite, async (req, res) => {
+router.patch('/:id/status', requireDisputeWrite, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const { status } = req.body;
@@ -118,7 +118,7 @@ router.patch('/:id/status', requireDisputeWrite, async (req, res) => {
  * Update dispute priority
  * PATCH /api/admin/disputes/:id/priority
  */
-router.patch('/:id/priority', requireDisputeWrite, async (req, res) => {
+router.patch('/:id/priority', requireDisputeWrite, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const { priority } = req.body;
@@ -154,7 +154,7 @@ router.patch('/:id/priority', requireDisputeWrite, async (req, res) => {
  * Add admin response/note to dispute
  * POST /api/admin/disputes/:id/responses
  */
-router.post('/:id/responses', requireDisputeWrite, upload.array('attachments', 5), async (req, res) => {
+router.post('/:id/responses', requireDisputeWrite, upload.array('attachments', 5), async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const { message, isInternal } = req.body;
@@ -217,7 +217,7 @@ router.post('/:id/responses', requireDisputeWrite, upload.array('attachments', 5
  * Resolve a dispute
  * POST /api/admin/disputes/:id/resolve
  */
-router.post('/:id/resolve', requireDisputeResolve, async (req, res) => {
+router.post('/:id/resolve', requireDisputeResolve, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const adminId = req.admin!.id;
@@ -283,7 +283,7 @@ router.post('/:id/resolve', requireDisputeResolve, async (req, res) => {
  * Update admin notes on a dispute
  * PATCH /api/admin/disputes/:id/notes
  */
-router.patch('/:id/notes', requireDisputeWrite, async (req, res) => {
+router.patch('/:id/notes', requireDisputeWrite, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const { adminNotes } = req.body;
@@ -315,7 +315,7 @@ router.patch('/:id/notes', requireDisputeWrite, async (req, res) => {
  * Close a dispute without resolution
  * POST /api/admin/disputes/:id/close
  */
-router.post('/:id/close', requireDisputeWrite, async (req, res) => {
+router.post('/:id/close', requireDisputeWrite, async (req: AdminAuthRequest, res: Response) => {
   try {
     const disputeId = req.params.id;
     const { reason } = req.body;

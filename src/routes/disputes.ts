@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient, DisputeType, UserRole } from '@prisma/client';
-import { authenticateToken } from '../middleware/auth';
+import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { disputeService } from '../services/disputeService';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -20,9 +20,9 @@ const upload = multer({
  * Create a new dispute
  * POST /api/disputes
  */
-router.post('/', authenticateToken, upload.array('evidence', 10), async (req, res) => {
+router.post('/', protect, upload.array('evidence', 10), async (req: AuthenticatedRequest, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -112,9 +112,9 @@ router.post('/', authenticateToken, upload.array('evidence', 10), async (req, re
  * Get all disputes for the current user
  * GET /api/disputes
  */
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', protect, async (req: AuthenticatedRequest, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -131,9 +131,9 @@ router.get('/', authenticateToken, async (req, res) => {
  * Get a single dispute
  * GET /api/disputes/:id
  */
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', protect, async (req: AuthenticatedRequest, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const disputeId = req.params.id;
 
     if (!userId) {
@@ -178,9 +178,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
  * Add a response to a dispute
  * POST /api/disputes/:id/responses
  */
-router.post('/:id/responses', authenticateToken, upload.array('attachments', 5), async (req, res) => {
+router.post('/:id/responses', protect, upload.array('attachments', 5), async (req: AuthenticatedRequest, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.id;
     const disputeId = req.params.id;
     const { message } = req.body;
 

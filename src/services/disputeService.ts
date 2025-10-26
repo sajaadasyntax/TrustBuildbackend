@@ -1,5 +1,5 @@
 import { PrismaClient, DisputeType, DisputeStatus, DisputeResolution, UserRole, JobStatus } from '@prisma/client';
-import { notificationService } from './notificationService';
+import { createNotification } from './notificationService';
 
 const prisma = new PrismaClient();
 
@@ -368,7 +368,7 @@ export const disputeService = {
     for (const admin of admins) {
       const permissions = admin.permissions as string[] || [];
       if (permissions.includes('disputes:read')) {
-        await notificationService.createNotification({
+        await createNotification({
           userId: admin.id,
           title: 'New Dispute Created',
           message: `A new dispute has been created: ${dispute.title}`,
@@ -386,7 +386,7 @@ export const disputeService = {
       : job.customer.userId;
 
     if (notifyUserId) {
-      await notificationService.createNotification({
+      await createNotification({
         userId: notifyUserId,
         title: 'Dispute Created',
         message: `A dispute has been created for job: ${job.title}`,
@@ -418,7 +418,7 @@ export const disputeService = {
     }
 
     for (const userId of notifyUserIds) {
-      await notificationService.createNotification({
+      await createNotification({
         userId,
         title: 'New Dispute Response',
         message: `A new response has been added to dispute: ${dispute.title}`,
@@ -444,7 +444,7 @@ export const disputeService = {
     }
 
     for (const userId of notifyUserIds) {
-      await notificationService.createNotification({
+      await createNotification({
         userId,
         title: 'Dispute Resolved',
         message: `The dispute "${dispute.title}" has been resolved.`,
