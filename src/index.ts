@@ -41,6 +41,8 @@ import contentRoutes from './routes/content';
 import faqRoutes from './routes/faq';
 import disputeRoutes from './routes/disputes';
 import adminDisputeRoutes from './routes/admin-disputes';
+import adminEmailLogsRoutes from './routes/admin-email-logs';
+import adminErrorLogsRoutes from './routes/admin-error-logs';
 
 // Load environment variables
 dotenv.config();
@@ -189,6 +191,8 @@ app.use('/api/admin/payments', adminPaymentsRoutes);
 app.use('/api/admin/invoices', adminInvoiceRoutesNew);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin/disputes', adminDisputeRoutes);
+app.use('/api/admin/email', adminEmailLogsRoutes);
+app.use('/api/admin/errors', adminErrorLogsRoutes);
 // General admin routes (catch-all, must be last)
 app.use('/api/admin', adminRoutes);
 

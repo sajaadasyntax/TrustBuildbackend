@@ -957,3 +957,54 @@ model PasswordReset {
   @@index([expiresAt])
   @@map("password_resets")
 }
+
+// Email Activity Logs
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model EmailLog {
+  id        String      @id @default(cuid())
+  recipient String
+  subject   String
+  type      String // "password_reset", "contractor_approval", "kyc_update", etc.
+  status    EmailStatus @default(PENDING)
+  error     String?     @db.Text
+  sentAt    DateTime    @default(now())
+  metadata  Json? // Additional email metadata
+
+  @@index([recipient])
+  @@index([status])
+  @@index([type])
+  @@index([sentAt])
+  @@map("email_logs")
+}
+
+// System Error Logs
+enum ErrorLevel {
+  ERROR
+  WARNING
+  INFO
+}
+
+model ErrorLog {
+  id         String     @id @default(cuid())
+  level      ErrorLevel @default(ERROR)
+  source     String // "webhook", "payment_api", "email_service", "database", etc.
+  message    String     @db.Text
+  stack      String?    @db.Text
+  endpoint   String?
+  method     String?
+  statusCode Int?
+  userId     String?
+  metadata   Json? // Additional error context
+  createdAt  DateTime   @default(now())
+
+  @@index([level])
+  @@index([source])
+  @@index([statusCode])
+  @@index([createdAt])
+  @@map("error_logs")
+}
