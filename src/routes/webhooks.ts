@@ -134,12 +134,10 @@ async function sendPaymentFailedNotification(user: any, paymentDetails: any): Pr
       import('../services/notificationService').then(({ createPaymentFailedNotification }) => {
         createPaymentFailedNotification(
           user.id,
-          paymentDetails.paymentId || 'unknown',
           paymentDetails.amount || 0,
-          paymentDetails.reason || 'Payment processing failed',
-          paymentDetails.retryUrl
-        ).catch(err => console.error('Failed to create payment failed notification:', err));
-      }).catch(err => console.error('Failed to import notification service:', err));
+          paymentDetails.reason || 'Payment processing failed'
+        );
+      }).catch((err: any) => console.error('Failed to create payment failed notification:', err));
     } catch (err) {
       console.error('Error creating payment failed notification:', err);
       // Don't throw - this shouldn't block the webhook process

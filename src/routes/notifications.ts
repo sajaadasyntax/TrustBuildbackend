@@ -1,5 +1,5 @@
 import express from 'express';
-import { protectRoute } from '../middleware/auth';
+import { protect } from '../middleware/auth';
 import * as notificationService from '../services/notificationService';
 
 const router = express.Router();
@@ -8,7 +8,7 @@ const router = express.Router();
  * Get user notifications
  * GET /api/notifications
  */
-router.get('/', protectRoute, async (req, res) => {
+router.get('/', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const unreadOnly = req.query.unreadOnly === 'true';
@@ -39,7 +39,7 @@ router.get('/', protectRoute, async (req, res) => {
  * Get unread count
  * GET /api/notifications/unread-count
  */
-router.get('/unread-count', protectRoute, async (req, res) => {
+router.get('/unread-count', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const result = await notificationService.getUserNotifications(userId, {
@@ -65,7 +65,7 @@ router.get('/unread-count', protectRoute, async (req, res) => {
  * Mark notification as read
  * PATCH /api/notifications/:id/read
  */
-router.patch('/:id/read', protectRoute, async (req, res) => {
+router.patch('/:id/read', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const notificationId = req.params.id;
@@ -93,7 +93,7 @@ router.patch('/:id/read', protectRoute, async (req, res) => {
  * Mark all notifications as read
  * PATCH /api/notifications/read-all
  */
-router.patch('/read-all', protectRoute, async (req, res) => {
+router.patch('/read-all', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
 
@@ -117,7 +117,7 @@ router.patch('/read-all', protectRoute, async (req, res) => {
  * Delete notification
  * DELETE /api/notifications/:id
  */
-router.delete('/:id', protectRoute, async (req, res) => {
+router.delete('/:id', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const notificationId = req.params.id;
@@ -142,7 +142,7 @@ router.delete('/:id', protectRoute, async (req, res) => {
  * Delete all notifications
  * DELETE /api/notifications
  */
-router.delete('/', protectRoute, async (req, res) => {
+router.delete('/', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
 
@@ -166,7 +166,7 @@ router.delete('/', protectRoute, async (req, res) => {
  * Subscribe to push notifications
  * POST /api/notifications/push/subscribe
  */
-router.post('/push/subscribe', protectRoute, async (req, res) => {
+router.post('/push/subscribe', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const { subscription, deviceType } = req.body;
@@ -205,7 +205,7 @@ router.post('/push/subscribe', protectRoute, async (req, res) => {
  * Unsubscribe from push notifications
  * POST /api/notifications/push/unsubscribe
  */
-router.post('/push/unsubscribe', protectRoute, async (req, res) => {
+router.post('/push/unsubscribe', protect, async (req, res) => {
   try {
     const userId = req.user!.id;
     const { endpoint } = req.body;

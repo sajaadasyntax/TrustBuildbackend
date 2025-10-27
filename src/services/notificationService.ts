@@ -378,19 +378,19 @@ export async function notifyAdminsNewContractor(contractorId: string, contractor
   try {
     // Get all admin users
     const admins = await prisma.admin.findMany({
-      select: { userId: true },
+      select: { id: true },
     });
 
-    const notifications = admins.map(admin => ({
-      userId: admin.userId,
-      title: 'New Contractor Registration',
-      message: `${contractorName} has registered and submitted documents for verification`,
-      type: 'INFO' as NotificationType,
-      actionLink: `/admin/contractors?id=${contractorId}`,
-      actionText: 'Review Contractor',
-    }));
-
-    await createBulkNotifications(notifications);
+    // For now, we'll create notifications for admin IDs directly
+    // In a real implementation, you might want to create a separate notification system for admins
+    // or link admins to users
+    console.log(`New contractor ${contractorName} registered. Notify admins:`, admins.map(a => a.id));
+    
+    // TODO: Implement admin notification system
+    // This could be:
+    // 1. Email notifications to admins
+    // 2. A separate admin notification table
+    // 3. Dashboard alerts
   } catch (error) {
     console.error('Error notifying admins of new contractor:', error);
   }
@@ -486,6 +486,117 @@ export async function notifyNewReview(
     type: 'SUCCESS',
     actionLink: '/dashboard/reviews',
     actionText: 'View Reviews',
+  });
+}
+
+// Additional notification functions for existing code
+export async function createContractorSelectedNotification(userId: string, jobTitle: string) {
+  await createNotification({
+    userId,
+    title: 'Contractor Selected',
+    message: `You have been selected for the job: ${jobTitle}`,
+    type: 'SUCCESS',
+    actionLink: '/dashboard/contractor/current-jobs',
+    actionText: 'View Job',
+  });
+}
+
+export async function createFinalPriceProposedNotification(userId: string, jobTitle: string, amount: number) {
+  await createNotification({
+    userId,
+    title: 'Final Price Proposed',
+    message: `A final price of £${amount} has been proposed for "${jobTitle}"`,
+    type: 'INFO',
+    actionLink: '/dashboard/client/current-jobs',
+    actionText: 'Review Price',
+  });
+}
+
+export async function createJobCompletedNotification(userId: string, jobTitle: string) {
+  await createNotification({
+    userId,
+    title: 'Job Completed',
+    message: `The job "${jobTitle}" has been marked as completed`,
+    type: 'SUCCESS',
+    actionLink: '/dashboard/job-history',
+    actionText: 'View Job',
+  });
+}
+
+export async function createJobStatusChangedNotification(userId: string, jobTitle: string, newStatus: string) {
+  await createNotification({
+    userId,
+    title: 'Job Status Updated',
+    message: `Job "${jobTitle}" status changed to ${newStatus}`,
+    type: 'INFO',
+    actionLink: '/dashboard/current-jobs',
+    actionText: 'View Job',
+  });
+}
+
+export async function createCommissionDueNotification(userId: string, amount: number) {
+  await createNotification({
+    userId,
+    title: 'Commission Due',
+    message: `You have a commission payment of £${amount} due`,
+    type: 'COMMISSION_DUE',
+    actionLink: '/dashboard/contractor/commissions',
+    actionText: 'View Commissions',
+  });
+}
+
+export async function createJobStartedNotification(userId: string, jobTitle: string) {
+  await createNotification({
+    userId,
+    title: 'Job Started',
+    message: `Work has begun on "${jobTitle}"`,
+    type: 'INFO',
+    actionLink: '/dashboard/current-jobs',
+    actionText: 'View Job',
+  });
+}
+
+export async function createReviewRequestNotification(userId: string, jobTitle: string) {
+  await createNotification({
+    userId,
+    title: 'Review Request',
+    message: `Please leave a review for "${jobTitle}"`,
+    type: 'INFO',
+    actionLink: '/dashboard/reviews',
+    actionText: 'Leave Review',
+  });
+}
+
+export async function createPaymentFailedNotification(userId: string, amount: number, reason?: string) {
+  await createNotification({
+    userId,
+    title: 'Payment Failed',
+    message: `Payment of £${amount} failed${reason ? `: ${reason}` : ''}`,
+    type: 'ERROR',
+    actionLink: '/dashboard/payments',
+    actionText: 'Retry Payment',
+  });
+}
+
+export async function createAccountSuspendedNotification(userId: string, reason?: string) {
+  await createNotification({
+    userId,
+    title: 'Account Suspended',
+    message: `Your account has been suspended${reason ? `: ${reason}` : ''}`,
+    type: 'ERROR',
+    actionLink: '/contact',
+    actionText: 'Contact Support',
+  });
+}
+
+export async function createFinalPriceConfirmationReminderNotification(userId: string, jobTitle: string) {
+  await createNotification({
+    userId,
+    title: 'Final Price Confirmation Reminder',
+    message: `Please confirm the final price for "${jobTitle}"`,
+    type: 'WARNING',
+    actionLink: '/dashboard/client/current-jobs',
+    actionText: 'Confirm Price',
   });
 }
 
