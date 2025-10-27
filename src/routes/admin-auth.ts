@@ -301,6 +301,20 @@ router.post(
       });
     }
 
+    // Prevent creating additional Main Super Admins - only one can exist
+    if (req.body.isMainSuperAdmin === true) {
+      const existingMainSuperAdmin = await prisma.admin.findFirst({
+        where: { isMainSuperAdmin: true },
+      });
+
+      if (existingMainSuperAdmin) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'A Main Super Admin already exists. Only one Main Super Admin is allowed.',
+        });
+      }
+    }
+
     // For regular admins (non-SUPER_ADMIN), permissions are required
     if (role !== 'SUPER_ADMIN' && (!permissions || !Array.isArray(permissions) || permissions.length === 0)) {
       return res.status(400).json({
