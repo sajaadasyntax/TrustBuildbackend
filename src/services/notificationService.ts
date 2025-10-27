@@ -315,7 +315,7 @@ export async function sendPushNotification(userId: string, payload: PushNotifica
 
     // Send to all subscriptions
     const results = await Promise.allSettled(
-      subscriptions.map(async (sub) => {
+      subscriptions.map(async (sub: any) => {
         try {
           await webpush.sendNotification(
             {
@@ -341,8 +341,8 @@ export async function sendPushNotification(userId: string, payload: PushNotifica
       })
     );
 
-    const successful = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected').length;
+    const successful = results.filter((r: any) => r.status === 'fulfilled').length;
+    const failed = results.filter((r: any) => r.status === 'rejected').length;
 
     console.log(`Push notifications sent: ${successful} successful, ${failed} failed`);
   } catch (error) {
@@ -490,77 +490,128 @@ export async function notifyNewReview(
 }
 
 // Additional notification functions for existing code
-export async function createContractorSelectedNotification(userId: string, jobTitle: string) {
+export async function createContractorSelectedNotification(
+  userId: string, 
+  contractorId: string, 
+  jobId: string, 
+  jobTitle: string, 
+  contractorName: string
+) {
   await createNotification({
     userId,
     title: 'Contractor Selected',
-    message: `You have been selected for the job: ${jobTitle}`,
+    message: `${contractorName} has been selected for the job: ${jobTitle}`,
     type: 'SUCCESS',
-    actionLink: '/dashboard/contractor/current-jobs',
+    actionLink: `/dashboard/client/jobs/${jobId}`,
     actionText: 'View Job',
   });
 }
 
-export async function createFinalPriceProposedNotification(userId: string, jobTitle: string, amount: number) {
+export async function createFinalPriceProposedNotification(
+  userId: string, 
+  finalPrice: number, 
+  contractorName: string, 
+  isCustomer: boolean
+) {
+  const message = isCustomer 
+    ? `A final price of £${finalPrice} has been proposed by ${contractorName}`
+    : `You proposed a final price of £${finalPrice}`;
+    
   await createNotification({
     userId,
     title: 'Final Price Proposed',
-    message: `A final price of £${amount} has been proposed for "${jobTitle}"`,
+    message,
     type: 'INFO',
-    actionLink: '/dashboard/client/current-jobs',
+    actionLink: isCustomer ? '/dashboard/client/current-jobs' : '/dashboard/contractor/current-jobs',
     actionText: 'Review Price',
   });
 }
 
-export async function createJobCompletedNotification(userId: string, jobTitle: string) {
+export async function createJobCompletedNotification(
+  userId: string, 
+  jobTitle: string, 
+  amount: number, 
+  isCustomer: boolean
+) {
+  const message = isCustomer 
+    ? `The job "${jobTitle}" has been completed. Final amount: £${amount}`
+    : `You completed the job "${jobTitle}". Final amount: £${amount}`;
+    
   await createNotification({
     userId,
     title: 'Job Completed',
-    message: `The job "${jobTitle}" has been marked as completed`,
+    message,
     type: 'SUCCESS',
     actionLink: '/dashboard/job-history',
     actionText: 'View Job',
   });
 }
 
-export async function createJobStatusChangedNotification(userId: string, jobTitle: string, newStatus: string) {
+export async function createJobStatusChangedNotification(
+  userId: string, 
+  jobTitle: string, 
+  oldStatus: string, 
+  newStatus: string, 
+  isCustomer: boolean
+) {
+  const message = `Job "${jobTitle}" status changed from ${oldStatus} to ${newStatus}`;
+  
   await createNotification({
     userId,
     title: 'Job Status Updated',
-    message: `Job "${jobTitle}" status changed to ${newStatus}`,
+    message,
     type: 'INFO',
-    actionLink: '/dashboard/current-jobs',
+    actionLink: isCustomer ? '/dashboard/client/current-jobs' : '/dashboard/contractor/current-jobs',
     actionText: 'View Job',
   });
 }
 
-export async function createCommissionDueNotification(userId: string, amount: number) {
+export async function createCommissionDueNotification(
+  userId: string, 
+  commissionId: string,
+  jobTitle: string, 
+  amount: number, 
+  dueDate: Date
+) {
   await createNotification({
     userId,
     title: 'Commission Due',
-    message: `You have a commission payment of £${amount} due`,
+    message: `You have a commission payment of £${amount} due for "${jobTitle}" (Due: ${dueDate.toLocaleDateString()})`,
     type: 'COMMISSION_DUE',
     actionLink: '/dashboard/contractor/commissions',
     actionText: 'View Commissions',
   });
 }
 
-export async function createJobStartedNotification(userId: string, jobTitle: string) {
+export async function createJobStartedNotification(
+  userId: string, 
+  jobTitle: string, 
+  contractorName: string, 
+  isCustomer: boolean
+) {
+  const message = isCustomer 
+    ? `Work has begun on "${jobTitle}" by ${contractorName}`
+    : `You started work on "${jobTitle}"`;
+    
   await createNotification({
     userId,
     title: 'Job Started',
-    message: `Work has begun on "${jobTitle}"`,
+    message,
     type: 'INFO',
     actionLink: '/dashboard/current-jobs',
     actionText: 'View Job',
   });
 }
 
-export async function createReviewRequestNotification(userId: string, jobTitle: string) {
+export async function createReviewRequestNotification(
+  userId: string, 
+  jobTitle: string, 
+  contractorName: string
+) {
   await createNotification({
     userId,
     title: 'Review Request',
-    message: `Please leave a review for "${jobTitle}"`,
+    message: `Please leave a review for "${jobTitle}" with ${contractorName}`,
     type: 'INFO',
     actionLink: '/dashboard/reviews',
     actionText: 'Leave Review',
@@ -578,24 +629,32 @@ export async function createPaymentFailedNotification(userId: string, amount: nu
   });
 }
 
-export async function createAccountSuspendedNotification(userId: string, reason?: string) {
+export async function createAccountSuspendedNotification(userId: string, reason?: string, commissionId?: string) {
+  const message = `Your account has been suspended${reason ? `: ${reason}` : ''}${commissionId ? ` (Commission ID: ${commissionId})` : ''}`;
+  
   await createNotification({
     userId,
     title: 'Account Suspended',
-    message: `Your account has been suspended${reason ? `: ${reason}` : ''}`,
+    message,
     type: 'ERROR',
     actionLink: '/contact',
     actionText: 'Contact Support',
   });
 }
 
-export async function createFinalPriceConfirmationReminderNotification(userId: string, jobTitle: string) {
+export async function createFinalPriceConfirmationReminderNotification(
+  userId: string, 
+  jobId: string,
+  jobTitle: string, 
+  amount: number, 
+  hoursRemaining: number
+) {
   await createNotification({
     userId,
     title: 'Final Price Confirmation Reminder',
-    message: `Please confirm the final price for "${jobTitle}"`,
+    message: `Please confirm the final price of £${amount} for "${jobTitle}" (${hoursRemaining} hours remaining)`,
     type: 'WARNING',
-    actionLink: '/dashboard/client/current-jobs',
+    actionLink: `/dashboard/client/jobs/${jobId}`,
     actionText: 'Confirm Price',
   });
 }

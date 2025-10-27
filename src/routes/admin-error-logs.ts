@@ -122,7 +122,7 @@ router.get(
       }),
     ]);
 
-    const topErrorSources = errorsBySource.map((item) => ({
+    const topErrorSources = errorsBySource.map((item: any) => ({
       source: item.source,
       count: item._count.source,
     }));

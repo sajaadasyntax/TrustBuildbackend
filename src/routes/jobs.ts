@@ -2025,8 +2025,6 @@ export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
     const { createFinalPriceProposedNotification } = await import('../services/notificationService');
     await createFinalPriceProposedNotification(
       job.customer.userId,
-      jobId,
-      job.title,
       finalPrice,
       contractor.user.name,
       true // isCustomer
@@ -2305,7 +2303,6 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       // Notify customer
       await createJobCompletedNotification(
         job.customer.userId,
-        jobId,
         job.title,
         Number(job.contractorProposedAmount),
         true // isCustomer
@@ -2314,7 +2311,6 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       // Notify contractor
       await createJobCompletedNotification(
         job.wonByContractor?.user?.id || '',
-        jobId,
         job.title,
         Number(job.contractorProposedAmount),
         false // isCustomer
@@ -2323,7 +2319,6 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       // Send status change notifications
       await createJobStatusChangedNotification(
         job.customer.userId,
-        jobId,
         job.title,
         'AWAITING_FINAL_PRICE_CONFIRMATION',
         'COMPLETED',
@@ -2332,7 +2327,6 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       
       await createJobStatusChangedNotification(
         job.wonByContractor?.user?.id || '',
-        jobId,
         job.title,
         'AWAITING_FINAL_PRICE_CONFIRMATION',
         'COMPLETED',
@@ -2807,7 +2801,6 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
     // Notify customer
     await createJobStartedNotification(
       job.customer.userId,
-      jobId,
       job.title,
       job.wonByContractor?.user?.name || 'Contractor',
       true // isCustomer
@@ -2816,7 +2809,6 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
     // Notify contractor
     await createJobStartedNotification(
       job.wonByContractor?.user?.id || '',
-      jobId,
       job.title,
       job.wonByContractor?.user?.name || 'Contractor',
       false // isCustomer
@@ -2825,7 +2817,6 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
     // Send status change notifications
     await createJobStatusChangedNotification(
       job.customer.userId,
-      jobId,
       job.title,
       'POSTED',
       'IN_PROGRESS',
@@ -2834,7 +2825,6 @@ export const confirmContractorStart = catchAsync(async (req: AuthenticatedReques
     
     await createJobStatusChangedNotification(
       job.wonByContractor?.user?.id || '',
-      jobId,
       job.title,
       'POSTED',
       'IN_PROGRESS',
@@ -3137,7 +3127,6 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
     const { createReviewRequestNotification } = await import('../services/notificationService');
     await createReviewRequestNotification(
       job.customer.user.id,
-      job.id,
       job.title,
       contractor.user?.name || 'Your contractor'
     );
