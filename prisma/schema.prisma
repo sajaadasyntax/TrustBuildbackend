@@ -121,10 +121,11 @@ model User {
   updatedAt            DateTime @updatedAt
 
   // Relationships
-  customer       Customer?
-  contractor     Contractor?
-  notifications  Notification[]
-  passwordResets PasswordReset[]
+  customer          Customer?
+  contractor        Contractor?
+  notifications     Notification[]
+  passwordResets    PasswordReset[]
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -644,6 +645,25 @@ model Notification {
   @@index([createdAt])
   @@index([type])
   @@map("notifications")
+}
+
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @db.Text
+  p256dh     String   @db.Text
+  auth       String   @db.Text
+  deviceType String? // "web", "android", "ios"
+  userAgent  String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model AdminAction {
