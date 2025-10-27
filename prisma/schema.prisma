@@ -121,9 +121,10 @@ model User {
   updatedAt            DateTime @updatedAt
 
   // Relationships
-  customer      Customer?
-  contractor    Contractor?
-  notifications Notification[]
+  customer       Customer?
+  contractor     Contractor?
+  notifications  Notification[]
+  passwordResets PasswordReset[]
 
   @@map("users")
 }
@@ -196,6 +197,11 @@ model Contractor {
   frozenAt          DateTime?
   frozenBy          String? // Admin ID who froze account
   frozenReason      String?                 @db.Text
+
+  // Manual approval (bypass KYC)
+  manuallyApprovedBy   String? // Admin ID who manually approved
+  manualApprovalReason String?   @db.Text
+  manualApprovalDate   DateTime?
 
   // Stats
   jobsCompleted   Int   @default(0)
@@ -670,18 +676,19 @@ enum AdminRole {
 }
 
 model Admin {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String
-  role         AdminRole
-  permissions  Json? // Array of permission strings: ["users:read", "users:write", "jobs:read", etc.]
-  twoFAEnabled Boolean   @default(false)
-  twoFASecret  String? // encrypted TOTP secret
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  name              String
+  role              AdminRole
+  permissions       Json? // Array of permission strings: ["users:read", "users:write", "jobs:read", etc.]
+  twoFAEnabled      Boolean   @default(false)
+  twoFASecret       String? // encrypted TOTP secret
+  isActive          Boolean   @default(true)
+  isMainSuperAdmin  Boolean   @default(false) // Only one Main Super Admin who can manage other Super Admins
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   activityLogs    ActivityLog[]
   loginActivities LoginActivity[]
@@ -930,4 +937,23 @@ model DisputeResponse {
   @@index([userId])
   @@index([createdAt])
   @@map("dispute_responses")
+}
+
+// Password Reset System
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_resets")
 }

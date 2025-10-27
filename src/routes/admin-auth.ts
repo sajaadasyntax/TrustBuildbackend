@@ -220,6 +220,7 @@ router.get(
         role: true,
         permissions: true,
         isActive: true,
+        isMainSuperAdmin: true,
         twoFAEnabled: true,
         lastLoginAt: true,
         createdAt: true,
@@ -254,6 +255,7 @@ router.get(
         role: true,
         permissions: true,
         isActive: true,
+        isMainSuperAdmin: true,
         twoFAEnabled: true,
         lastLoginAt: true,
         createdAt: true,
@@ -288,6 +290,14 @@ router.post(
       return res.status(400).json({
         status: 'error',
         message: 'Invalid admin role',
+      });
+    }
+
+    // Only Main Super Admin can create new Super Admins
+    if (role === 'SUPER_ADMIN' && !req.admin!.isMainSuperAdmin) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Only the Main Super Admin can create new Super Admins',
       });
     }
 
@@ -410,10 +420,37 @@ router.delete(
       });
     }
 
-    const admin = await prisma.admin.findUnique({
+    const targetAdmin = await prisma.admin.findUnique({
       where: { id },
-      select: { email: true, role: true },
+      select: { 
+        email: true, 
+        role: true,
+        isMainSuperAdmin: true,
+      },
     });
+
+    if (!targetAdmin) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Admin not found',
+      });
+    }
+
+    // Prevent deletion of Main Super Admin
+    if (targetAdmin.isMainSuperAdmin) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'The Main Super Admin cannot be deleted',
+      });
+    }
+
+    // Only Main Super Admin can delete other Super Admins
+    if (targetAdmin.role === AdminRole.SUPER_ADMIN && !req.admin!.isMainSuperAdmin) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Only the Main Super Admin can delete other Super Admins',
+      });
+    }
 
     await prisma.admin.delete({
       where: { id },
@@ -424,7 +461,7 @@ router.delete(
       action: 'ADMIN_DELETE',
       entityType: 'Admin',
       entityId: id,
-      description: `Deleted admin: ${admin?.email}`,
+      description: `Deleted admin: ${targetAdmin.email}`,
       ipAddress: getClientIp(req),
       userAgent: getClientUserAgent(req),
     });

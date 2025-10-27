@@ -282,7 +282,7 @@ export const getPendingContractors = catchAsync(async (req: AdminAuthRequest, re
 // @route   PATCH /api/admin/contractors/:id/approve
 // @access  Private/Admin
 export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
-  const { approved, reason } = req.body;
+  const { approved, reason, bypassKyc } = req.body;
 
   const contractor = await prisma.contractor.findUnique({
     where: { id: req.params.id },
@@ -296,20 +296,37 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     return next(new AppError('Contractor not found', 404));
   }
 
+  // Prepare update data
+  const updateData: any = {
+    profileApproved: approved,
+    status: approved ? 'VERIFIED' : 'REJECTED',
+  };
+
+  // If bypassing KYC (manual approval), activate account immediately
+  if (approved && bypassKyc) {
+    if (!reason) {
+      return next(new AppError('Reason is required for manual approval bypassing KYC', 400));
+    }
+    updateData.accountStatus = 'ACTIVE';
+    updateData.manuallyApprovedBy = req.admin!.id;
+    updateData.manualApprovalReason = reason;
+    updateData.manualApprovalDate = new Date();
+  } else if (approved) {
+    // Regular approval - keep account PAUSED until KYC verification
+    updateData.accountStatus = 'PAUSED';
+  } else {
+    // Rejection
+    updateData.accountStatus = 'SUSPENDED';
+  }
+
   const updatedContractor = await prisma.contractor.update({
     where: { id: req.params.id },
-    data: {
-      profileApproved: approved,
-      status: approved ? 'VERIFIED' : 'REJECTED',
-      // Keep account PAUSED when approved - it will be activated after KYC verification
-      // Only reject status changes accountStatus to rejected state
-      accountStatus: approved ? 'PAUSED' : 'SUSPENDED',
-    },
+    data: updateData,
   });
 
-  // If approving the contractor, create/update KYC record with 14-day deadline
+  // If approving the contractor (and not bypassing KYC), create/update KYC record with 14-day deadline
   let kycDeadline: Date | undefined;
-  if (approved) {
+  if (approved && !bypassKyc) {
     kycDeadline = new Date();
     kycDeadline.setDate(kycDeadline.getDate() + 14); // 14 days from now
 
@@ -349,28 +366,73 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     }
   }
 
+  // If manual approval (bypassing KYC), send different email
+  if (approved && bypassKyc) {
+    try {
+      const { createEmailService, createServiceEmail } = await import('../services/emailService');
+      const emailService = createEmailService();
+      
+      const emailContent = createServiceEmail({
+        to: contractor.user.email,
+        subject: '✅ Account Approved - TrustBuild',
+        heading: 'Your Account Has Been Approved!',
+        body: `
+          <p>Hi ${contractor.user.name},</p>
+          <p>Great news! Your contractor account has been manually approved by our admin team.</p>
+          <p>Your account is now fully active and you can start accessing job opportunities.</p>
+          <p>Welcome to TrustBuild!</p>
+        `,
+        ctaText: 'Go to Dashboard',
+        ctaUrl: `${process.env.FRONTEND_URL}/dashboard`,
+      });
+
+      await emailService.sendMail(emailContent);
+      console.log(`✅ Sent manual approval email to contractor: ${contractor.user.email}`);
+    } catch (error) {
+      console.error(`❌ Failed to send manual approval email to contractor ${contractor.user.email}:`, error);
+      // Don't fail the approval if email fails
+    }
+  }
+
   // Log the admin action to activity log
+  const approvalType = bypassKyc ? 'MANUALLY_APPROVED_BYPASS_KYC' : 'APPROVED';
   await logActivity({
     adminId: req.admin!.id,
-    action: approved ? 'CONTRACTOR_APPROVED' : 'CONTRACTOR_REJECTED',
+    action: approved ? `CONTRACTOR_${approvalType}` : 'CONTRACTOR_REJECTED',
     entityType: 'Contractor',
     entityId: contractor.id,
-    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? 'approved' : 'rejected'}${approved ? ' - 14-day KYC deadline set, approval email sent' : ''}${reason ? `: ${reason}` : ''}`,
+    description: `Contractor ${contractor.businessName || contractor.user.name} ${approved ? (bypassKyc ? 'manually approved (bypassing KYC)' : 'approved - 14-day KYC deadline set') : 'rejected'}${reason ? `: ${reason}` : ''}`,
     diff: {
-      before: { profileApproved: contractor.profileApproved, status: contractor.status, accountStatus: contractor.accountStatus },
-      after: { profileApproved: approved, status: approved ? 'VERIFIED' : 'REJECTED', accountStatus: approved ? 'PAUSED' : 'SUSPENDED' },
+      before: { 
+        profileApproved: contractor.profileApproved, 
+        status: contractor.status, 
+        accountStatus: contractor.accountStatus 
+      },
+      after: { 
+        profileApproved: approved, 
+        status: approved ? 'VERIFIED' : 'REJECTED', 
+        accountStatus: updateData.accountStatus,
+        manualApproval: bypassKyc ? { by: req.admin!.id, reason, date: new Date() } : undefined
+      },
       reason,
+      bypassKyc,
     },
     ipAddress: getClientIp(req),
     userAgent: getClientUserAgent(req),
   });
+
+  const message = approved 
+    ? (bypassKyc 
+        ? 'Contractor manually approved and account activated. KYC verification bypassed.' 
+        : 'Contractor approved and notified via email. Account will remain PAUSED until KYC verification is complete')
+    : 'Contractor rejected successfully';
 
   res.status(200).json({
     status: 'success',
     data: {
       contractor: updatedContractor,
     },
-    message: `Contractor ${approved ? 'approved and notified via email. Account will remain PAUSED until KYC verification is complete' : 'rejected'} successfully`,
+    message,
   });
 });
 

@@ -7,8 +7,14 @@ const router = Router();
 
 // @desc    Get all contractors (public)
 // @route   GET /api/contractors
-// @access  Public
+// @access  Public (but restricted for CUSTOMER role)
 export const getAllContractors = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Block CUSTOMER role from browsing all contractors
+  // They should only see contractors who applied to their jobs
+  if (req.user && req.user.role === 'CUSTOMER') {
+    return next(new AppError('Customers cannot browse all contractors. You can view contractors who apply to your jobs.', 403));
+  }
+
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;

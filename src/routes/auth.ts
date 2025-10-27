@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { prisma } from '../config/database';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
@@ -396,11 +397,239 @@ export const updatePassword = catchAsync(async (req: AuthenticatedRequest, res: 
   createSendToken(updatedUser, 200, res);
 });
 
+// @desc    Request password reset
+// @route   POST /api/auth/forgot-password
+// @access  Public
+export const forgotPassword = catchAsync(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return next(new AppError('Please provide your email address', 400));
+  }
+
+  // Find user by email
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (!user) {
+    // Don't reveal whether user exists or not for security
+    return res.status(200).json({
+      status: 'success',
+      message: 'If an account with that email exists, a password reset link has been sent.',
+    });
+  }
+
+  // Generate reset token
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  // Set token expiration to 1 hour from now
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  // Delete any existing unused reset tokens for this user
+  await prisma.passwordReset.deleteMany({
+    where: {
+      userId: user.id,
+      used: false,
+    },
+  });
+
+  // Create password reset record
+  await prisma.passwordReset.create({
+    data: {
+      userId: user.id,
+      token: hashedToken,
+      expiresAt,
+    },
+  });
+
+  // Send reset email
+  try {
+    const { createEmailService, createServiceEmail } = await import('../services/emailService');
+    const emailService = createEmailService();
+    
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    
+    const emailContent = createServiceEmail({
+      to: user.email,
+      subject: 'Password Reset Request - TrustBuild',
+      heading: 'Reset Your Password',
+      body: `
+        <p>Hi ${user.name},</p>
+        <p>You requested to reset your password for your TrustBuild account.</p>
+        <p>Click the button below to reset your password. This link will expire in 1 hour.</p>
+        <p><strong>If you didn't request this, please ignore this email.</strong></p>
+      `,
+      ctaText: 'Reset Password',
+      ctaUrl: resetUrl,
+    });
+
+    await emailService.sendMail(emailContent);
+    
+    console.log(`✅ Password reset email sent to: ${user.email}`);
+  } catch (error) {
+    console.error('Failed to send password reset email:', error);
+    // Delete the reset token if email fails
+    await prisma.passwordReset.deleteMany({
+      where: {
+        userId: user.id,
+        token: hashedToken,
+      },
+    });
+    
+    return next(new AppError('Failed to send password reset email. Please try again later.', 500));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'If an account with that email exists, a password reset link has been sent.',
+  });
+});
+
+// @desc    Verify reset token validity
+// @route   POST /api/auth/verify-reset-token
+// @access  Public
+export const verifyResetToken = catchAsync(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return next(new AppError('Please provide a reset token', 400));
+  }
+
+  // Hash the token to compare with database
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  // Find valid reset token
+  const resetRecord = await prisma.passwordReset.findFirst({
+    where: {
+      token: hashedToken,
+      used: false,
+      expiresAt: {
+        gte: new Date(),
+      },
+    },
+    include: {
+      user: {
+        select: {
+          email: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!resetRecord) {
+    return next(new AppError('Invalid or expired reset token', 400));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      valid: true,
+      email: resetRecord.user.email,
+    },
+  });
+});
+
+// @desc    Reset password with token
+// @route   POST /api/auth/reset-password
+// @access  Public
+export const resetPassword = catchAsync(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const { token, newPassword, confirmPassword } = req.body;
+
+  if (!token || !newPassword || !confirmPassword) {
+    return next(new AppError('Please provide token, new password, and confirm password', 400));
+  }
+
+  if (newPassword !== confirmPassword) {
+    return next(new AppError('Passwords do not match', 400));
+  }
+
+  if (newPassword.length < 8) {
+    return next(new AppError('Password must be at least 8 characters long', 400));
+  }
+
+  // Hash the token to compare with database
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  // Find valid reset token
+  const resetRecord = await prisma.passwordReset.findFirst({
+    where: {
+      token: hashedToken,
+      used: false,
+      expiresAt: {
+        gte: new Date(),
+      },
+    },
+  });
+
+  if (!resetRecord) {
+    return next(new AppError('Invalid or expired reset token', 400));
+  }
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+  // Update user password
+  const user = await prisma.user.update({
+    where: { id: resetRecord.userId },
+    data: { password: hashedPassword },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+  });
+
+  // Mark token as used
+  await prisma.passwordReset.update({
+    where: { id: resetRecord.id },
+    data: {
+      used: true,
+      usedAt: new Date(),
+    },
+  });
+
+  // Send confirmation email
+  try {
+    const { createEmailService, createServiceEmail } = await import('../services/emailService');
+    const emailService = createEmailService();
+    
+    const emailContent = createServiceEmail({
+      to: user.email,
+      subject: 'Password Changed Successfully - TrustBuild',
+      heading: 'Password Changed',
+      body: `
+        <p>Hi ${user.name},</p>
+        <p>Your password has been successfully changed.</p>
+        <p>If you didn't make this change, please contact support immediately.</p>
+      `,
+      ctaText: 'Login to Dashboard',
+      ctaUrl: `${process.env.FRONTEND_URL}/login`,
+    });
+
+    await emailService.sendMail(emailContent);
+  } catch (error) {
+    console.error('Failed to send password change confirmation email:', error);
+    // Don't fail the request if confirmation email fails
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Password has been reset successfully. You can now login with your new password.',
+  });
+});
+
 // Routes
 router.post('/register', register);
 router.post('/login', login);
 router.post('/logout', logout);
 router.get('/me', protect, getMe);
 router.patch('/update-password', protect, updatePassword);
+router.post('/forgot-password', forgotPassword);
+router.post('/verify-reset-token', verifyResetToken);
+router.post('/reset-password', resetPassword);
 
 export default router; 

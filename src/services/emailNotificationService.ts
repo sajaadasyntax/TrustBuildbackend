@@ -47,7 +47,7 @@ export const createEmailNotificationService = () => {
         `,
         ctaText: 'Visit TrustBuild',
         ctaUrl: 'https://trustbuild.uk',
-        footerText: 'Welcome to TrustBuild! We'll notify you as soon as your profile is approved.'
+        footerText: 'Welcome to TrustBuild! We\'ll notify you as soon as your profile is approved.'
       });
 
       await emailService.sendMail(mailOptions);

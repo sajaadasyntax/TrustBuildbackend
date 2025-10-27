@@ -13,6 +13,7 @@ export interface AdminAuthRequest extends Request {
     name: string;
     role: AdminRole;
     permissions: string[] | null;
+    isMainSuperAdmin?: boolean;
   };
 }
 
@@ -59,6 +60,7 @@ export const protectAdmin = catchAsync(
         role: true,
         permissions: true,
         isActive: true,
+        isMainSuperAdmin: true,
       },
     });
 
@@ -81,6 +83,7 @@ export const protectAdmin = catchAsync(
       name: admin.name,
       role: admin.role,
       permissions: admin.permissions as string[] | null,
+      isMainSuperAdmin: (admin as any).isMainSuperAdmin || false,
     };
     next();
   }
@@ -156,6 +159,11 @@ export const restrictToAdminRole = (...roles: AdminRole[]) => {
 // Helper to check if user is Super Admin
 export const isSuperAdmin = (req: AdminAuthRequest): boolean => {
   return req.admin?.role === AdminRole.SUPER_ADMIN;
+};
+
+// Helper to check if user is Main Super Admin
+export const isMainSuperAdmin = (req: AdminAuthRequest): boolean => {
+  return req.admin?.role === AdminRole.SUPER_ADMIN && (req.admin as any).isMainSuperAdmin === true;
 };
 
 // Helper to get client IP address

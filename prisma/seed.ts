@@ -14,16 +14,19 @@ async function main() {
   const superAdminPassword = await bcrypt.hash('SuperAdmin@2024!', 12);
   const superAdmin = await prisma.admin.upsert({
     where: { email: 'superadmin@trustbuild.uk' },
-    update: {},
+    update: {
+      isMainSuperAdmin: true, // Update existing admin to be Main Super Admin
+    },
     create: {
       email: 'superadmin@trustbuild.uk',
       passwordHash: superAdminPassword,
       name: 'Super Administrator',
       role: AdminRole.SUPER_ADMIN,
       isActive: true,
+      isMainSuperAdmin: true, // This is the Main Super Admin
     },
   });
-  console.log('  ✅ Super Admin created:', superAdmin.email);
+  console.log('  ✅ Main Super Admin created:', superAdmin.email);
 
   const financeAdminPassword = await bcrypt.hash('FinanceAdmin@2024!', 12);
   const financeAdmin = await prisma.admin.upsert({
