@@ -1,17 +1,17 @@
 -- AlterTable
-ALTER TABLE "admins" ADD COLUMN     "isMainSuperAdmin" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "admins" ADD COLUMN IF NOT EXISTS "isMainSuperAdmin" BOOLEAN NOT NULL DEFAULT false;
 
 -- AlterTable
-ALTER TABLE "contractor_kyc" ADD COLUMN     "companyDocPath" TEXT,
-ADD COLUMN     "insuranceDocPath" TEXT;
+ALTER TABLE "contractor_kyc" ADD COLUMN IF NOT EXISTS "companyDocPath" TEXT,
+ADD COLUMN IF NOT EXISTS "insuranceDocPath" TEXT;
 
 -- AlterTable
-ALTER TABLE "contractors" ADD COLUMN     "manualApprovalDate" TIMESTAMP(3),
-ADD COLUMN     "manualApprovalReason" TEXT,
-ADD COLUMN     "manuallyApprovedBy" TEXT;
+ALTER TABLE "contractors" ADD COLUMN IF NOT EXISTS "manualApprovalDate" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "manualApprovalReason" TEXT,
+ADD COLUMN IF NOT EXISTS "manuallyApprovedBy" TEXT;
 
 -- CreateTable
-CREATE TABLE "password_resets" (
+CREATE TABLE IF NOT EXISTS "password_resets" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "token" TEXT NOT NULL,
@@ -24,16 +24,16 @@ CREATE TABLE "password_resets" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "password_resets_token_key" ON "password_resets"("token");
+CREATE UNIQUE INDEX IF NOT EXISTS "password_resets_token_key" ON "password_resets"("token");
 
 -- CreateIndex
-CREATE INDEX "password_resets_token_idx" ON "password_resets"("token");
+CREATE INDEX IF NOT EXISTS "password_resets_token_idx" ON "password_resets"("token");
 
 -- CreateIndex
-CREATE INDEX "password_resets_userId_idx" ON "password_resets"("userId");
+CREATE INDEX IF NOT EXISTS "password_resets_userId_idx" ON "password_resets"("userId");
 
 -- CreateIndex
-CREATE INDEX "password_resets_expiresAt_idx" ON "password_resets"("expiresAt");
+CREATE INDEX IF NOT EXISTS "password_resets_expiresAt_idx" ON "password_resets"("expiresAt");
 
 -- AddForeignKey
 ALTER TABLE "password_resets" ADD CONSTRAINT "password_resets_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

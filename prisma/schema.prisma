@@ -1006,6 +1006,76 @@ model Message {
   @@map("messages")
 }
 
+// Support Ticket System
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SupportTicketCategory {
+  BILLING
+  COMPLAINT
+  GENERAL
+  TECHNICAL
+  ACCOUNT
+  OTHER
+}
+
+model SupportTicket {
+  id           String                  @id @default(cuid())
+  ticketNumber String                  @unique
+  customerId   String?
+  customerName String
+  email        String
+  subject      String
+  description  String                  @db.Text
+  category     SupportTicketCategory   @default(GENERAL)
+  priority     SupportTicketPriority   @default(MEDIUM)
+  status       SupportTicketStatus     @default(OPEN)
+  assignee     String?
+  assigneeId   String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  lastResponse DateTime?
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  
+  responses SupportTicketResponse[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([email])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketResponse {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String?
+  userName  String
+  userRole  String   // "ADMIN", "CUSTOMER", "SYSTEM"
+  message   String   @db.Text
+  isInternal Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("support_ticket_responses")
+}
+
 // Email Activity Logs
 enum EmailStatus {
   PENDING

@@ -1,9 +1,21 @@
--- AlterEnum: Add WON status to JobStatus
-ALTER TYPE "JobStatus" ADD VALUE IF NOT EXISTS 'WON';
+-- AlterEnum: Add WON status to JobStatus (only if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'WON' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'JobStatus')) THEN
+        ALTER TYPE "JobStatus" ADD VALUE 'WON';
+    END IF;
+END $$;
 
 -- AlterTable: Update Contractor to use unified credit system
 -- Change default creditsBalance from 0 to 1 (everyone gets 1 free credit)
-ALTER TABLE "contractors" ALTER COLUMN "creditsBalance" SET DEFAULT 1;
+-- Only change default if it's currently 0
+DO $$ 
+BEGIN
+    IF (SELECT column_default::int FROM information_schema.columns 
+        WHERE table_name = 'contractors' AND column_name = 'creditsBalance')::int = 0 THEN
+        ALTER TABLE "contractors" ALTER COLUMN "creditsBalance" SET DEFAULT 1;
+    END IF;
+END $$;
 
 -- AlterTable: Add hasUsedFreeTrial tracking to Contractor
 ALTER TABLE "contractors" ADD COLUMN IF NOT EXISTS "hasUsedFreeTrial" BOOLEAN NOT NULL DEFAULT false;
@@ -37,11 +49,16 @@ CREATE TABLE IF NOT EXISTS "messages" (
     CONSTRAINT "messages_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX IF NOT EXISTS "messages_senderId_idx" ON "messages"("senderId");
-CREATE INDEX IF NOT EXISTS "messages_recipientId_idx" ON "messages"("recipientId");
-CREATE INDEX IF NOT EXISTS "messages_isRead_idx" ON "messages"("isRead");
-CREATE INDEX IF NOT EXISTS "messages_createdAt_idx" ON "messages"("createdAt");
+-- CreateIndex (only if table was just created)
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'messages') THEN
+        CREATE INDEX IF NOT EXISTS "messages_senderId_idx" ON "messages"("senderId");
+        CREATE INDEX IF NOT EXISTS "messages_recipientId_idx" ON "messages"("recipientId");
+        CREATE INDEX IF NOT EXISTS "messages_isRead_idx" ON "messages"("isRead");
+        CREATE INDEX IF NOT EXISTS "messages_createdAt_idx" ON "messages"("createdAt");
+    END IF;
+END $$;
 
 -- Update existing contractors to have 1 credit if they have 0
 -- This gives everyone the free trial credit
