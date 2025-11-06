@@ -1,9 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../config/database';
-import { protect } from '../middleware/auth';
-import { catchAsync } from '../utils/catchAsync';
-import { AppError } from '../middleware/errorHandler';
-import { AuthenticatedRequest } from '../types';
+import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { catchAsync, AppError } from '../middleware/errorHandler';
 import { UserRole } from '@prisma/client';
 
 const router = Router();
@@ -105,33 +103,46 @@ export const getMessages = catchAsync(async (req: AuthenticatedRequest, res: Res
       ? { senderId: userId }
       : { recipientId: userId };
 
-  const [messages, total] = await Promise.all([
+  const [messagesData, total] = await Promise.all([
     prisma.message.findMany({
       where,
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
-        },
-        recipient: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
-        },
-      },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
     }),
     prisma.message.count({ where }),
   ]);
+
+  // Fetch sender and recipient details for each message
+  const messages = await Promise.all(
+    messagesData.map(async (msg) => {
+      const [sender, recipient] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: msg.senderId },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        }),
+        prisma.user.findUnique({
+          where: { id: msg.recipientId },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        }),
+      ]);
+      return {
+        ...msg,
+        sender,
+        recipient,
+      };
+    })
+  );
 
   // Get unread count for inbox
   const unreadCount =
@@ -168,29 +179,39 @@ export const getMessage = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   const message = await prisma.message.findUnique({
     where: { id: messageId },
-    include: {
-      sender: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-        },
-      },
-      recipient: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-        },
-      },
-    },
   });
 
   if (!message) {
     throw new AppError('Message not found', 404);
   }
+
+  // Get sender and recipient details separately
+  const [sender, recipient] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: message.senderId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: message.recipientId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+      },
+    }),
+  ]);
+
+  const messageWithUsers = {
+    ...message,
+    sender,
+    recipient,
+  };
 
   // Check if user has access to this message
   if (message.senderId !== userId && message.recipientId !== userId) {
@@ -206,13 +227,13 @@ export const getMessage = catchAsync(async (req: AuthenticatedRequest, res: Resp
         readAt: new Date(),
       },
     });
-    message.isRead = true;
-    message.readAt = new Date();
+    messageWithUsers.isRead = true;
+    messageWithUsers.readAt = new Date();
   }
 
   res.status(200).json({
     status: 'success',
-    data: { message },
+    data: { message: messageWithUsers },
   });
 });
 
@@ -288,31 +309,44 @@ export const getConversation = catchAsync(async (req: AuthenticatedRequest, res:
   const otherUserId = req.params.userId;
 
   // Get messages between these two users
-  const messages = await prisma.message.findMany({
+  const messagesData = await prisma.message.findMany({
     where: {
       OR: [
         { senderId: currentUserId, recipientId: otherUserId },
         { senderId: otherUserId, recipientId: currentUserId },
       ],
     },
-    include: {
-      sender: {
-        select: {
-          id: true,
-          name: true,
-          role: true,
-        },
-      },
-      recipient: {
-        select: {
-          id: true,
-          name: true,
-          role: true,
-        },
-      },
-    },
     orderBy: { createdAt: 'asc' },
   });
+
+  // Fetch sender and recipient details for each message
+  const messages = await Promise.all(
+    messagesData.map(async (msg) => {
+      const [sender, recipient] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: msg.senderId },
+          select: {
+            id: true,
+            name: true,
+            role: true,
+          },
+        }),
+        prisma.user.findUnique({
+          where: { id: msg.recipientId },
+          select: {
+            id: true,
+            name: true,
+            role: true,
+          },
+        }),
+      ]);
+      return {
+        ...msg,
+        sender,
+        recipient,
+      };
+    })
+  );
 
   res.status(200).json({
     status: 'success',

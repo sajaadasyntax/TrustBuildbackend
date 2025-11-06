@@ -1033,12 +1033,24 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
     },
   });
 
+  // Get contractor with user info for notification
+  const contractorWithUser = await prisma.contractor.findUnique({
+    where: { id: contractor.id },
+    include: {
+      user: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
   // Send notification to customer
   const { createNotification } = await import('../services/notificationService');
   await createNotification({
     userId: job.customer.userId,
     title: 'Contractor Selected for Your Job',
-    message: `${contractor.businessName || contractor.user.name} has won your job: ${job.title}. They will mark it as completed once the work is done.`,
+    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} has won your job: ${job.title}. They will mark it as completed once the work is done.`,
     type: 'CONTRACTOR_SELECTED',
     actionLink: `/jobs/${job.id}`,
     actionText: 'View Job',
@@ -2044,9 +2056,9 @@ export const selectContractor = catchAsync(async (req: AuthenticatedRequest, res
 
 
 // @desc    Mark job as won by contractor (DEPRECATED - use selectContractor instead)
-// @route   PATCH /api/jobs/:id/mark-won
+// @route   PATCH /api/jobs/:id/mark-won-old
 // @access  Private (Customer only)
-export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const markJobAsWonOld = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   // Redirect to selectContractor for backward compatibility
   return selectContractor(req, res, next);
 });

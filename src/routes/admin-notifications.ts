@@ -1,9 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../config/database';
-import { adminProtect, requirePermission } from '../middleware/adminAuth';
-import { catchAsync } from '../utils/catchAsync';
-import { AppError } from '../middleware/errorHandler';
-import { AuthenticatedAdminRequest } from '../types/admin';
+import { protectAdmin, requirePermission, AdminAuthRequest } from '../middleware/adminAuth';
+import { catchAsync, AppError } from '../middleware/errorHandler';
 import { createBulkNotifications } from '../services/notificationService';
 import { UserRole } from '@prisma/client';
 
@@ -13,7 +11,7 @@ const router = Router();
 // @route   POST /api/admin/notifications/bulk
 // @access  Private (Admin only - requires notifications:write permission)
 export const sendBulkNotification = catchAsync(
-  async (req: AuthenticatedAdminRequest, res: Response) => {
+  async (req: AdminAuthRequest, res: Response) => {
     const {
       title,
       message,
@@ -106,7 +104,7 @@ export const sendBulkNotification = catchAsync(
     // Log admin action
     await prisma.activityLog.create({
       data: {
-        adminId: req.admin!.id,
+        adminId: req.admin?.id || '',
         action: 'BULK_NOTIFICATION_SENT',
         entityType: 'Notification',
         description: `Sent bulk notification to ${recipientUserIds.length} ${recipientType} users: "${title}"`,
@@ -134,7 +132,7 @@ export const sendBulkNotification = catchAsync(
 // @route   GET /api/admin/notifications/stats
 // @access  Private (Admin only)
 export const getNotificationStats = catchAsync(
-  async (req: AuthenticatedAdminRequest, res: Response) => {
+  async (req: AdminAuthRequest, res: Response) => {
     const now = new Date();
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
@@ -184,7 +182,7 @@ export const getNotificationStats = catchAsync(
 // @route   GET /api/admin/notifications/history
 // @access  Private (Admin only)
 export const getBulkNotificationHistory = catchAsync(
-  async (req: AuthenticatedAdminRequest, res: Response) => {
+  async (req: AdminAuthRequest, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
@@ -233,9 +231,9 @@ export const getBulkNotificationHistory = catchAsync(
 );
 
 // Register routes
-router.post('/bulk', adminProtect, requirePermission('notifications:write'), sendBulkNotification);
-router.get('/stats', adminProtect, requirePermission('notifications:read'), getNotificationStats);
-router.get('/history', adminProtect, requirePermission('notifications:read'), getBulkNotificationHistory);
+router.post('/bulk', protectAdmin, requirePermission('notifications:write'), sendBulkNotification);
+router.get('/stats', protectAdmin, requirePermission('notifications:read'), getNotificationStats);
+router.get('/history', protectAdmin, requirePermission('notifications:read'), getBulkNotificationHistory);
 
 export default router;
 

@@ -127,6 +127,8 @@ model User {
   notifications     Notification[]
   passwordResets    PasswordReset[]
   pushSubscriptions PushSubscription[]
+  sentMessages      Message[]        @relation("MessageSender")
+  receivedMessages  Message[]        @relation("MessageRecipient")
 
   @@map("users")
 }
@@ -988,16 +990,20 @@ model Message {
   id             String    @id @default(cuid())
   senderId       String
   senderRole     UserRole // ADMIN, CUSTOMER, or CONTRACTOR
-  recipientId    String
+  recipientId     String
   recipientRole  UserRole // ADMIN, CUSTOMER, or CONTRACTOR
-  subject        String?
-  content        String    @db.Text
-  isRead         Boolean   @default(false)
-  readAt         DateTime?
-  attachmentUrls Json? // Array of attachment URLs
-  relatedJobId   String? // Optional: link message to a job
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  subject         String?
+  content         String    @db.Text
+  isRead          Boolean   @default(false)
+  readAt          DateTime?
+  attachmentUrls  Json? // Array of attachment URLs
+  relatedJobId    String? // Optional: link message to a job
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  sender          User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient       User      @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([senderId])
   @@index([recipientId])
