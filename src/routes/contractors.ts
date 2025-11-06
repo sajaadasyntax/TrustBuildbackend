@@ -184,7 +184,7 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     services,
   } = req.body;
 
-  // Create contractor profile
+  // Create contractor profile with 1 free credit
   const contractor = await prisma.contractor.create({
     data: {
       userId: req.user!.id,
@@ -206,8 +206,9 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       unsatisfiedCustomers,
       preferredClients,
       usesContracts,
-      creditsBalance: 0, // No initial credits for non-subscribers
-      lastCreditReset: null, // No credit reset for non-subscribers
+      creditsBalance: 1, // Every new contractor gets 1 free credit (trial)
+      lastCreditReset: null,
+      hasUsedFreeTrial: false, // Track if they've used their free credit
       services: services ? {
         connect: services.map((serviceId: string) => ({ id: serviceId })),
       } : undefined,
@@ -224,14 +225,22 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     },
   });
 
-  // Note: Credits will only be allocated when contractor subscribes
-  // No initial credit transaction for non-subscribers
+  // Create credit transaction record for the free trial credit
+  await prisma.creditTransaction.create({
+    data: {
+      contractorId: contractor.id,
+      amount: 1,
+      type: 'BONUS',
+      description: 'Free trial credit - new contractor welcome bonus (valid for small jobs only)',
+    },
+  });
 
   res.status(201).json({
     status: 'success',
     data: {
       contractor,
     },
+    message: 'Contractor profile created successfully. You have received 1 free credit to try the platform (valid for small jobs only).',
   });
 });
 

@@ -30,13 +30,13 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
     access.contractorId === job.wonByContractorId
   );
 
-  // Check if contractor accessed the job using credits
+  // Check if contractor accessed the job using credits or free trial point
   const accessedViaCredits = relevantJobAccess.length > 0 && relevantJobAccess[0].creditUsed === true;
+  const accessedViaFreePoint = relevantJobAccess.length > 0 && relevantJobAccess[0].usedFreePoint === true;
 
-
-
-  // Only charge commission if they used credits and haven't paid commission yet
-  if (accessedViaCredits && !job.commissionPaid) {
+  // Only charge commission if they used credits or free point and haven't paid commission yet
+  // IMPORTANT: Commission applies even when using free trial point
+  if ((accessedViaCredits || accessedViaFreePoint) && !job.commissionPaid) {
     // Get commission rate from settings
     const commissionRateSetting = await prisma.setting.findUnique({
       where: { key: 'COMMISSION_RATE' },

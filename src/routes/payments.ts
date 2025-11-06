@@ -190,6 +190,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
                               contractor.subscription.isActive && 
                               contractor.subscription.status === 'active';
 
+  // Check if using free trial credit
+  const isUsingFreeTrial = !hasActiveSubscription && contractor.creditsBalance > 0 && !contractor.hasUsedFreeTrial;
+
   // Validate payment method based on subscription status
   if (hasActiveSubscription) {
     // Subscribers can use CREDIT or STRIPE_SUBSCRIBER
@@ -197,9 +200,21 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       return next(new AppError('Subscribers must choose between using credits or paying lead price', 400));
     }
   } else {
-    // Non-subscribers can only use STRIPE
-    if (paymentMethod !== 'STRIPE') {
-      return next(new AppError('Non-subscribers must pay with card', 400));
+    // Non-subscribers can only use STRIPE or CREDIT (if they have free trial)
+    if (paymentMethod !== 'STRIPE' && paymentMethod !== 'CREDIT') {
+      return next(new AppError('Non-subscribers must pay with card or use their free trial credit', 400));
+    }
+    
+    // If using CREDIT as non-subscriber, validate free trial restrictions
+    if (paymentMethod === 'CREDIT') {
+      if (contractor.creditsBalance < 1) {
+        return next(new AppError('Insufficient credits. Please subscribe or pay with card.', 400));
+      }
+      
+      // Free trial credit can ONLY be used for SMALL jobs
+      if (isUsingFreeTrial && job.jobSize !== 'SMALL') {
+        return next(new AppError('Your free trial credit can only be used for small jobs. For medium or large jobs, you must either pay or subscribe.', 400));
+      }
     }
   }
 
@@ -232,31 +247,37 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const transactionResult = await prisma.$transaction(async (tx) => {
     let payment;
     let invoice;
+    let usedFreeTrial = false;
 
     if (paymentMethod === 'CREDIT') {
       // Get the most current contractor data within the transaction
       const currentContractor = await tx.contractor.findUnique({
         where: { id: contractor.id },
-        select: { creditsBalance: true, id: true }
+        select: { creditsBalance: true, id: true, hasUsedFreeTrial: true, subscription: true }
       });
       
       if (!currentContractor) {
         throw new AppError('Contractor not found', 404);
       }
       
-
-      
       if (currentContractor.creditsBalance < 1) {
         throw new AppError(`Insufficient credits. Current balance: ${currentContractor.creditsBalance}. Please top up or use card payment.`, 400);
       }
       
+      // Check if this is their free trial credit
+      const isSubscribed = currentContractor.subscription !== null;
+      usedFreeTrial = !isSubscribed && !currentContractor.hasUsedFreeTrial;
+      
       // CRITICAL: Use the current balance and subtract 1
       const newBalance = currentContractor.creditsBalance - 1;
       
-      // Update the contractor's balance directly
+      // Update the contractor's balance and mark free trial as used if applicable
       const updatedContractor = await tx.contractor.update({
         where: { id: contractor.id },
-        data: { creditsBalance: newBalance },
+        data: { 
+          creditsBalance: newBalance,
+          ...(usedFreeTrial && { hasUsedFreeTrial: true })
+        },
         select: { creditsBalance: true }
       });
 
@@ -268,7 +289,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           contractorId: contractor.id,
           type: 'JOB_ACCESS',
           amount: -1, // Negative to indicate deduction
-          description: `Job access purchased for: ${job.title}`,
+          description: usedFreeTrial 
+            ? `Free trial credit used for job: ${job.title} (SMALL job only)`
+            : `Credit used to access job: ${job.title}`,
           jobId,
         },
       });
@@ -282,7 +305,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           amount: 0,
           type: 'LEAD_ACCESS',
           status: 'COMPLETED',
-          description: `Job access purchased with credit for: ${job.title}`,
+          description: usedFreeTrial 
+            ? `Job access purchased with FREE TRIAL CREDIT for: ${job.title}`
+            : `Job access purchased with credit for: ${job.title}`,
         },
       });
 
@@ -292,8 +317,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           amount: 0,
           vatAmount: 0,
           totalAmount: 0,
-          description: `Job Lead Access - ${job.title}`,
-          invoiceNumber: `INV-CREDIT-${Date.now()}-${contractor.id.slice(-6)}`,
+          description: usedFreeTrial 
+            ? `Job Lead Access (Free Trial) - ${job.title}`
+            : `Job Lead Access - ${job.title}`,
+          invoiceNumber: usedFreeTrial 
+            ? `INV-FREE-${Date.now()}-${contractor.id.slice(-6)}`
+            : `INV-CREDIT-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: contractor.businessName || 'Contractor',
           recipientEmail: contractor.user.email,
         },
@@ -405,6 +434,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         accessMethod: paymentMethod === 'CREDIT' ? 'CREDIT' : 'PAYMENT',
         paidAmount: (paymentMethod === 'STRIPE' || paymentMethod === 'STRIPE_SUBSCRIBER') ? leadPrice : 0,
         creditUsed: paymentMethod === 'CREDIT',
+        usedFreePoint: usedFreeTrial, // Track if free trial credit was used
       } as any, // Type cast to avoid TypeScript errors until migration is applied
     });
 
@@ -435,7 +465,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   // Fetch the contractor's updated balance to return in response
   const updatedContractorData = await prisma.contractor.findUnique({
     where: { id: contractor.id },
-    select: { creditsBalance: true }
+    select: { creditsBalance: true, hasUsedFreeTrial: true }
   });
   
 

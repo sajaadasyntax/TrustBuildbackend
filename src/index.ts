@@ -43,6 +43,8 @@ import disputeRoutes from './routes/disputes';
 import adminDisputeRoutes from './routes/admin-disputes';
 import adminEmailLogsRoutes from './routes/admin-email-logs';
 import adminErrorLogsRoutes from './routes/admin-error-logs';
+import adminNotificationRoutes from './routes/admin-notifications';
+import messageRoutes from './routes/messages';
 
 // Load environment variables
 dotenv.config();
@@ -179,6 +181,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/faq', faqRoutes);
 app.use('/api/disputes', disputeRoutes);
+app.use('/api/messages', messageRoutes);
 
 // Admin system routes - Register more specific routes BEFORE general admin routes
 app.use('/api/admin-auth', adminAuthRoutes);
@@ -193,6 +196,7 @@ app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin/disputes', adminDisputeRoutes);
 app.use('/api/admin/email', adminEmailLogsRoutes);
 app.use('/api/admin/errors', adminErrorLogsRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes);
 // General admin routes (catch-all, must be last)
 app.use('/api/admin', adminRoutes);
 

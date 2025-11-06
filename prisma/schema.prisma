@@ -26,6 +26,7 @@ enum ContractorTier {
 enum JobStatus {
   DRAFT
   POSTED
+  WON
   IN_PROGRESS
   AWAITING_FINAL_PRICE_CONFIRMATION
   COMPLETED
@@ -188,9 +189,10 @@ model Contractor {
   stripeAccountId  String?
 
   // Credit system
-  creditsBalance     Int       @default(0)
+  creditsBalance     Int       @default(1) // Every new contractor gets 1 free credit
   weeklyCreditsLimit Int       @default(3)
   lastCreditReset    DateTime?
+  hasUsedFreeTrial   Boolean   @default(false) // Track if the free trial credit has been used
 
   // Admin controls
   accountStatus     ContractorAccountStatus @default(ACTIVE)
@@ -314,10 +316,11 @@ model Job {
   maxContractorsPerJob Int @default(5) // How many contractors can buy this job
 
   // Job completion tracking
-  wonByContractorId String? // Which contractor won the job
-  finalAmount       Decimal? @db.Decimal(10, 2) // Final job amount entered by contractor
-  customerConfirmed Boolean  @default(false) // Customer confirmed completion and amount
-  commissionPaid    Boolean  @default(false) // Whether 5% commission was charged
+  wonByContractorId String?   // Which contractor won the job
+  wonAt             DateTime? // When the job was marked as won
+  finalAmount       Decimal?  @db.Decimal(10, 2) // Final job amount entered by contractor
+  customerConfirmed Boolean   @default(false) // Customer confirmed completion and amount
+  commissionPaid    Boolean   @default(false) // Whether 5% commission was charged
 
   // Final price workflow
   contractorProposedAmount  Decimal?  @db.Decimal(10, 2) // Amount proposed by contractor
@@ -378,13 +381,14 @@ enum AccessMethod {
 }
 
 model JobAccess {
-  id           String       @id @default(cuid())
-  jobId        String
-  contractorId String
-  accessMethod AccessMethod @default(PAYMENT)
-  paidAmount   Decimal?     @db.Decimal(8, 2)
-  creditUsed   Boolean      @default(false)
-  accessedAt   DateTime     @default(now())
+  id            String       @id @default(cuid())
+  jobId         String
+  contractorId  String
+  accessMethod  AccessMethod @default(PAYMENT)
+  paidAmount    Decimal?     @db.Decimal(8, 2)
+  creditUsed    Boolean      @default(false)
+  usedFreePoint Boolean      @default(false) // Track if free trial point was used
+  accessedAt    DateTime     @default(now())
 
   // Relationships
   job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -976,6 +980,30 @@ model PasswordReset {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_resets")
+}
+
+// Internal Messaging System
+// Only allows: Admin↔Customer and Admin↔Contractor
+model Message {
+  id             String    @id @default(cuid())
+  senderId       String
+  senderRole     UserRole // ADMIN, CUSTOMER, or CONTRACTOR
+  recipientId    String
+  recipientRole  UserRole // ADMIN, CUSTOMER, or CONTRACTOR
+  subject        String?
+  content        String    @db.Text
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  attachmentUrls Json? // Array of attachment URLs
+  relatedJobId   String? // Optional: link message to a job
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("messages")
 }
 
 // Email Activity Logs

@@ -131,7 +131,7 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   const total = await prisma.job.count({ where });
 
-  // Filter sensitive data for contractors
+  // Filter sensitive data for contractors and add application count
   const filteredJobs = req.user?.role === 'CONTRACTOR' 
     ? jobs.map((job: any) => ({
         ...job,
@@ -144,9 +144,13 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
           },
           // Remove sensitive customer data
           phone: undefined,
-        }
+        },
+        applicationCount: job.applications ? job.applications.length : 0, // Show contractors how many have applied
       }))
-    : jobs;
+    : jobs.map((job: any) => ({
+        ...job,
+        applicationCount: job.applications ? job.applications.length : 0, // Show application count to all users
+      }));
 
   res.status(200).json({
     status: 'success',
@@ -250,9 +254,15 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
     }
   }
 
+  // Add application count for contractors to see how many have applied
+  const applicationCount = job.applications ? job.applications.length : 0;
+
   res.status(200).json({
     status: 'success',
-    data: filteredJob,
+    data: {
+      ...filteredJob,
+      applicationCount, // Show contractors how many have applied
+    },
   });
 });
 
@@ -955,6 +965,170 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
   res.status(201).json({
     status: 'success',
     message: 'Job accepted successfully. Waiting for customer confirmation to start work.',
+  });
+});
+
+// @desc    Mark job as Won (contractor selected for the job)
+// @route   PATCH /api/jobs/:id/mark-won
+// @access  Private (Contractor only)
+export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId: req.user!.id },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      applications: {
+        where: {
+          contractorId: contractor.id,
+          status: 'ACCEPTED',
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Verify contractor has been accepted for this job
+  if (job.applications.length === 0) {
+    return next(new AppError('You have not been accepted for this job', 403));
+  }
+
+  // Can only mark as won from POSTED or IN_PROGRESS status
+  if (job.status !== 'POSTED' && job.status !== 'IN_PROGRESS') {
+    return next(new AppError('Job cannot be marked as won from current status', 400));
+  }
+
+  // Update job status to WON and set the contractor
+  const updatedJob = await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      status: 'WON',
+      wonByContractorId: contractor.id,
+      wonAt: new Date(),
+    },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  // Send notification to customer
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: job.customer.userId,
+    title: 'Contractor Selected for Your Job',
+    message: `${contractor.businessName || contractor.user.name} has won your job: ${job.title}. They will mark it as completed once the work is done.`,
+    type: 'CONTRACTOR_SELECTED',
+    actionLink: `/jobs/${job.id}`,
+    actionText: 'View Job',
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job marked as won successfully',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
+// @desc    Mark job as completed with final amount
+// @route   PATCH /api/jobs/:id/mark-completed
+// @access  Private (Contractor who won the job)
+export const markJobAsCompleted = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { finalAmount } = req.body;
+  
+  if (!finalAmount || finalAmount <= 0) {
+    return next(new AppError('Final amount is required and must be greater than 0', 400));
+  }
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId: req.user!.id },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Verify this contractor won the job
+  if (job.wonByContractorId !== contractor.id) {
+    return next(new AppError('You are not assigned to this job', 403));
+  }
+
+  // Can only mark as completed from WON or IN_PROGRESS status
+  if (job.status !== 'WON' && job.status !== 'IN_PROGRESS') {
+    return next(new AppError('Job cannot be marked as completed from current status', 400));
+  }
+
+  // Update job status to COMPLETED with final amount
+  const updatedJob = await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      status: 'COMPLETED',
+      finalAmount: finalAmount,
+      completionDate: new Date(),
+      customerConfirmed: false, // Waiting for customer confirmation
+    },
+  });
+
+  // Send notification to customer asking for confirmation
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: job.customer.userId,
+    title: 'Job Completion Confirmation Required',
+    message: `The contractor marked the job as completed for £${finalAmount}. Please confirm if this is correct and if the job has been completed satisfactorily.`,
+    type: 'JOB_COMPLETED',
+    actionLink: `/jobs/${job.id}/confirm-completion`,
+    actionText: 'Review & Confirm',
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Job marked as completed. Waiting for customer confirmation.',
+    data: {
+      job: updatedJob,
+    },
   });
 });
 
@@ -2398,6 +2572,123 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
   });
 });
 
+// @desc    Customer confirm job completion (NEW WORKFLOW)
+// @route   PATCH /api/jobs/:id/confirm-job-completion
+// @access  Private (Customer only)
+export const confirmNewJobCompletion = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const jobId = req.params.id;
+  const userId = req.user!.id;
+  const { confirmed, feedback } = req.body; // confirmed: true/false
+
+  if (typeof confirmed !== 'boolean') {
+    return next(new AppError('Please specify if the job is confirmed as complete', 400));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Check if user is the customer
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Not authorized to confirm this job', 403));
+  }
+
+  // Job must be in COMPLETED status (marked by contractor)
+  if (job.status !== 'COMPLETED') {
+    return next(new AppError('Job is not marked as completed by contractor', 400));
+  }
+
+  // Must have a final amount set
+  if (!job.finalAmount || Number(job.finalAmount) <= 0) {
+    return next(new AppError('No final amount set for this job', 400));
+  }
+
+  if (confirmed) {
+    // Customer confirmed job completion - trigger commission
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        customerConfirmed: true,
+        finalPriceConfirmedAt: new Date(),
+      },
+    });
+
+    // AUTOMATICALLY PROCESS COMMISSION
+    const { processCommissionForJob } = await import('../services/commissionService');
+    await processCommissionForJob(jobId, Number(job.finalAmount));
+
+    // Update contractor stats
+    await prisma.contractor.update({
+      where: { id: job.wonByContractorId! },
+      data: {
+        jobsCompleted: { increment: 1 },
+      },
+    });
+
+    // Send notification to contractor
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: job.wonByContractor!.user.id,
+      title: 'Job Completion Confirmed',
+      message: `The customer confirmed completion of your job: ${job.title}. Commission has been applied and will be invoiced.`,
+      type: 'JOB_COMPLETED',
+      actionLink: `/dashboard/contractor/jobs/${jobId}`,
+      actionText: 'View Job',
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Job completion confirmed. Commission has been processed.',
+      data: {
+        job: updatedJob,
+      },
+    });
+  } else {
+    // Customer disputed the completion
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: 'DISPUTED',
+      },
+    });
+
+    // Send notification to contractor
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: job.wonByContractor!.user.id,
+      title: 'Job Completion Disputed',
+      message: `The customer has disputed the completion of job: ${job.title}. ${feedback ? 'Feedback: ' + feedback : ''}`,
+      type: 'WARNING',
+      actionLink: `/dashboard/contractor/jobs/${jobId}`,
+      actionText: 'View Details',
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Job marked as disputed. Please contact support or the customer to resolve.',
+      data: {
+        job: updatedJob,
+      },
+    });
+  }
+});
+
 // @desc    Customer confirm job completion and amount (DEPRECATED - use confirmFinalPrice)
 // @route   PATCH /api/jobs/:id/confirm-completion
 // @access  Private (Customer only)
@@ -3163,7 +3454,12 @@ router.patch('/:id/start-work', protect, startWork);
 router.patch('/:id/status', protect, updateJobStatus);
 router.patch('/:id/complete', protect, completeJob);
 router.get('/:id/access', protect, checkJobAccess);
-router.patch('/:id/mark-won', protect, markJobAsWon);
+
+// New Workflow Routes (Won → Completed → Customer Confirmation)
+router.patch('/:id/mark-won', protect, markJobAsWon); // Already exists but keeping for clarity
+router.patch('/:id/mark-completed', protect, markJobAsCompleted); // NEW: Contractor marks completed with amount
+router.patch('/:id/confirm-job-completion', protect, confirmNewJobCompletion); // NEW: Customer confirms completion
+
 router.patch('/:id/select-contractor', protect, selectContractor);
 router.patch('/:id/contractor-mark-won', protect, contractorMarkJobAsWon);
 router.patch('/:id/confirm-contractor-start', protect, confirmContractorStart);
