@@ -4,7 +4,7 @@ import { NotificationType } from '@prisma/client';
 
 /**
  * Get all admin user IDs (users with ADMIN or SUPER_ADMIN role)
- * This finds User records that correspond to Admin accounts
+ * This finds User records that correspond to Admin accounts, creating them if they don't exist
  */
 async function getAdminUserIds(): Promise<string[]> {
   // First, get all active admins
@@ -12,25 +12,44 @@ async function getAdminUserIds(): Promise<string[]> {
     where: {
       isActive: true,
     },
-    select: { email: true },
+    select: { email: true, name: true, role: true },
   });
 
   if (admins.length === 0) {
     return [];
   }
 
-  // Find corresponding User records by email
-  const adminEmails = admins.map(a => a.email);
-  const adminUsers = await prisma.user.findMany({
-    where: {
-      email: { in: adminEmails },
-      role: { in: ['ADMIN', 'SUPER_ADMIN'] },
-      isActive: true,
-    },
-    select: { id: true },
-  });
+  // Get or create User records for each admin
+  const adminUserIds: string[] = [];
+  
+  for (const admin of admins) {
+    // Try to find existing User record
+    let adminUser = await prisma.user.findUnique({
+      where: { email: admin.email },
+      select: { id: true },
+    });
 
-  return adminUsers.map(user => user.id);
+    // If user record doesn't exist, create it
+    if (!adminUser) {
+      // Map AdminRole to UserRole
+      const userRole = admin.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      
+      adminUser = await prisma.user.create({
+        data: {
+          email: admin.email,
+          name: admin.name,
+          password: 'ADMIN_USER_NO_PASSWORD', // Placeholder - admins use Admin table for auth
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+    }
+
+    adminUserIds.push(adminUser.id);
+  }
+
+  return adminUserIds;
 }
 
 /**
