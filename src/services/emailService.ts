@@ -26,9 +26,16 @@ export const createEmailService = () => {
     status: 'PENDING' | 'SENT' | 'FAILED',
     error?: string,
     metadata?: any,
-    logId?: string
+    logId?: string,
+    emailContent?: string
   ) => {
     try {
+      // Prepare metadata with email content
+      const logMetadata = {
+        ...metadata,
+        ...(emailContent && { emailContent: emailContent.substring(0, 50000) }), // Limit content length
+      };
+
       if (logId) {
         // Update existing log
         await prisma.emailLog.update({
@@ -36,7 +43,7 @@ export const createEmailService = () => {
           data: {
             status,
             error: error ? error.substring(0, 5000) : undefined,
-            metadata: metadata || undefined,
+            metadata: Object.keys(logMetadata).length > 0 ? logMetadata : undefined,
           },
         });
       } else {
@@ -48,7 +55,7 @@ export const createEmailService = () => {
             type,
             status,
             error: error ? error.substring(0, 5000) : undefined,
-            metadata: metadata || undefined,
+            metadata: Object.keys(logMetadata).length > 0 ? logMetadata : undefined,
           },
         });
         return log.id;
@@ -75,10 +82,13 @@ export const createEmailService = () => {
     const subject = options.subject || 'No subject';
     const emailType = (options as any).emailType || 'general'; // Allow emailType to be passed in options
     
+    // Extract email content (HTML or text)
+    const emailContent = options.html || options.text || '';
+    
     // Log email as PENDING and get log ID
     const logId = await logEmail(recipient, subject, emailType, 'PENDING', undefined, {
       from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
-    });
+    }, undefined, emailContent);
 
     try {
       let result;
@@ -90,23 +100,23 @@ export const createEmailService = () => {
         result = await sendWithNodemailer(options, retries);
       }
       
-      // Update log to SENT
+      // Update log to SENT (preserve email content)
       if (logId) {
         await logEmail(recipient, subject, emailType, 'SENT', undefined, {
           messageId: result?.messageId,
           from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
-        }, logId);
+        }, logId, emailContent);
       }
       
       return result;
     } catch (error: any) {
-      // Update log to FAILED
+      // Update log to FAILED (preserve email content)
       if (logId) {
         await logEmail(recipient, subject, emailType, 'FAILED', error.message || String(error), {
           from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
           errorCode: error.code,
           errorStatus: error.status,
-        }, logId);
+        }, logId, emailContent);
       }
       
       // If we get here, all email sending attempts have failed
