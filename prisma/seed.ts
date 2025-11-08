@@ -935,9 +935,14 @@ async function main() {
     // Create job applications for posted jobs
     if (jobData.status === JobStatus.POSTED || jobData.status === JobStatus.IN_PROGRESS) {
       // Get 2-3 random contractors who provide this service
-      const applicableContractors = contractors.filter(c => 
-        contractorData[contractors.indexOf(c)].servicesIndexes.includes(jobData.serviceIndex)
-      );
+      // Only check contractors from the original contractorData array (they have servicesIndexes)
+      const applicableContractors = contractors.filter((c, index) => {
+        // Only check contractors from the original contractorData array
+        if (index < contractorData.length) {
+          return contractorData[index].servicesIndexes.includes(jobData.serviceIndex);
+        }
+        return false; // Skip additional contractors for job applications
+      });
 
       const numApplications = Math.min(3, applicableContractors.length);
       for (let i = 0; i < numApplications; i++) {
