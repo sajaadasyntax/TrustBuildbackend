@@ -45,6 +45,7 @@ import adminDisputeRoutes from './routes/admin-disputes';
 import adminEmailLogsRoutes from './routes/admin-email-logs';
 import adminErrorLogsRoutes from './routes/admin-error-logs';
 import adminNotificationRoutes from './routes/admin-notifications';
+import adminNotificationsApiRoutes from './routes/admin-notifications-api';
 import adminSupportTicketsRoutes from './routes/admin-support-tickets';
 import messageRoutes from './routes/messages';
 
@@ -225,6 +226,7 @@ app.use('/api/admin/disputes', adminDisputeRoutes);
 app.use('/api/admin/email', adminEmailLogsRoutes);
 app.use('/api/admin/errors', adminErrorLogsRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes);
+app.use('/api/admin/notifications-api', adminNotificationsApiRoutes);
 app.use('/api/admin/support-tickets', adminSupportTicketsRoutes);
 // General admin routes (catch-all, must be last)
 app.use('/api/admin', adminRoutes);

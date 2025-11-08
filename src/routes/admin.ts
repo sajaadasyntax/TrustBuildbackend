@@ -4,6 +4,7 @@ import { protectAdmin, requirePermission, AdminAuthRequest, hasPermission, getCl
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
 import { logActivity } from '../services/auditService';
+import * as adminNotificationService from '../services/adminNotificationService';
 import bcrypt from 'bcryptjs';
 import { UserRole } from '@prisma/client';
 
@@ -1436,6 +1437,14 @@ export const updateContractorApproval = catchAsync(async (req: AdminAuthRequest,
     ipAddress: getClientIp(req),
     userAgent: getClientUserAgent(req),
   });
+
+  // Notify all admins about contractor decision
+  await adminNotificationService.notifyAdminsContractorDecision(
+    contractor.id,
+    contractor.businessName || contractor.user.name,
+    approved,
+    req.admin!.name
+  );
 
   res.status(200).json({
     status: 'success',

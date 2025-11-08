@@ -8,6 +8,7 @@ import {
   AdminAuthRequest,
 } from '../middleware/adminAuth';
 import { logActivity } from '../services/auditService';
+import * as adminNotificationService from '../services/adminNotificationService';
 import { prisma } from '../config/database';
 
 const router = express.Router();
@@ -192,6 +193,14 @@ router.post(
       userAgent: getClientUserAgent(req),
     });
 
+    // Notify all admins about new support ticket
+    await adminNotificationService.notifyAdminsNewSupportTicket(
+      ticket.id,
+      ticket.subject,
+      customerName,
+      ticket.priority
+    );
+
     res.status(201).json({
       status: 'success',
       data: { ticket },
@@ -236,6 +245,14 @@ router.patch(
       ipAddress: getClientIp(req),
       userAgent: getClientUserAgent(req),
     });
+
+    // Notify all admins about support ticket update
+    await adminNotificationService.notifyAdminsSupportTicketUpdate(
+      ticketId,
+      ticket.subject,
+      status,
+      req.admin!.name
+    );
 
     res.status(200).json({
       status: 'success',

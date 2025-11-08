@@ -12,6 +12,7 @@ import {
 } from '../middleware/adminAuth';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { logActivity } from '../services/auditService';
+import * as adminNotificationService from '../services/adminNotificationService';
 import { prisma } from '../config/database';
 import { createServiceEmail, createEmailService } from '../services/emailService';
 
@@ -427,6 +428,14 @@ router.post(
       userAgent: getClientUserAgent(req),
     });
 
+    // Notify all admins about KYC decision
+    await adminNotificationService.notifyAdminsKYCDecision(
+      kycId,
+      kyc.contractor.user.name,
+      true,
+      req.admin!.name
+    );
+
     res.status(200).json({
       status: 'success',
       message: 'KYC approved successfully',
@@ -516,6 +525,14 @@ router.post(
       ipAddress: getClientIp(req),
       userAgent: getClientUserAgent(req),
     });
+
+    // Notify all admins about KYC decision
+    await adminNotificationService.notifyAdminsKYCDecision(
+      kycId,
+      kyc.contractor.user.name,
+      false,
+      req.admin!.name
+    );
 
     res.status(200).json({
       status: 'success',

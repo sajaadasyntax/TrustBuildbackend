@@ -8,6 +8,7 @@ import {
   AdminAuthRequest,
 } from '../middleware/adminAuth';
 import { logActivity } from '../services/auditService';
+import * as adminNotificationService from '../services/adminNotificationService';
 import { prisma } from '../config/database';
 import {
   generateInvoiceNumber,
@@ -194,6 +195,14 @@ router.post(
       ipAddress: getClientIp(req),
       userAgent: getClientUserAgent(req),
     });
+
+    // Notify all admins about manual invoice creation
+    await adminNotificationService.notifyAdminsManualInvoiceCreated(
+      invoice.id,
+      invoice.contractor.user.name,
+      total,
+      req.admin!.name
+    );
 
     res.status(201).json({
       status: 'success',
