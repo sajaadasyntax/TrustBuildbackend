@@ -336,27 +336,9 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
     return next(new AppError('Status is required', 400));
   }
 
-  let updateData: any = {};
-
-  // Update invoice based on status
-  if (status === 'PAID') {
-    updateData.paidAt = new Date();
-  } else if (status === 'PENDING') {
-    updateData.paidAt = null;
-    updateData.dueAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Due in 30 days
-  } else if (status === 'OVERDUE') {
-    updateData.paidAt = null;
-    updateData.dueAt = new Date(Date.now() - 24 * 60 * 60 * 1000); // Due yesterday (overdue)
-  } else if (status === 'CANCELLED') {
-    updateData.paidAt = null;
-    updateData.dueAt = null;
-  } else {
-    return next(new AppError('Invalid status', 400));
-  }
-
-  const invoice = await prisma.invoice.update({
+  // First, try to find a regular invoice
+  let invoice = await prisma.invoice.findUnique({
     where: { id },
-    data: updateData,
     include: {
       payments: {
         take: 1
@@ -364,18 +346,139 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
     }
   });
 
-  // If invoice status is updated to paid, also update related payment if it exists
-  if (status === 'PAID' && invoice.payments && invoice.payments.length > 0) {
-    await prisma.payment.update({
-      where: { id: invoice.payments[0].id },
-      data: { status: 'COMPLETED' }
+  if (invoice) {
+    // Handle regular invoice
+    let updateData: any = {};
+
+    // Update invoice based on status
+    if (status === 'PAID') {
+      updateData.paidAt = new Date();
+    } else if (status === 'PENDING') {
+      updateData.paidAt = null;
+      updateData.dueAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Due in 30 days
+    } else if (status === 'OVERDUE') {
+      updateData.paidAt = null;
+      updateData.dueAt = new Date(Date.now() - 24 * 60 * 60 * 1000); // Due yesterday (overdue)
+    } else if (status === 'CANCELLED') {
+      updateData.paidAt = null;
+      updateData.dueAt = null;
+    } else {
+      return next(new AppError('Invalid status', 400));
+    }
+
+    const updatedInvoice = await prisma.invoice.update({
+      where: { id },
+      data: updateData,
+      include: {
+        payments: {
+          take: 1
+        }
+      }
+    });
+
+    // If invoice status is updated to paid, also update related payment if it exists
+    if (status === 'PAID' && updatedInvoice.payments && updatedInvoice.payments.length > 0) {
+      await prisma.payment.update({
+        where: { id: updatedInvoice.payments[0].id },
+        data: { status: 'COMPLETED' }
+      });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: { invoice: updatedInvoice }
     });
   }
 
-  res.status(200).json({
-    status: 'success',
-    data: { invoice }
+  // If not a regular invoice, try manual invoice
+  let manualInvoice = await prisma.manualInvoice.findUnique({
+    where: { id },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      },
+      items: true
+    }
   });
+
+  if (manualInvoice) {
+    // Handle manual invoice
+    let updateData: any = {};
+
+    // Map status to ManualInvoiceStatus enum
+    if (status === 'PAID') {
+      updateData.status = 'PAID';
+      updateData.paidAt = new Date();
+    } else if (status === 'PENDING' || status === 'ISSUED') {
+      updateData.status = 'ISSUED';
+      updateData.paidAt = null;
+      if (!manualInvoice.issuedAt) {
+        updateData.issuedAt = new Date();
+      }
+    } else if (status === 'OVERDUE') {
+      updateData.status = 'OVERDUE';
+      updateData.paidAt = null;
+    } else if (status === 'CANCELLED' || status === 'CANCELED') {
+      updateData.status = 'CANCELED';
+      updateData.paidAt = null;
+    } else if (status === 'DRAFT') {
+      updateData.status = 'DRAFT';
+      updateData.paidAt = null;
+    } else {
+      return next(new AppError('Invalid status', 400));
+    }
+
+    const updatedManualInvoice = await prisma.manualInvoice.update({
+      where: { id },
+      data: updateData,
+      include: {
+        contractor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        items: true
+      }
+    });
+
+    // Format response to match regular invoice structure
+    const formattedInvoice = {
+      id: updatedManualInvoice.id,
+      invoiceNumber: updatedManualInvoice.number,
+      recipientName: updatedManualInvoice.contractor.businessName || updatedManualInvoice.contractor.user.name,
+      recipientEmail: updatedManualInvoice.contractor.user.email,
+      description: updatedManualInvoice.reason || updatedManualInvoice.notes || 'Manual Invoice',
+      amount: (updatedManualInvoice.subtotal || 0) / 100,
+      vatAmount: (updatedManualInvoice.tax || 0) / 100,
+      totalAmount: (updatedManualInvoice.total || 0) / 100,
+      status: updatedManualInvoice.status,
+      createdAt: updatedManualInvoice.createdAt,
+      issuedAt: updatedManualInvoice.issuedAt,
+      dueAt: updatedManualInvoice.dueDate,
+      paidAt: updatedManualInvoice.paidAt,
+      isManual: true,
+    };
+
+    return res.status(200).json({
+      status: 'success',
+      data: { invoice: formattedInvoice }
+    });
+  }
+
+  // If neither invoice type found
+  return next(new AppError('Invoice not found', 404));
 });
 
 // @desc    Get invoice statistics
