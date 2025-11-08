@@ -3040,7 +3040,6 @@ export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res:
   // Group messages by conversation (unique pairs of admin and user)
   // Each admin has separate conversations with each user
   const conversationMap = new Map<string, any>();
-  const adminId = req.admin!.id;
   
   messagesData.forEach((message) => {
     const senderId = message.senderId;
