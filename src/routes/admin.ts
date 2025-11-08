@@ -3304,7 +3304,7 @@ export const broadcastNotification = catchAsync(async (req: AdminAuthRequest, re
     adminId: req.admin!.id,
     action: 'BROADCAST_NOTIFICATION',
     entityType: 'Notification',
-    entityId: null,
+    entityId: undefined,
     description: `Broadcast notification "${title}" to ${users.length} user(s)`,
     diff: {
       title,
