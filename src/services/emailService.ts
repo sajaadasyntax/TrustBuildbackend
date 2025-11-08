@@ -82,8 +82,12 @@ export const createEmailService = () => {
     const subject = options.subject || 'No subject';
     const emailType = (options as any).emailType || 'general'; // Allow emailType to be passed in options
     
-    // Extract email content (HTML or text)
-    const emailContent = options.html || options.text || '';
+    // Extract email content (HTML or text) and ensure it's a string
+    const emailContent: string = typeof options.html === 'string' 
+      ? options.html 
+      : (typeof options.text === 'string' 
+          ? options.text 
+          : '');
     
     // Log email as PENDING and get log ID
     const logId = await logEmail(recipient, subject, emailType, 'PENDING', undefined, {
