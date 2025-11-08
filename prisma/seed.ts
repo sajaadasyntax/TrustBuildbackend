@@ -514,7 +514,7 @@ async function main() {
         status: ContractorStatus.VERIFIED,
         tier: data.tier,
         creditsBalance: data.tier === ContractorTier.ENTERPRISE ? 5 : data.tier === ContractorTier.PREMIUM ? 2 : 0,
-        weeklyCreditsLimit: data.tier === ContractorTier.ENTERPRISE ? 5 : data.tier === ContractorTier.PREMIUM ? 3 : 3,
+        weeklyCreditsLimit: data.tier === ContractorTier.STANDARD ? 0 : 3, // STANDARD = 0, all other tiers = 3
         averageRating: 4.5 + Math.random() * 0.5,
         reviewCount: Math.floor(Math.random() * 50) + 10,
         jobsCompleted: Math.floor(Math.random() * 100) + 20,
@@ -587,6 +587,166 @@ async function main() {
 
     contractors.push(contractor);
     console.log(`  ✅ Contractor created: ${data.businessName} (${data.subscriptionPlan} subscription)`);
+  }
+
+  // Additional subscribed contractors for testing
+  console.log('  Creating additional test contractors...');
+  const additionalContractors = [
+    {
+      name: 'Premium Plumber Ltd',
+      email: 'premium.plumber@test.com',
+      businessName: 'Premium Plumbing Services',
+      description: 'Professional plumbing services with 15 years experience',
+      phone: '07700 900111',
+      city: 'London',
+      postcode: 'SW1A 1AA',
+      operatingArea: 'Greater London',
+      servicesProvided: 'Plumbing, Heating, Boiler Installation',
+      yearsExperience: '15',
+      tier: ContractorTier.PREMIUM,
+    },
+    {
+      name: 'Enterprise Electricians',
+      email: 'enterprise.electric@test.com',
+      businessName: 'Enterprise Electrical Solutions',
+      description: 'Large scale electrical installations and maintenance',
+      phone: '07700 900222',
+      city: 'Manchester',
+      postcode: 'M1 1AA',
+      operatingArea: 'Greater Manchester',
+      servicesProvided: 'Electrical Installation, PAT Testing, Emergency Callouts',
+      yearsExperience: '20',
+      tier: ContractorTier.ENTERPRISE,
+    },
+    {
+      name: 'Standard Builder Co',
+      email: 'standard.builder@test.com',
+      businessName: 'Standard Building Services',
+      description: 'General building and construction work',
+      phone: '07700 900333',
+      city: 'Birmingham',
+      postcode: 'B1 1AA',
+      operatingArea: 'West Midlands',
+      servicesProvided: 'Building, Extensions, Renovations',
+      yearsExperience: '10',
+      tier: ContractorTier.STANDARD,
+    },
+    {
+      name: 'Premium Roofer Pro',
+      email: 'premium.roofer@test.com',
+      businessName: 'Pro Roofing Solutions',
+      description: 'Expert roofing services, repairs and installations',
+      phone: '07700 900444',
+      city: 'Bristol',
+      postcode: 'BS1 1AA',
+      operatingArea: 'Bristol and South West',
+      servicesProvided: 'Roofing, Guttering, Flat Roof Installation',
+      yearsExperience: '12',
+      tier: ContractorTier.PREMIUM,
+    },
+    {
+      name: 'Standard Painter',
+      email: 'standard.painter@test.com',
+      businessName: 'Quality Painting Services',
+      description: 'Interior and exterior painting and decorating',
+      phone: '07700 900555',
+      city: 'Leeds',
+      postcode: 'LS1 1AA',
+      operatingArea: 'West Yorkshire',
+      servicesProvided: 'Painting, Decorating, Wallpapering',
+      yearsExperience: '8',
+      tier: ContractorTier.STANDARD,
+    },
+    {
+      name: 'Elsa Jaadam',
+      email: 'elsajaadammar@gmail.com',
+      businessName: 'Elsa Professional Services',
+      description: 'High-quality professional services with excellent customer satisfaction',
+      phone: '07700 900999',
+      city: 'London',
+      postcode: 'E1 6AN',
+      operatingArea: 'London and surrounding areas',
+      servicesProvided: 'General Contracting, Property Maintenance, Renovations',
+      yearsExperience: '10',
+      tier: ContractorTier.PREMIUM,
+    },
+  ];
+
+  const testPassword = await bcrypt.hash('TestPassword123!', 12);
+  
+  for (const contractorData of additionalContractors) {
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: contractorData.email },
+    });
+
+    if (existingUser) {
+      console.log(`  ⏭️  Skipping ${contractorData.email} - already exists`);
+      continue;
+    }
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name: contractorData.name,
+        email: contractorData.email,
+        password: testPassword,
+        role: UserRole.CONTRACTOR,
+        isActive: true,
+      },
+    });
+
+    // Create contractor profile
+    const contractor = await prisma.contractor.create({
+      data: {
+        userId: user.id,
+        businessName: contractorData.businessName,
+        description: contractorData.description,
+        phone: contractorData.phone,
+        city: contractorData.city,
+        postcode: contractorData.postcode,
+        operatingArea: contractorData.operatingArea,
+        servicesProvided: contractorData.servicesProvided,
+        yearsExperience: contractorData.yearsExperience,
+        profileApproved: true,
+        status: ContractorStatus.VERIFIED,
+        averageRating: parseFloat((4 + Math.random()).toFixed(1)),
+        tier: contractorData.tier,
+        creditsBalance: contractorData.tier === ContractorTier.ENTERPRISE ? 100 : contractorData.tier === ContractorTier.PREMIUM ? 50 : 20,
+        weeklyCreditsLimit: contractorData.tier === ContractorTier.STANDARD ? 0 : 3, // STANDARD = 0, all other tiers = 3
+      },
+    });
+
+    // Create active subscription
+    const currentPeriodEnd = new Date();
+    currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1);
+
+    await prisma.subscription.create({
+      data: {
+        contractorId: contractor.id,
+        tier: contractorData.tier,
+        plan: SubscriptionPlan.MONTHLY,
+        status: 'active',
+        isActive: true,
+        currentPeriodStart: new Date(),
+        currentPeriodEnd,
+        stripeSubscriptionId: `sub_test_${contractor.id}`,
+        monthlyPrice: contractorData.tier === ContractorTier.ENTERPRISE ? 99.99 : contractorData.tier === ContractorTier.PREMIUM ? 49.99 : 19.99,
+      },
+    });
+
+    // Create KYC record
+    await prisma.contractorKyc.create({
+      data: {
+        contractorId: contractor.id,
+        status: 'APPROVED',
+        submittedAt: new Date(),
+        reviewedAt: new Date(),
+      },
+    });
+
+    contractors.push(contractor);
+    console.log(`  ✅ Test contractor created: ${contractorData.businessName} (${contractorData.tier} subscription)`);
   }
   console.log('');
 
