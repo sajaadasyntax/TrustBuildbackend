@@ -63,7 +63,15 @@ export const createEmailService = () => {
   // Send email with retry logic and fallbacks
   const sendMail = async (options: nodemailer.SendMailOptions, retries = 2) => {
     // Extract email details for logging
-    const recipient = typeof options.to === 'string' ? options.to : (Array.isArray(options.to) ? options.to[0] : 'unknown');
+    let recipient: string = 'unknown';
+    if (typeof options.to === 'string') {
+      recipient = options.to;
+    } else if (Array.isArray(options.to) && options.to.length > 0) {
+      recipient = typeof options.to[0] === 'string' ? options.to[0] : (options.to[0] as any).address || 'unknown';
+    } else if (options.to && typeof options.to === 'object' && 'address' in options.to) {
+      recipient = (options.to as any).address;
+    }
+    
     const subject = options.subject || 'No subject';
     const emailType = (options as any).emailType || 'general'; // Allow emailType to be passed in options
     
