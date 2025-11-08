@@ -83,11 +83,12 @@ export const errorHandler = (
 
   // Handle CORS errors specifically
   if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({
+    res.status(403).json({
       status: 'error',
       message: 'CORS: Origin not allowed',
       origin: req.headers.origin || 'No origin header',
     });
+    return;
   }
 
   // Log error to database (async, don't wait for it)

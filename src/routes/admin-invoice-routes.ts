@@ -302,9 +302,9 @@ export const getInvoiceStats = catchAsync(async (req: AdminAuthRequest, res: Res
 // Routes
 router.use(protectAdmin); // All routes require admin authentication
 
-router.get('/stats', requirePermission(AdminPermission.INVOICES_READ), getInvoiceStats);
-router.get('/', requirePermission(AdminPermission.INVOICES_READ), getAllInvoices);
-router.get('/:id', requirePermission(AdminPermission.INVOICES_READ), getInvoiceById);
-router.patch('/:id/status', requirePermission(AdminPermission.INVOICES_WRITE), updateInvoiceStatus);
+router.get('/stats', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceStats);
+router.get('/', requirePermission(AdminPermission.PAYMENTS_READ), getAllInvoices);
+router.get('/:id', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceById);
+router.patch('/:id/status', requirePermission(AdminPermission.PAYMENTS_WRITE), updateInvoiceStatus);
 
 export default router;
