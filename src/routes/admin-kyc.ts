@@ -20,16 +20,36 @@ const router = express.Router();
 
 // Serve KYC documents
 router.get('/documents/:path(*)', (req, res) => {
-  const filePath = path.join(process.cwd(), 'uploads', 'kyc', req.params.path);
-
+  // The path parameter should be relative to uploads/kyc (e.g., "contractorId/filename.jpg")
+  // But it might also be a full path from old records, so we handle both cases
+  let filePath: string;
   
-  if (require('fs').existsSync(filePath)) {
-    res.sendFile(filePath);
+  // Check if it's already an absolute path (legacy data)
+  if (path.isAbsolute(req.params.path)) {
+    filePath = req.params.path;
+  } else {
+    // It's a relative path - construct from uploads/kyc
+    filePath = path.join(process.cwd(), 'uploads', 'kyc', req.params.path);
+  }
+
+  // Normalize the path to prevent directory traversal
+  const normalizedPath = path.normalize(filePath);
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  
+  // Ensure the file is within the uploads directory
+  if (!normalizedPath.startsWith(uploadsDir)) {
+    return res.status(403).json({
+      status: 'fail',
+      message: 'Access denied',
+    });
+  }
+
+  if (fs.existsSync(normalizedPath)) {
+    res.sendFile(normalizedPath);
   } else {
     res.status(404).json({
       status: 'fail',
-      message: `File not found: ${filePath}`,
-      requestedPath: req.params.path
+      message: `File not found: ${req.params.path}`,
     });
   }
 });
@@ -182,14 +202,22 @@ router.post(
     const dueBy = new Date();
     dueBy.setDate(dueBy.getDate() + deadlineDays);
 
+    // Helper function to convert absolute path to relative path
+    const getRelativePath = (filePath: string): string => {
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      const relativePath = path.relative(uploadsDir, filePath);
+      // Normalize path separators to forward slashes for URLs
+      return relativePath.replace(/\\/g, '/');
+    };
+
     // Create or update KYC record
     const kyc = await prisma.contractorKyc.upsert({
       where: { contractorId: contractor.id },
       update: {
-        idDocPath: files.idDocument[0].path,
-        utilityDocPath: files.utilityBill[0].path,
-        insuranceDocPath: files.insuranceDoc?.[0]?.path,
-        companyDocPath: files.companyDoc?.[0]?.path,
+        idDocPath: getRelativePath(files.idDocument[0].path),
+        utilityDocPath: getRelativePath(files.utilityBill[0].path),
+        insuranceDocPath: files.insuranceDoc?.[0]?.path ? getRelativePath(files.insuranceDoc[0].path) : null,
+        companyDocPath: files.companyDoc?.[0]?.path ? getRelativePath(files.companyDoc[0].path) : null,
         companyNumber,
         status: 'SUBMITTED',
         submittedAt: new Date(),
@@ -197,10 +225,10 @@ router.post(
       },
       create: {
         contractorId: contractor.id,
-        idDocPath: files.idDocument[0].path,
-        utilityDocPath: files.utilityBill[0].path,
-        insuranceDocPath: files.insuranceDoc?.[0]?.path,
-        companyDocPath: files.companyDoc?.[0]?.path,
+        idDocPath: getRelativePath(files.idDocument[0].path),
+        utilityDocPath: getRelativePath(files.utilityBill[0].path),
+        insuranceDocPath: files.insuranceDoc?.[0]?.path ? getRelativePath(files.insuranceDoc[0].path) : null,
+        companyDocPath: files.companyDoc?.[0]?.path ? getRelativePath(files.companyDoc[0].path) : null,
         companyNumber,
         status: 'SUBMITTED',
         submittedAt: new Date(),
@@ -218,7 +246,7 @@ router.post(
       },
     });
 
-    // Send notification to admin
+    // Send email notification to admin
     try {
       const emailService = createEmailService();
       const emailContent = createServiceEmail({
@@ -238,7 +266,18 @@ router.post(
 
       await emailService.sendMail(emailContent);
     } catch (error) {
-      console.error('Failed to send admin notification:', error);
+      console.error('Failed to send admin email notification:', error);
+    }
+
+    // Send in-app notification to all admins
+    try {
+      await adminNotificationService.notifyAdminsNewKYC(
+        kyc.id,
+        contractor.businessName || req.user!.name,
+        req.user!.id
+      );
+    } catch (error) {
+      console.error('Failed to send admin in-app notification:', error);
     }
 
     res.status(200).json({
