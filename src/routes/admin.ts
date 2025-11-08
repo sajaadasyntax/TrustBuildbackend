@@ -3419,6 +3419,9 @@ router.get('/messages/users', requirePermission(AdminPermission.SUPPORT_READ), g
 
 // Broadcast Notifications
 router.post('/notifications/broadcast', requirePermission(AdminPermission.SUPPORT_WRITE), broadcastNotification);
+
+// Admin Message Sending
+router.post('/messages/send', requirePermission(AdminPermission.SUPPORT_WRITE), sendMessageAsAdmin);
 router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_WRITE), setJobLeadPrice);
 router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
