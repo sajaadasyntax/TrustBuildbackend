@@ -770,6 +770,104 @@ async function main() {
     contractors.push(contractor);
     console.log(`  ✅ Test contractor created: ${contractorData.businessName} (${contractorData.tier} subscription)`);
   }
+
+  // Add non-subscribed contractors for testing
+  console.log('  Creating non-subscribed contractors...');
+  const nonSubscribedContractors = [
+    {
+      name: 'John Smith',
+      email: 'john.smith@test.com',
+      businessName: 'Smith Handyman Services',
+      description: 'General handyman and repair services',
+      phone: '07700 900666',
+      city: 'Liverpool',
+      postcode: 'L1 1AA',
+      operatingArea: 'Merseyside',
+      servicesProvided: 'General Repairs, Handyman Work, Small Jobs',
+      yearsExperience: '5',
+    },
+    {
+      name: 'Sarah Johnson',
+      email: 'sarah.johnson@test.com',
+      businessName: 'Johnson Cleaning Services',
+      description: 'Professional cleaning and maintenance',
+      phone: '07700 900777',
+      city: 'Newcastle',
+      postcode: 'NE1 1AA',
+      operatingArea: 'Tyne and Wear',
+      servicesProvided: 'Cleaning, Maintenance, Property Care',
+      yearsExperience: '7',
+    },
+    {
+      name: 'Mike Brown',
+      email: 'mike.brown@test.com',
+      businessName: 'Brown Tiling Services',
+      description: 'Expert tiling and flooring installation',
+      phone: '07700 900888',
+      city: 'Sheffield',
+      postcode: 'S1 1AA',
+      operatingArea: 'South Yorkshire',
+      servicesProvided: 'Tiling, Flooring, Bathroom Renovations',
+      yearsExperience: '12',
+    },
+  ];
+
+  for (const contractorData of nonSubscribedContractors) {
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: contractorData.email },
+    });
+
+    if (existingUser) {
+      console.log(`  ⏭️  Skipping ${contractorData.email} - already exists`);
+      continue;
+    }
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name: contractorData.name,
+        email: contractorData.email,
+        password: testPassword,
+        role: UserRole.CONTRACTOR,
+        isActive: true,
+      },
+    });
+
+    // Create contractor profile (no subscription, weeklyCreditsLimit = 0)
+    const contractor = await prisma.contractor.create({
+      data: {
+        userId: user.id,
+        businessName: contractorData.businessName,
+        description: contractorData.description,
+        phone: contractorData.phone,
+        city: contractorData.city,
+        postcode: contractorData.postcode,
+        operatingArea: contractorData.operatingArea,
+        servicesProvided: contractorData.servicesProvided,
+        yearsExperience: contractorData.yearsExperience,
+        profileApproved: true,
+        status: ContractorStatus.VERIFIED,
+        averageRating: parseFloat((4 + Math.random()).toFixed(1)),
+        tier: ContractorTier.STANDARD,
+        creditsBalance: 1, // 1 free credit
+        weeklyCreditsLimit: 0, // No weekly credits (not subscribed)
+      },
+    });
+
+    // Create KYC record
+    await prisma.contractorKyc.create({
+      data: {
+        contractorId: contractor.id,
+        status: 'APPROVED',
+        submittedAt: new Date(),
+        reviewedAt: new Date(),
+      },
+    });
+
+    contractors.push(contractor);
+    console.log(`  ✅ Non-subscribed contractor created: ${contractorData.businessName}`);
+  }
   console.log('');
 
   // ============================================================
