@@ -1,14 +1,15 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
+import { protectAdmin, AdminAuthRequest, requirePermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
+import { AdminPermission } from '../config/permissions';
 
 const router = Router();
 
 // @desc    Get all invoices with filters and pagination
 // @route   GET /api/admin/invoices
 // @access  Private (Admin only)
-export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getAllInvoices = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
@@ -122,7 +123,7 @@ export const getAllInvoices = catchAsync(async (req: AuthenticatedRequest, res: 
 // @desc    Get invoice by ID
 // @route   GET /api/admin/invoices/:id
 // @access  Private (Admin only)
-export const getInvoiceById = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getInvoiceById = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
 
   const invoice = await prisma.invoice.findUnique({
@@ -178,7 +179,7 @@ export const getInvoiceById = catchAsync(async (req: AuthenticatedRequest, res: 
 // @desc    Update invoice status
 // @route   PATCH /api/admin/invoices/:id/status
 // @access  Private (Admin only)
-export const updateInvoiceStatus = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -231,7 +232,7 @@ export const updateInvoiceStatus = catchAsync(async (req: AuthenticatedRequest, 
 // @desc    Get invoice statistics
 // @route   GET /api/admin/invoices/stats
 // @access  Private (Admin only)
-export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const getInvoiceStats = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { period = '30' } = req.query; // days
   const days = parseInt(period as string);
   const startDate = new Date();
@@ -299,12 +300,11 @@ export const getInvoiceStats = catchAsync(async (req: AuthenticatedRequest, res:
 });
 
 // Routes
-router.use(protect);
-router.use(restrictTo('ADMIN', 'SUPER_ADMIN'));
+router.use(protectAdmin); // All routes require admin authentication
 
-router.get('/stats', getInvoiceStats);
-router.get('/', getAllInvoices);
-router.get('/:id', getInvoiceById);
-router.patch('/:id/status', updateInvoiceStatus);
+router.get('/stats', requirePermission(AdminPermission.INVOICES_READ), getInvoiceStats);
+router.get('/', requirePermission(AdminPermission.INVOICES_READ), getAllInvoices);
+router.get('/:id', requirePermission(AdminPermission.INVOICES_READ), getInvoiceById);
+router.patch('/:id/status', requirePermission(AdminPermission.INVOICES_WRITE), updateInvoiceStatus);
 
 export default router;
