@@ -62,8 +62,44 @@ export const getAllInvoices = catchAsync(async (req: AdminAuthRequest, res: Resp
     ];
   }
 
-  // Get invoices with pagination
-  const [invoices, total] = await Promise.all([
+  // Build filter conditions for manual invoices
+  const manualInvoiceWhere: any = {};
+  
+  if (startDate && endDate) {
+    manualInvoiceWhere.createdAt = {
+      gte: new Date(startDate),
+      lte: new Date(endDate),
+    };
+  }
+
+  if (status) {
+    if (status === 'PAID') {
+      manualInvoiceWhere.paidAt = { not: null };
+    } else if (status === 'PENDING') {
+      manualInvoiceWhere.paidAt = null;
+      manualInvoiceWhere.dueDate = { gt: new Date() };
+      manualInvoiceWhere.status = { in: ['DRAFT', 'ISSUED'] };
+    } else if (status === 'OVERDUE') {
+      manualInvoiceWhere.paidAt = null;
+      manualInvoiceWhere.dueDate = { lt: new Date() };
+      manualInvoiceWhere.status = { in: ['ISSUED'] };
+    }
+  }
+
+  if (search) {
+    manualInvoiceWhere.OR = [
+      { number: { contains: search, mode: 'insensitive' } },
+      { reason: { contains: search, mode: 'insensitive' } },
+      { notes: { contains: search, mode: 'insensitive' } },
+      { contractor: { user: { email: { contains: search, mode: 'insensitive' } } } },
+    ];
+  }
+
+  // Get both regular invoices and manual invoices
+  // Fetch enough items to ensure proper sorting and pagination across both types
+  // For proper pagination, we need to fetch at least (skip + limit) items from each source
+  const fetchLimit = Math.max(limit * 5, skip + limit); // Fetch enough for pagination
+  const [regularInvoices, manualInvoices, regularCount, manualCount] = await Promise.all([
     prisma.invoice.findMany({
       where,
       include: {
@@ -96,20 +132,81 @@ export const getAllInvoices = catchAsync(async (req: AdminAuthRequest, res: Resp
               }
             }
           },
-          take: 1 // Take just the first payment for display
+          take: 1
         }
       },
       orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit
+      take: fetchLimit
     }),
-    prisma.invoice.count({ where })
+    prisma.manualInvoice.findMany({
+      where: manualInvoiceWhere,
+      include: {
+        contractor: {
+          select: {
+            id: true,
+            businessName: true,
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        items: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: fetchLimit
+    }),
+    prisma.invoice.count({ where }),
+    prisma.manualInvoice.count({ where: manualInvoiceWhere })
   ]);
+
+  // Combine and format invoices for response
+  const allInvoices = [
+    ...regularInvoices.map(inv => ({
+      ...inv,
+      type: 'regular',
+      invoiceNumber: inv.invoiceNumber,
+      totalAmount: Number(inv.totalAmount),
+      amount: Number(inv.amount),
+      vatAmount: Number(inv.vatAmount || 0),
+    })),
+    ...manualInvoices.map(inv => ({
+      id: inv.id,
+      invoiceNumber: inv.number,
+      type: 'manual',
+      contractorId: inv.contractorId,
+      contractor: inv.contractor,
+      totalAmount: inv.total / 100, // Convert from pence
+      amount: inv.subtotal / 100, // Convert from pence
+      vatAmount: inv.tax / 100, // Convert from pence
+      status: inv.status,
+      createdAt: inv.createdAt,
+      issuedAt: inv.issuedAt,
+      paidAt: inv.paidAt,
+      dueAt: inv.dueDate,
+      description: inv.reason || inv.notes || 'Manual Invoice',
+      recipientName: inv.contractor.businessName || inv.contractor.user.name,
+      recipientEmail: inv.contractor.user.email,
+      payments: [],
+      items: inv.items.map(item => ({
+        description: item.description,
+        amount: item.amount / 100,
+        quantity: item.quantity,
+      })),
+    }))
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const total = regularCount + manualCount;
+
+  // Apply pagination after sorting
+  const paginatedInvoices = allInvoices.slice(skip, skip + limit);
 
   res.status(200).json({
     status: 'success',
     data: {
-      invoices,
+      invoices: paginatedInvoices,
       pagination: {
         page,
         limit,

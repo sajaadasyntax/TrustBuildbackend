@@ -61,8 +61,8 @@ router.patch(
 
       const rate = (commissionRate?.value as any)?.rate || 5.0;
       const commissionAmount = (value * rate) / 100;
-      const vatAmount = commissionAmount * 0.2;
-      const totalAmount = commissionAmount + vatAmount;
+      const vatAmount = 0; // No additional VAT - commission amount already includes VAT
+      const totalAmount = commissionAmount;
 
       await prisma.commissionPayment.update({
         where: { id: job.commissionPayment.id },

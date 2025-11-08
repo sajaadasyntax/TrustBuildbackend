@@ -130,17 +130,20 @@ router.post(
       });
     }
 
-    // Calculate totals
+    // Calculate totals (amounts already include VAT, no additional calculation needed)
+    // Frontend sends amounts in pence, so use directly
     let subtotal = 0;
     items.forEach((item: any) => {
-      if (!item.description || !item.amount) {
+      if (!item.description || item.amount === undefined || item.amount === null) {
         throw new Error('Each item must have description and amount');
       }
-      subtotal += item.amount * (item.quantity || 1);
+      // Amount is already in pence from frontend, multiply by quantity
+      subtotal += Math.round(item.amount) * (item.quantity || 1);
     });
 
-    const tax = Math.round(subtotal * 0.2); // 20% VAT
-    const total = subtotal + tax;
+    // Amounts already include VAT, so tax is 0 and total equals subtotal
+    const tax = 0;
+    const total = subtotal;
 
     // Generate invoice number
     const invoiceNumber = await generateInvoiceNumber();
