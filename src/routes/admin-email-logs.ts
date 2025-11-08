@@ -32,7 +32,13 @@ router.get(
 
     const where: any = {};
 
-    if (status) where.status = status;
+    if (status) {
+      // Convert to uppercase to match enum values
+      const statusUpper = (status as string).toUpperCase();
+      if (['PENDING', 'SENT', 'FAILED'].includes(statusUpper)) {
+        where.status = statusUpper;
+      }
+    }
     if (type) where.type = type;
     if (recipient) where.recipient = { contains: recipient as string, mode: 'insensitive' };
     
@@ -89,9 +95,9 @@ router.get(
     }
 
     const [totalSent, totalFailed, totalPending, recentEmails] = await Promise.all([
-      prisma.emailLog.count({ where: { ...where, status: 'sent' } }),
-      prisma.emailLog.count({ where: { ...where, status: 'failed' } }),
-      prisma.emailLog.count({ where: { ...where, status: 'pending' } }),
+      prisma.emailLog.count({ where: { ...where, status: 'SENT' } }),
+      prisma.emailLog.count({ where: { ...where, status: 'FAILED' } }),
+      prisma.emailLog.count({ where: { ...where, status: 'PENDING' } }),
       prisma.emailLog.findMany({
         where,
         orderBy: { sentAt: 'desc' },
