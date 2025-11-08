@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { MailerSend, EmailParams, Sender, Recipient } from 'mailersend';
 import sgMail from '@sendgrid/mail';
+import { prisma } from '../config/database';
 
 // Email service with API-based sending
 export const createEmailService = () => {
@@ -17,16 +18,89 @@ export const createEmailService = () => {
 
   }
   
+  // Helper function to log email to database
+  const logEmail = async (
+    recipient: string,
+    subject: string,
+    type: string,
+    status: 'PENDING' | 'SENT' | 'FAILED',
+    error?: string,
+    metadata?: any,
+    logId?: string
+  ) => {
+    try {
+      if (logId) {
+        // Update existing log
+        await prisma.emailLog.update({
+          where: { id: logId },
+          data: {
+            status,
+            error: error ? error.substring(0, 5000) : undefined,
+            metadata: metadata || undefined,
+          },
+        });
+      } else {
+        // Create new log
+        const log = await prisma.emailLog.create({
+          data: {
+            recipient,
+            subject,
+            type,
+            status,
+            error: error ? error.substring(0, 5000) : undefined,
+            metadata: metadata || undefined,
+          },
+        });
+        return log.id;
+      }
+    } catch (logError) {
+      // Don't throw - email logging failures shouldn't break email sending
+      console.error('Failed to log email to database:', logError);
+    }
+    return undefined;
+  };
+
   // Send email with retry logic and fallbacks
   const sendMail = async (options: nodemailer.SendMailOptions, retries = 2) => {
+    // Extract email details for logging
+    const recipient = typeof options.to === 'string' ? options.to : (Array.isArray(options.to) ? options.to[0] : 'unknown');
+    const subject = options.subject || 'No subject';
+    const emailType = (options as any).emailType || 'general'; // Allow emailType to be passed in options
+    
+    // Log email as PENDING and get log ID
+    const logId = await logEmail(recipient, subject, emailType, 'PENDING', undefined, {
+      from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
+    });
+
     try {
+      let result;
       // Try SendGrid first if API key is available
       if (sendGridApiKey) {
-        return await sendWithSendGrid(options, retries);
+        result = await sendWithSendGrid(options, retries);
+      } else {
+        // Fallback to nodemailer with Gmail configuration
+        result = await sendWithNodemailer(options, retries);
       }
-      // Fallback to nodemailer with Gmail configuration
-      return await sendWithNodemailer(options, retries);
+      
+      // Update log to SENT
+      if (logId) {
+        await logEmail(recipient, subject, emailType, 'SENT', undefined, {
+          messageId: result?.messageId,
+          from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
+        }, logId);
+      }
+      
+      return result;
     } catch (error: any) {
+      // Update log to FAILED
+      if (logId) {
+        await logEmail(recipient, subject, emailType, 'FAILED', error.message || String(error), {
+          from: typeof options.from === 'string' ? options.from : (options.from as any)?.address,
+          errorCode: error.code,
+          errorStatus: error.status,
+        }, logId);
+      }
+      
       // If we get here, all email sending attempts have failed
       console.error(`
       ❌ ALL EMAIL SENDING ATTEMPTS FAILED ❌

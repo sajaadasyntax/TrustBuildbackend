@@ -614,6 +614,8 @@ export const sendInvoiceEmail = catchAsync(async (req: AdminAuthRequest, res: Re
         ctaUrl: `${process.env.FRONTEND_URL || 'https://trustbuild.uk'}/admin/invoices/${invoice.id}`
       });
       
+      // Add emailType to options for logging
+      (mailOptions as any).emailType = 'invoice';
       await emailService.sendMail(mailOptions);
       
       res.status(200).json({

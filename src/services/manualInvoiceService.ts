@@ -176,6 +176,8 @@ export const sendInvoiceEmail = async (invoiceId: string): Promise<void> => {
   // For now, PDF is accessible via the platform
 
   const emailService = createEmailService();
+  // Add emailType to options for logging
+  (emailContent as any).emailType = 'invoice';
   await emailService.sendMail(emailContent);
 
 
