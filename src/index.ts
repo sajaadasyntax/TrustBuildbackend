@@ -86,22 +86,35 @@ const corsOptions = {
     
     const allowedOrigins = [
       'http://localhost:3000',
+      'http://localhost:3001',
       'https://trustbuild.uk',
       'https://www.trustbuild.uk',
       'https://api.trustbuild.uk',
       process.env.FRONTEND_URL,
       process.env.API_URL
-    ].filter(Boolean); // Remove undefined values
+    ].filter(Boolean).map(url => {
+      // Normalize URLs - remove trailing slashes and ensure consistent format
+      return url?.replace(/\/$/, '');
+    });
     
-
+    // Normalize the incoming origin (remove trailing slash)
+    const normalizedOrigin = origin.replace(/\/$/, '');
     
-    // Check if the origin is in our allowed list
-    if (allowedOrigins.includes(origin)) {
-
+    // Check if the origin is in our allowed list (case-insensitive for protocol)
+    const isAllowed = allowedOrigins.some(allowed => {
+      const normalizedAllowed = allowed?.toLowerCase();
+      const normalizedOriginLower = normalizedOrigin.toLowerCase();
+      return normalizedAllowed === normalizedOriginLower;
+    });
+    
+    if (isAllowed) {
       return callback(null, true);
     }
     
-
+    // Log the blocked origin for debugging
+    console.warn(`CORS blocked origin: ${origin} (normalized: ${normalizedOrigin})`);
+    console.warn(`Allowed origins: ${allowedOrigins.join(', ')}`);
+    
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -114,6 +127,19 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// CORS error handler - must be before other error handlers
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err.message === 'Not allowed by CORS') {
+    // Return proper CORS error response
+    return res.status(403).json({
+      status: 'error',
+      message: 'CORS: Origin not allowed',
+      origin: req.headers.origin || 'No origin header',
+    });
+  }
+  next(err);
+});
 
 // Compression middleware
 app.use(compression());
