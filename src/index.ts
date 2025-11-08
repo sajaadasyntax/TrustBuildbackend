@@ -11,6 +11,7 @@ import { rawBodyMiddleware } from './routes/webhooks';
 
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
+import { logError } from './services/errorLogService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import contractorRoutes from './routes/contractors';
@@ -238,14 +239,24 @@ app.listen(PORT, () => {
 });
 
 // Handle unhandled promise rejections
-process.on('unhandledRejection', (err: Error) => {
+process.on('unhandledRejection', async (err: Error) => {
   console.error('Unhandled Promise Rejection:', err.message);
+  // Log to database
+  await logError(err, undefined, {
+    type: 'unhandledRejection',
+    process: 'node',
+  });
   process.exit(1);
 });
 
 // Handle uncaught exceptions
-process.on('uncaughtException', (err: Error) => {
+process.on('uncaughtException', async (err: Error) => {
   console.error('Uncaught Exception:', err.message);
+  // Log to database
+  await logError(err, undefined, {
+    type: 'uncaughtException',
+    process: 'node',
+  });
   process.exit(1);
 });
 

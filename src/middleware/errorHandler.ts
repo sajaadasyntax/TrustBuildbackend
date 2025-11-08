@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logError } from '../services/errorLogService';
 
 export interface CustomError extends Error {
   statusCode?: number;
@@ -79,6 +80,17 @@ export const errorHandler = (
 ): void => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
+
+  // Log error to database (async, don't wait for it)
+  logError(err, req, {
+    originalError: {
+      name: err.name,
+      code: err.code,
+      statusCode: err.statusCode,
+    },
+  }).catch(() => {
+    // Silently fail if logging fails
+  });
 
   if (process.env.NODE_ENV === 'development') {
     sendErrorDev(err, res);
