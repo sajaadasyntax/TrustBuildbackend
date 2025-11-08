@@ -21,6 +21,11 @@ export async function generateInvoicePDF(invoiceData: {
   paidAt?: Date;
   paymentType?: string;
   vatRate?: number;
+  items?: Array<{
+    description: string;
+    quantity: number;
+    amount: number;
+  }>;
 }) {
   return new Promise<Buffer>((resolve, reject) => {
     try {
@@ -69,69 +74,113 @@ export async function generateInvoicePDF(invoiceData: {
         .text(invoiceData.recipientAddress || 'No address provided')
         .moveDown(2);
       
-      // Description
-      doc.fontSize(14)
-        .text('Description', { underline: true })
-        .moveDown(0.5)
-        .fontSize(12)
-        .text(invoiceData.description)
-        .moveDown(2);
+      // Items table
+      const vatRate = invoiceData.vatRate || 20;
+      const hasItems = invoiceData.items && invoiceData.items.length > 0;
       
-      // Pricing table
-      const vatRate = invoiceData.vatRate || 20; // Default to 20% if not specified
-      doc.fontSize(12);
+      doc.fontSize(14)
+        .text('Items', { underline: true })
+        .moveDown(0.5);
+      
+      doc.fontSize(10);
       
       // Table header
-      doc.text('Item', 50, doc.y, { width: 250, align: 'left' })
-        .text('Price', 300, doc.y, { width: 100, align: 'right' })
-        .text('VAT', 400, doc.y, { width: 100, align: 'right' })
-        .text('Total', 500, doc.y, { width: 100, align: 'right' })
-        .moveDown(0.5);
+      const startY = doc.y;
+      const tableTop = startY;
+      const col1X = 50;  // Description
+      const col2X = 350; // Quantity
+      const col3X = 400; // Unit Price
+      const col4X = 500; // Total
+      const tableWidth = 500;
       
-      // Separator line
-      doc.moveTo(50, doc.y)
-        .lineTo(550, doc.y)
+      doc.font('Helvetica-Bold')
+        .text('Description', col1X, startY, { width: 280 })
+        .text('Qty', col2X, startY, { width: 40, align: 'center' })
+        .text('Unit Price', col3X, startY, { width: 80, align: 'right' })
+        .text('Total', col4X, startY, { width: 50, align: 'right' })
+        .font('Helvetica');
+      
+      doc.moveDown(0.3);
+      const headerBottom = doc.y;
+      
+      // Separator line after header
+      doc.moveTo(col1X, headerBottom)
+        .lineTo(col1X + tableWidth, headerBottom)
         .stroke()
-        .moveDown(0.5);
+        .moveDown(0.3);
       
-      // Item row
-      const description = invoiceData.description.length > 30 ? 
-        invoiceData.description.substring(0, 27) + '...' : 
-        invoiceData.description;
+      let currentY = doc.y;
+      let subtotal = 0;
       
-      doc.text(description, 50, doc.y, { width: 250, align: 'left' })
-        .text(`£${invoiceData.amount.toFixed(2)}`, 300, doc.y, { width: 100, align: 'right' })
-        .text(`£${invoiceData.vatAmount.toFixed(2)}`, 400, doc.y, { width: 100, align: 'right' })
-        .text(`£${invoiceData.totalAmount.toFixed(2)}`, 500, doc.y, { width: 100, align: 'right' })
-        .moveDown();
+      if (hasItems) {
+        // Render items from items array
+        for (const item of invoiceData.items!) {
+          const itemY = currentY;
+          const itemDescription = item.description.length > 40 ? 
+            item.description.substring(0, 37) + '...' : 
+            item.description;
+          
+          doc.text(itemDescription, col1X, itemY, { width: 280 })
+            .text(item.quantity.toString(), col2X, itemY, { width: 40, align: 'center' })
+            .text(`£${(item.amount / item.quantity).toFixed(2)}`, col3X, itemY, { width: 80, align: 'right' })
+            .text(`£${item.amount.toFixed(2)}`, col4X, itemY, { width: 50, align: 'right' });
+          
+          subtotal += item.amount;
+          currentY = doc.y;
+          doc.moveDown(0.3);
+        }
+      } else {
+        // Single item from description
+        const itemDescription = invoiceData.description.length > 40 ? 
+          invoiceData.description.substring(0, 37) + '...' : 
+          invoiceData.description;
+        
+        doc.text(itemDescription, col1X, currentY, { width: 280 })
+          .text('1', col2X, currentY, { width: 40, align: 'center' })
+          .text(`£${invoiceData.amount.toFixed(2)}`, col3X, currentY, { width: 80, align: 'right' })
+          .text(`£${invoiceData.totalAmount.toFixed(2)}`, col4X, currentY, { width: 50, align: 'right' });
+        
+        subtotal = invoiceData.totalAmount;
+        doc.moveDown(0.3);
+      }
       
-      // Total line
-      doc.moveTo(50, doc.y)
-        .lineTo(550, doc.y)
+      // Separator line before totals
+      const totalsStartY = doc.y;
+      doc.moveTo(col1X, totalsStartY)
+        .lineTo(col1X + tableWidth, totalsStartY)
         .stroke()
-        .moveDown(0.5);
+        .moveDown(0.3);
       
-      doc.text('', 50, doc.y, { width: 250, align: 'left' })
-        .text('Subtotal:', 300, doc.y, { width: 100, align: 'right' })
-        .text(`£${invoiceData.amount.toFixed(2)}`, 500, doc.y, { width: 100, align: 'right' })
-        .moveDown(0.5);
+      // Calculate totals (amounts already include VAT)
+      const calculatedSubtotal = hasItems ? subtotal : invoiceData.amount;
+      const calculatedVAT = hasItems ? 0 : invoiceData.vatAmount; // VAT already included in items
+      const calculatedTotal = invoiceData.totalAmount;
       
-      doc.text('', 50, doc.y, { width: 250, align: 'left' })
-        .text(`VAT (${vatRate}%):`, 300, doc.y, { width: 100, align: 'right' })
-        .text(`£${invoiceData.vatAmount.toFixed(2)}`, 500, doc.y, { width: 100, align: 'right' })
-        .moveDown(0.5);
+      // Subtotal
+      doc.text('', col1X, doc.y, { width: 280 })
+        .text('Subtotal:', col3X, doc.y, { width: 80, align: 'right' })
+        .text(`£${calculatedSubtotal.toFixed(2)}`, col4X, doc.y, { width: 50, align: 'right' })
+        .moveDown(0.3);
       
-      // Separator line
-      doc.moveTo(300, doc.y)
-        .lineTo(550, doc.y)
+      // VAT (only show if not already included in items)
+      if (!hasItems && calculatedVAT > 0) {
+        doc.text('', col1X, doc.y, { width: 280 })
+          .text(`VAT (${vatRate}%):`, col3X, doc.y, { width: 80, align: 'right' })
+          .text(`£${calculatedVAT.toFixed(2)}`, col4X, doc.y, { width: 50, align: 'right' })
+          .moveDown(0.3);
+      }
+      
+      // Separator line before grand total
+      doc.moveTo(col3X, doc.y)
+        .lineTo(col1X + tableWidth, doc.y)
         .stroke()
-        .moveDown(0.5);
+        .moveDown(0.3);
       
       // Bold total
       doc.font('Helvetica-Bold')
-        .text('', 50, doc.y, { width: 250, align: 'left' })
-        .text('Total:', 300, doc.y, { width: 100, align: 'right' })
-        .text(`£${invoiceData.totalAmount.toFixed(2)}`, 500, doc.y, { width: 100, align: 'right' })
+        .text('', col1X, doc.y, { width: 280 })
+        .text('Total:', col3X, doc.y, { width: 80, align: 'right' })
+        .text(`£${calculatedTotal.toFixed(2)}`, col4X, doc.y, { width: 50, align: 'right' })
         .font('Helvetica')
         .moveDown(2);
       

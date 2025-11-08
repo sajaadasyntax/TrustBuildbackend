@@ -548,9 +548,107 @@ export const downloadInvoice = catchAsync(async (req: AdminAuthRequest, res: Res
   }
 });
 
+// @desc    Send invoice via email
+// @route   POST /api/admin/invoices/:id/send-email
+// @access  Private (Admin only)
+export const sendInvoiceEmail = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+
+  // Try to find in regular invoices first
+  let invoice = await prisma.invoice.findUnique({
+    where: { id },
+    include: {
+      payments: {
+        include: {
+          contractor: {
+            include: {
+              user: {
+                select: {
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          job: {
+            select: {
+              title: true,
+              location: true
+            }
+          }
+        },
+        take: 1
+      }
+    }
+  });
+
+  if (invoice) {
+    // Regular invoice - send email
+    try {
+      const { createEmailService, createServiceEmail } = await import('../services/emailService');
+      const emailService = createEmailService();
+      
+      const payment = invoice.payments[0];
+      const recipientEmail = payment?.contractor?.user?.email || invoice.recipientEmail;
+      const recipientName = payment?.contractor?.user?.name || invoice.recipientName;
+      const jobTitle = payment?.job?.title || 'Job lead access';
+      
+      const mailOptions = createServiceEmail({
+        to: recipientEmail,
+        subject: `TrustBuild Invoice ${invoice.invoiceNumber}`,
+        heading: 'Invoice from TrustBuild',
+        body: `
+          <p>Dear ${recipientName},</p>
+          <p>Please find your invoice details below.</p>
+          
+          <h3>Invoice Details:</h3>
+          <ul>
+            <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
+            <li><strong>Date:</strong> ${new Date(invoice.createdAt).toLocaleDateString()}</li>
+            <li><strong>Amount:</strong> £${Number(invoice.totalAmount).toFixed(2)}</li>
+            <li><strong>Description:</strong> ${invoice.description}</li>
+            ${jobTitle ? `<li><strong>Job:</strong> ${jobTitle}</li>` : ''}
+          </ul>
+        `,
+        ctaText: 'View Invoice',
+        ctaUrl: `${process.env.FRONTEND_URL || 'https://trustbuild.uk'}/admin/invoices/${invoice.id}`
+      });
+      
+      await emailService.sendMail(mailOptions);
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Invoice sent successfully',
+      });
+    } catch (error) {
+      console.error('Failed to send invoice email:', error);
+      return next(new AppError('Failed to send invoice email', 500));
+    }
+  } else {
+    // Try manual invoice
+    const { sendInvoiceEmail: sendManualInvoiceEmail } = await import('../services/manualInvoiceService');
+    
+    try {
+      await sendManualInvoiceEmail(id);
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Invoice sent successfully',
+      });
+    } catch (error: any) {
+      if (error.message === 'Invoice not found') {
+        return next(new AppError('Invoice not found', 404));
+      }
+      console.error('Failed to send manual invoice email:', error);
+      return next(new AppError('Failed to send invoice email', 500));
+    }
+  }
+});
+
 router.get('/stats', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceStats);
 router.get('/', requirePermission(AdminPermission.PAYMENTS_READ), getAllInvoices);
 router.get('/:id/download', requirePermission(AdminPermission.PAYMENTS_READ), downloadInvoice);
+router.post('/:id/send-email', requirePermission(AdminPermission.PAYMENTS_WRITE), sendInvoiceEmail);
 router.get('/:id', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceById);
 router.patch('/:id/status', requirePermission(AdminPermission.PAYMENTS_WRITE), updateInvoiceStatus);
 
