@@ -2945,25 +2945,43 @@ export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res:
   const skip = (page - 1) * limit;
   const { role, search } = req.query;
 
-  // Build where clause
-  const whereClause: any = {};
+  // Build where clause - only messages involving this admin
+  const adminId = req.admin!.id;
+  const whereClause: any = {
+    OR: [
+      { senderId: adminId },
+      { recipientId: adminId },
+    ],
+  };
   
   if (role && role !== 'all') {
-    whereClause.OR = [
-      { senderRole: role as UserRole },
-      { recipientRole: role as UserRole },
-    ];
+    // Add role filter while keeping admin filter
+    const roleFilter: any = {
+      OR: [
+        { senderId: adminId, recipientRole: role as UserRole },
+        { recipientId: adminId, senderRole: role as UserRole },
+      ],
+    };
+    whereClause.AND = [whereClause.OR, roleFilter];
+    delete whereClause.OR;
   }
 
   if (search) {
-    whereClause.OR = [
-      ...(whereClause.OR || []),
-      { sender: { name: { contains: search as string, mode: 'insensitive' } } },
-      { sender: { email: { contains: search as string, mode: 'insensitive' } } },
-      { recipient: { name: { contains: search as string, mode: 'insensitive' } } },
-      { recipient: { email: { contains: search as string, mode: 'insensitive' } } },
-      { content: { contains: search as string, mode: 'insensitive' } },
-    ];
+    const searchFilter: any = {
+      OR: [
+        { sender: { name: { contains: search as string, mode: 'insensitive' } } },
+        { sender: { email: { contains: search as string, mode: 'insensitive' } } },
+        { recipient: { name: { contains: search as string, mode: 'insensitive' } } },
+        { recipient: { email: { contains: search as string, mode: 'insensitive' } } },
+        { content: { contains: search as string, mode: 'insensitive' } },
+      ],
+    };
+    if (whereClause.AND) {
+      whereClause.AND.push(searchFilter);
+    } else {
+      whereClause.AND = [whereClause.OR, searchFilter];
+      delete whereClause.OR;
+    }
   }
 
   // Get all messages with pagination
@@ -3019,42 +3037,53 @@ export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res:
     prisma.message.count({ where: whereClause }),
   ]);
 
-  // Group messages by conversation (unique pairs of users)
+  // Group messages by conversation (unique pairs of admin and user)
+  // Each admin has separate conversations with each user
   const conversationMap = new Map<string, any>();
+  const adminId = req.admin!.id;
   
   messagesData.forEach((message) => {
     const senderId = message.senderId;
     const recipientId = message.recipientId;
     
-    // Create a unique key for the conversation (sorted IDs to ensure consistency)
-    const conversationKey = [senderId, recipientId].sort().join('-');
+    // Determine which is the admin and which is the user
+    const isAdminSender = message.sender.role === 'ADMIN' || message.sender.role === 'SUPER_ADMIN';
+    const isAdminRecipient = message.recipient.role === 'ADMIN' || message.recipient.role === 'SUPER_ADMIN';
     
-    if (!conversationMap.has(conversationKey)) {
-      // Determine the other participant (not admin)
-      const otherUser = message.sender.role === 'ADMIN' || message.sender.role === 'SUPER_ADMIN' 
-        ? message.recipient 
-        : message.sender;
+    // Only include messages where current admin is involved
+    if ((isAdminSender && senderId === adminId) || (isAdminRecipient && recipientId === adminId)) {
+      // Get the other user (not admin)
+      const otherUserId = isAdminSender ? recipientId : senderId;
       
-      conversationMap.set(conversationKey, {
-        id: conversationKey,
-        participant1: message.sender,
-        participant2: message.recipient,
-        otherUser: otherUser,
-        lastMessage: message,
-        messageCount: 1,
-        unreadCount: 0,
-        lastMessageAt: message.createdAt,
-      });
-    } else {
-      const conversation = conversationMap.get(conversationKey);
-      conversation.messageCount += 1;
-      if (!message.isRead && message.recipientId !== req.admin!.id) {
-        conversation.unreadCount += 1;
-      }
-      // Update last message if this one is newer
-      if (message.createdAt > conversation.lastMessageAt) {
-        conversation.lastMessage = message;
-        conversation.lastMessageAt = message.createdAt;
+      // Create a unique key: adminId-userId (ensures each admin has separate conversations)
+      const conversationKey = `${adminId}-${otherUserId}`;
+      
+      if (!conversationMap.has(conversationKey)) {
+        const otherUser = isAdminSender ? message.recipient : message.sender;
+        
+        conversationMap.set(conversationKey, {
+          id: conversationKey,
+          adminId: adminId,
+          userId: otherUserId,
+          participant1: message.sender,
+          participant2: message.recipient,
+          otherUser: otherUser,
+          lastMessage: message,
+          messageCount: 1,
+          unreadCount: 0,
+          lastMessageAt: message.createdAt,
+        });
+      } else {
+        const conversation = conversationMap.get(conversationKey);
+        conversation.messageCount += 1;
+        if (!message.isRead && message.recipientId === adminId) {
+          conversation.unreadCount += 1;
+        }
+        // Update last message if this one is newer
+        if (message.createdAt > conversation.lastMessageAt) {
+          conversation.lastMessage = message;
+          conversation.lastMessageAt = message.createdAt;
+        }
       }
     }
   });
@@ -3165,6 +3194,60 @@ export const getConversationWithUser = catchAsync(async (req: AdminAuthRequest, 
   });
 });
 
+// @desc    Get users (customers and contractors) for starting new conversations
+// @route   GET /api/admin/messages/users
+// @access  Private/Admin
+export const getUsersForChat = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { search, role } = req.query;
+  const limit = parseInt(req.query.limit as string) || 50;
+
+  const whereClause: any = {
+    role: { in: ['CUSTOMER', 'CONTRACTOR'] },
+    isActive: true,
+  };
+
+  if (role && role !== 'all') {
+    whereClause.role = role as UserRole;
+  }
+
+  if (search) {
+    whereClause.OR = [
+      { name: { contains: search as string, mode: 'insensitive' } },
+      { email: { contains: search as string, mode: 'insensitive' } },
+      { contractor: { businessName: { contains: search as string, mode: 'insensitive' } } },
+    ];
+  }
+
+  const users = await prisma.user.findMany({
+    where: whereClause,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      customer: {
+        select: {
+          id: true,
+          phone: true,
+        },
+      },
+      contractor: {
+        select: {
+          id: true,
+          businessName: true,
+        },
+      },
+    },
+    take: limit,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: { users },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protectAdmin);
 
@@ -3254,6 +3337,7 @@ router.patch('/jobs/:id/flag', requirePermission(AdminPermission.JOBS_WRITE), to
 // Messages/Chat Management
 router.get('/messages/conversations', requirePermission(AdminPermission.SUPPORT_READ), getAllConversations);
 router.get('/messages/conversation/:userId', requirePermission(AdminPermission.SUPPORT_READ), getConversationWithUser);
+router.get('/messages/users', requirePermission(AdminPermission.SUPPORT_READ), getUsersForChat);
 router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_WRITE), setJobLeadPrice);
 router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
