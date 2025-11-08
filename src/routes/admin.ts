@@ -3247,6 +3247,85 @@ export const getUsersForChat = catchAsync(async (req: AdminAuthRequest, res: Res
   });
 });
 
+// @desc    Broadcast notification to selected users
+// @route   POST /api/admin/notifications/broadcast
+// @access  Private/Admin
+export const broadcastNotification = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { title, message, userIds, role, type, actionLink, actionText } = req.body;
+
+  if (!title || !message) {
+    return next(new AppError('Title and message are required', 400));
+  }
+
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    return next(new AppError('At least one user must be selected', 400));
+  }
+
+  // Verify all users exist and are active
+  const users = await prisma.user.findMany({
+    where: {
+      id: { in: userIds },
+      isActive: true,
+      role: role ? (role as UserRole) : { in: ['CUSTOMER', 'CONTRACTOR'] },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+  });
+
+  if (users.length === 0) {
+    return next(new AppError('No valid users found to send notification to', 400));
+  }
+
+  // Create notifications for all selected users
+  const { createBulkNotifications } = await import('../services/notificationService');
+  
+  const notifications = users.map(user => ({
+    userId: user.id,
+    title,
+    message,
+    type: type || 'INFO',
+    actionLink,
+    actionText,
+    metadata: {
+      broadcast: true,
+      sentBy: req.admin!.id,
+      sentByAdmin: req.admin!.name,
+    },
+  }));
+
+  await createBulkNotifications(notifications);
+
+  // Log the broadcast action
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'BROADCAST_NOTIFICATION',
+    entityType: 'Notification',
+    entityId: null,
+    description: `Broadcast notification "${title}" to ${users.length} user(s)`,
+    diff: {
+      title,
+      message,
+      recipientCount: users.length,
+      roles: [...new Set(users.map(u => u.role))],
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: `Notification sent to ${users.length} user(s)`,
+    data: {
+      sentCount: users.length,
+      recipients: users.map(u => ({ id: u.id, name: u.name, email: u.email })),
+    },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protectAdmin);
 
@@ -3337,6 +3416,9 @@ router.patch('/jobs/:id/flag', requirePermission(AdminPermission.JOBS_WRITE), to
 router.get('/messages/conversations', requirePermission(AdminPermission.SUPPORT_READ), getAllConversations);
 router.get('/messages/conversation/:userId', requirePermission(AdminPermission.SUPPORT_READ), getConversationWithUser);
 router.get('/messages/users', requirePermission(AdminPermission.SUPPORT_READ), getUsersForChat);
+
+// Broadcast Notifications
+router.post('/notifications/broadcast', requirePermission(AdminPermission.SUPPORT_WRITE), broadcastNotification);
 router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_WRITE), setJobLeadPrice);
 router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
