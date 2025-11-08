@@ -31,7 +31,13 @@ router.get(
 
     const where: any = {};
 
-    if (level) where.level = level;
+    if (level) {
+      // Convert to uppercase to match enum values
+      const levelUpper = (level as string).toUpperCase();
+      if (['ERROR', 'WARNING', 'INFO'].includes(levelUpper)) {
+        where.level = levelUpper;
+      }
+    }
     if (source) where.source = source;
     
     if (search) {
@@ -93,12 +99,12 @@ router.get(
       recentErrors,
       errorsBySource,
     ] = await Promise.all([
-      prisma.errorLog.count({ where: { ...where, level: 'error' } }),
-      prisma.errorLog.count({ where: { ...where, level: 'warning' } }),
+      prisma.errorLog.count({ where: { ...where, level: 'ERROR' } }),
+      prisma.errorLog.count({ where: { ...where, level: 'WARNING' } }),
       prisma.errorLog.count({ 
         where: { 
           ...where, 
-          level: 'error',
+          level: 'ERROR',
           statusCode: { in: [500, 502, 503, 504] }
         } 
       }),
