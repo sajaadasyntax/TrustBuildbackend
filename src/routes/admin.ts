@@ -3326,6 +3326,74 @@ export const broadcastNotification = catchAsync(async (req: AdminAuthRequest, re
   });
 });
 
+// @desc    Send message as admin
+// @route   POST /api/admin/messages/send
+// @access  Private/Admin
+export const sendMessageAsAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { recipientId, subject, content, relatedJobId, attachmentUrls } = req.body;
+  const adminId = req.admin!.id;
+
+  if (!recipientId || !content) {
+    return next(new AppError('Recipient and message content are required', 400));
+  }
+
+  // Get recipient information
+  const recipient = await prisma.user.findUnique({
+    where: { id: recipientId },
+    select: { id: true, role: true, email: true, name: true },
+  });
+
+  if (!recipient) {
+    return next(new AppError('Recipient not found', 404));
+  }
+
+  // Verify recipient is a customer or contractor (not another admin)
+  if (recipient.role === 'ADMIN' || recipient.role === 'SUPER_ADMIN') {
+    return next(new AppError('Cannot send messages to other admins', 403));
+  }
+
+  // Get admin user record for sender role
+  const adminUser = await prisma.user.findUnique({
+    where: { id: adminId },
+    select: { id: true, role: true, name: true },
+  });
+
+  if (!adminUser) {
+    return next(new AppError('Admin user not found', 404));
+  }
+
+  // Create the message
+  const message = await prisma.message.create({
+    data: {
+      senderId: adminId,
+      senderRole: adminUser.role as UserRole,
+      recipientId,
+      recipientRole: recipient.role as UserRole,
+      subject: subject || `Message from ${adminUser.name}`,
+      content,
+      relatedJobId,
+      attachmentUrls: attachmentUrls || [],
+    },
+  });
+
+  // Create notification for recipient
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: recipientId,
+    title: subject || 'New Message',
+    message: `You have a new message from ${adminUser.name}`,
+    type: 'MESSAGE_RECEIVED',
+    actionLink: `/messages/${message.id}`,
+    actionText: 'View Message',
+  });
+
+  res.status(201).json({
+    status: 'success',
+    message: 'Message sent successfully',
+    data: { message },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protectAdmin);
 
