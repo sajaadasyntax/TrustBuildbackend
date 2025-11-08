@@ -3025,8 +3025,10 @@ router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), 
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
 
 // Pricing Management
-router.get('/services-pricing', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);
-router.put('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing);
+router.get('/services', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);
+router.get('/services-pricing', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing); // Alias for backward compatibility
+router.patch('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing);
+router.put('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing); // Alias for backward compatibility
 
 // Reviews Management
 router.get('/reviews', requirePermission(AdminPermission.REVIEWS_READ), getAllReviewsAdmin);
