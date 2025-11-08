@@ -223,7 +223,8 @@ export const getAllInvoices = catchAsync(async (req: AdminAuthRequest, res: Resp
 export const getInvoiceById = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
 
-  const invoice = await prisma.invoice.findUnique({
+  // Try to find in regular invoices first
+  let invoice = await prisma.invoice.findUnique({
     where: { id },
     include: {
       payments: {
@@ -262,6 +263,56 @@ export const getInvoiceById = catchAsync(async (req: AdminAuthRequest, res: Resp
       }
     }
   });
+
+  // If not found in regular invoices, check manual invoices
+  if (!invoice) {
+    const manualInvoice = await prisma.manualInvoice.findUnique({
+      where: { id },
+      include: {
+        contractor: {
+          select: {
+            id: true,
+            businessName: true,
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        items: true,
+      }
+    });
+
+    if (manualInvoice) {
+      // Format manual invoice to match regular invoice structure
+      invoice = {
+        id: manualInvoice.id,
+        invoiceNumber: manualInvoice.number,
+        type: 'manual',
+        contractorId: manualInvoice.contractorId,
+        totalAmount: manualInvoice.total / 100, // Convert from pence
+        amount: manualInvoice.subtotal / 100, // Convert from pence
+        vatAmount: manualInvoice.tax / 100, // Convert from pence
+        status: manualInvoice.status,
+        createdAt: manualInvoice.createdAt,
+        issuedAt: manualInvoice.issuedAt,
+        paidAt: manualInvoice.paidAt,
+        dueAt: manualInvoice.dueDate,
+        description: manualInvoice.reason || manualInvoice.notes || 'Manual Invoice',
+        recipientName: manualInvoice.contractor.businessName || manualInvoice.contractor.user.name,
+        recipientEmail: manualInvoice.contractor.user.email,
+        payments: [],
+        items: manualInvoice.items.map(item => ({
+          description: item.description,
+          amount: item.amount / 100,
+          quantity: item.quantity,
+        })),
+        contractor: manualInvoice.contractor,
+      } as any;
+    }
+  }
 
   if (!invoice) {
     return next(new AppError('Invoice not found', 404));
