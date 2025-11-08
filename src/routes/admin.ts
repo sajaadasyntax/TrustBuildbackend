@@ -2935,6 +2935,235 @@ export const updateJobContractorLimit = catchAsync(async (req: AdminAuthRequest,
   });
 });
 
+// @desc    Get all conversations (grouped by participants)
+// @route   GET /api/admin/messages/conversations
+// @access  Private/Admin
+export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
+  const skip = (page - 1) * limit;
+  const { role, search } = req.query;
+
+  // Build where clause
+  const whereClause: any = {};
+  
+  if (role && role !== 'all') {
+    whereClause.OR = [
+      { senderRole: role as UserRole },
+      { recipientRole: role as UserRole },
+    ];
+  }
+
+  if (search) {
+    whereClause.OR = [
+      ...(whereClause.OR || []),
+      { sender: { name: { contains: search as string, mode: 'insensitive' } } },
+      { sender: { email: { contains: search as string, mode: 'insensitive' } } },
+      { recipient: { name: { contains: search as string, mode: 'insensitive' } } },
+      { recipient: { email: { contains: search as string, mode: 'insensitive' } } },
+      { content: { contains: search as string, mode: 'insensitive' } },
+    ];
+  }
+
+  // Get all messages with pagination
+  const [messagesData, total] = await Promise.all([
+    prisma.message.findMany({
+      where: whereClause,
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            customer: {
+              select: {
+                id: true,
+                phone: true,
+              },
+            },
+            contractor: {
+              select: {
+                id: true,
+                businessName: true,
+              },
+            },
+          },
+        },
+        recipient: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            customer: {
+              select: {
+                id: true,
+                phone: true,
+              },
+            },
+            contractor: {
+              select: {
+                id: true,
+                businessName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.message.count({ where: whereClause }),
+  ]);
+
+  // Group messages by conversation (unique pairs of users)
+  const conversationMap = new Map<string, any>();
+  
+  messagesData.forEach((message) => {
+    const senderId = message.senderId;
+    const recipientId = message.recipientId;
+    
+    // Create a unique key for the conversation (sorted IDs to ensure consistency)
+    const conversationKey = [senderId, recipientId].sort().join('-');
+    
+    if (!conversationMap.has(conversationKey)) {
+      // Determine the other participant (not admin)
+      const otherUser = message.sender.role === 'ADMIN' || message.sender.role === 'SUPER_ADMIN' 
+        ? message.recipient 
+        : message.sender;
+      
+      conversationMap.set(conversationKey, {
+        id: conversationKey,
+        participant1: message.sender,
+        participant2: message.recipient,
+        otherUser: otherUser,
+        lastMessage: message,
+        messageCount: 1,
+        unreadCount: 0,
+        lastMessageAt: message.createdAt,
+      });
+    } else {
+      const conversation = conversationMap.get(conversationKey);
+      conversation.messageCount += 1;
+      if (!message.isRead && message.recipientId !== req.admin!.id) {
+        conversation.unreadCount += 1;
+      }
+      // Update last message if this one is newer
+      if (message.createdAt > conversation.lastMessageAt) {
+        conversation.lastMessage = message;
+        conversation.lastMessageAt = message.createdAt;
+      }
+    }
+  });
+
+  // Convert map to array and sort by last message time
+  const conversations = Array.from(conversationMap.values())
+    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      conversations,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
+
+// @desc    Get conversation with a specific user
+// @route   GET /api/admin/messages/conversation/:userId
+// @access  Private/Admin
+export const getConversationWithUser = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const adminId = req.admin!.id;
+  const userId = req.params.userId;
+
+  // Get user details
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      customer: {
+        select: {
+          id: true,
+          phone: true,
+          address: true,
+          city: true,
+        },
+      },
+      contractor: {
+        select: {
+          id: true,
+          businessName: true,
+          businessAddress: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+
+  // Get all messages between admin and this user
+  const messages = await prisma.message.findMany({
+    where: {
+      OR: [
+        { senderId: adminId, recipientId: userId },
+        { senderId: userId, recipientId: adminId },
+      ],
+    },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+      recipient: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Mark messages as read if admin is viewing them
+  await prisma.message.updateMany({
+    where: {
+      recipientId: adminId,
+      senderId: userId,
+      isRead: false,
+    },
+    data: {
+      isRead: true,
+      readAt: new Date(),
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      user,
+      messages,
+    },
+  });
+});
+
 // Apply admin middleware to all routes
 router.use(protectAdmin);
 
@@ -3020,6 +3249,10 @@ router.get('/jobs', requirePermission(AdminPermission.JOBS_READ), getAllJobsAdmi
 router.get('/jobs/stats', requirePermission(AdminPermission.JOBS_READ), getJobStats);
 router.patch('/jobs/:id/status', requirePermission(AdminPermission.JOBS_WRITE), updateJobStatus);
 router.patch('/jobs/:id/flag', requirePermission(AdminPermission.JOBS_WRITE), toggleJobFlag);
+
+// Messages/Chat Management
+router.get('/messages/conversations', requirePermission(AdminPermission.SUPPORT_READ), getAllConversations);
+router.get('/messages/conversation/:userId', requirePermission(AdminPermission.SUPPORT_READ), getConversationWithUser);
 router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_WRITE), setJobLeadPrice);
 router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
