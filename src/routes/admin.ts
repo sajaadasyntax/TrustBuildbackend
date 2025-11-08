@@ -5,6 +5,7 @@ import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
 import { logActivity } from '../services/auditService';
 import bcrypt from 'bcryptjs';
+import { UserRole } from '@prisma/client';
 
 const router = Router();
 
