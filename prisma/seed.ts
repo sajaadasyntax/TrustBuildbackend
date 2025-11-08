@@ -481,6 +481,7 @@ async function main() {
   ];
 
   const contractors: any[] = [];
+  const originalContractors: any[] = []; // Track contractors from contractorData (they have servicesIndexes)
   const now = new Date();
 
   for (const data of contractorData) {
@@ -514,7 +515,7 @@ async function main() {
         status: ContractorStatus.VERIFIED,
         tier: data.tier,
         creditsBalance: data.tier === ContractorTier.ENTERPRISE ? 5 : data.tier === ContractorTier.PREMIUM ? 2 : 0,
-        weeklyCreditsLimit: data.tier === ContractorTier.STANDARD ? 0 : 3, // STANDARD = 0, all other tiers = 3
+        weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits (will be set to 3 when they subscribe)
         averageRating: 4.5 + Math.random() * 0.5,
         reviewCount: Math.floor(Math.random() * 50) + 10,
         jobsCompleted: Math.floor(Math.random() * 100) + 20,
@@ -554,6 +555,16 @@ async function main() {
       },
     });
 
+    // Update contractor to get weekly credits (subscribed contractors get 3 weekly credits)
+    await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: {
+        weeklyCreditsLimit: 3,
+        creditsBalance: 3, // Give them initial credits
+        lastCreditReset: now,
+      },
+    });
+
     // Create payment for subscription
     const paymentAmount = data.subscriptionPrice * monthsToAdd;
     const payment = await prisma.payment.create({
@@ -586,6 +597,7 @@ async function main() {
     });
 
     contractors.push(contractor);
+    originalContractors.push(contractor); // Track original contractors
     console.log(`  ✅ Contractor created: ${data.businessName} (${data.subscriptionPlan} subscription)`);
   }
 
@@ -713,7 +725,7 @@ async function main() {
         averageRating: parseFloat((4 + Math.random()).toFixed(1)),
         tier: contractorData.tier,
         creditsBalance: contractorData.tier === ContractorTier.ENTERPRISE ? 100 : contractorData.tier === ContractorTier.PREMIUM ? 50 : 20,
-        weeklyCreditsLimit: contractorData.tier === ContractorTier.STANDARD ? 0 : 3, // STANDARD = 0, all other tiers = 3
+        weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits (will be set to 3 when they subscribe)
       },
     });
 
@@ -732,6 +744,16 @@ async function main() {
         currentPeriodEnd,
         stripeSubscriptionId: `sub_test_${contractor.id}`,
         monthlyPrice: contractorData.tier === ContractorTier.ENTERPRISE ? 99.99 : contractorData.tier === ContractorTier.PREMIUM ? 49.99 : 19.99,
+      },
+    });
+
+    // Update contractor to get weekly credits (subscribed contractors get 3 weekly credits)
+    await prisma.contractor.update({
+      where: { id: contractor.id },
+      data: {
+        weeklyCreditsLimit: 3,
+        creditsBalance: 3, // Give them initial credits
+        lastCreditReset: new Date(),
       },
     });
 
@@ -936,12 +958,11 @@ async function main() {
     if (jobData.status === JobStatus.POSTED || jobData.status === JobStatus.IN_PROGRESS) {
       // Get 2-3 random contractors who provide this service
       // Only check contractors from the original contractorData array (they have servicesIndexes)
-      const applicableContractors = contractors.filter((c, index) => {
-        // Only check contractors from the original contractorData array
-        if (index < contractorData.length) {
-          return contractorData[index].servicesIndexes.includes(jobData.serviceIndex);
-        }
-        return false; // Skip additional contractors for job applications
+      const applicableContractors = originalContractors.filter((c, index) => {
+        // Only check original contractors (from contractorData array)
+        const contractorInfo = contractorData[index];
+        if (!contractorInfo || !contractorInfo.servicesIndexes) return false;
+        return contractorInfo.servicesIndexes.includes(jobData.serviceIndex);
       });
 
       const numApplications = Math.min(3, applicableContractors.length);

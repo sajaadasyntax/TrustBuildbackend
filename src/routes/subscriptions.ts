@@ -530,13 +530,12 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     throw err;
   }
 
-  // Update contractor tier and weekly credits limit based on subscription
-  // STANDARD tier = 0, all other tiers (PREMIUM, ENTERPRISE) = 3
-  const newWeeklyCreditsLimit = contractor.tier === 'STANDARD' ? 0 : 3;
+  // Subscribed contractors get 3 weekly credits
+  const newWeeklyCreditsLimit = 3;
 
   // Allocate initial credits to the contractor
   try {
-    // Update contractor with tier-based weekly credits limit and initial credits
+    // Update contractor with weekly credits limit and initial credits
     const updatedContractor = await prisma.contractor.update({
       where: { id: contractor.id },
       data: {
@@ -673,7 +672,14 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
     }
   }
 
-  // Update subscription status
+  // Update subscription status and remove weekly credits (non-subscribed contractors don't get weekly credits)
+  await prisma.contractor.update({
+    where: { id: contractor.id },
+    data: {
+      weeklyCreditsLimit: 0, // Remove weekly credits when subscription is cancelled
+    },
+  });
+
   const updatedSubscription = await prisma.subscription.update({
     where: { id: contractor.subscription.id },
     data: {

@@ -208,7 +208,7 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       preferredClients,
       usesContracts,
       creditsBalance: 1, // Every new contractor gets 1 free credit (trial)
-      weeklyCreditsLimit: 0, // STANDARD tier contractors don't get weekly credits
+      weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits
       lastCreditReset: null,
       hasUsedFreeTrial: false, // Track if they've used their free credit
       services: services ? {
@@ -743,10 +743,6 @@ export const resetWeeklyCredits = catchAsync(async (req: AuthenticatedRequest, r
             }
           },
           {
-            // Exclude STANDARD tier contractors (they don't get weekly credits)
-            tier: { not: 'STANDARD' }
-          },
-          {
             // Only reset for contractors with weekly credits limit > 0
             weeklyCreditsLimit: { gt: 0 }
           }
@@ -827,14 +823,14 @@ export const checkAndResetCredits = catchAsync(async (req: AuthenticatedRequest,
                               contractor.subscription.isActive && 
                               contractor.subscription.status === 'active';
 
-  // STANDARD tier contractors don't get weekly credits
-  if (contractor.tier === 'STANDARD' || contractor.weeklyCreditsLimit === 0) {
+  // Check if contractor has weekly credits
+  if (contractor.weeklyCreditsLimit === 0) {
     return res.status(200).json({
       status: 'success',
       data: {
         creditsReset: false,
         currentBalance: contractor.creditsBalance,
-        message: 'Weekly credits are not available for STANDARD tier contractors. Please upgrade to PREMIUM or ENTERPRISE tier.'
+        message: 'Weekly credits are not available. Please contact support.'
       }
     });
   }

@@ -310,7 +310,14 @@ export const cancelContractorSubscription = catchAsync(async (req: AdminAuthRequ
     }
   }
 
-  // Update subscription status
+  // Update subscription status and remove weekly credits (non-subscribed contractors don't get weekly credits)
+  await prisma.contractor.update({
+    where: { id: contractor.id },
+    data: {
+      weeklyCreditsLimit: 0, // Remove weekly credits when subscription is cancelled
+    },
+  });
+
   const updatedSubscription = await prisma.subscription.update({
     where: { id: contractor.subscription.id },
     data: {
