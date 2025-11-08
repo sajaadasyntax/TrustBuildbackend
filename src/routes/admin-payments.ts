@@ -241,10 +241,11 @@ export const updateCreditLimit = catchAsync(async (req: AdminAuthRequest, res: R
 export const resetWeeklyCredits = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const now = new Date();
 
-  // Get all contractors with subscriptions
+  // Get all contractors with subscriptions (exclude STANDARD tier)
   const contractors = await prisma.contractor.findMany({
     where: {
       weeklyCreditsLimit: { gt: 0 },
+      tier: { not: 'STANDARD' }, // STANDARD tier contractors don't get weekly credits
     },
     select: {
       id: true,

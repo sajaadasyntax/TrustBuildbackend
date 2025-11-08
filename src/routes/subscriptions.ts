@@ -530,27 +530,33 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     throw err;
   }
 
-  // Allocate initial credits to the contractor
+  // Update contractor tier and weekly credits limit based on subscription
+  // STANDARD tier = 0, all other tiers (PREMIUM, ENTERPRISE) = 3
+  const newWeeklyCreditsLimit = contractor.tier === 'STANDARD' ? 0 : 3;
 
+  // Allocate initial credits to the contractor
   try {
-    // Update contractor with initial credits
+    // Update contractor with tier-based weekly credits limit and initial credits
     const updatedContractor = await prisma.contractor.update({
       where: { id: contractor.id },
       data: {
-        creditsBalance: contractor.weeklyCreditsLimit,
-        lastCreditReset: now
+        weeklyCreditsLimit: newWeeklyCreditsLimit,
+        creditsBalance: newWeeklyCreditsLimit > 0 ? newWeeklyCreditsLimit : contractor.creditsBalance,
+        lastCreditReset: newWeeklyCreditsLimit > 0 ? now : contractor.lastCreditReset
       }
     });
 
-    // Create credit transaction record
-    await prisma.creditTransaction.create({
-      data: {
-        contractorId: contractor.id,
-        type: 'WEEKLY_ALLOCATION',
-        amount: contractor.weeklyCreditsLimit,
-        description: 'Initial credit allocation - subscription activated'
-      }
-    });
+    // Create credit transaction record only if credits were added
+    if (newWeeklyCreditsLimit > 0 && newWeeklyCreditsLimit > contractor.creditsBalance) {
+      await prisma.creditTransaction.create({
+        data: {
+          contractorId: contractor.id,
+          type: 'WEEKLY_ALLOCATION',
+          amount: newWeeklyCreditsLimit - contractor.creditsBalance,
+          description: 'Initial credit allocation - subscription activated'
+        }
+      });
+    }
 
 
   } catch (err) {
