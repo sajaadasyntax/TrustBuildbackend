@@ -14,16 +14,26 @@ router.get(
   '/',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    // Get the admin's user record
-    const adminUser = await prisma.user.findUnique({
+    // Get or create the admin's user record
+    let adminUser = await prisma.user.findUnique({
       where: { email: req.admin!.email },
       select: { id: true },
     });
 
+    // If user record doesn't exist, create it
     if (!adminUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Admin user record not found',
+      // Map AdminRole to UserRole
+      const userRole = req.admin!.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      
+      adminUser = await prisma.user.create({
+        data: {
+          email: req.admin!.email,
+          name: req.admin!.name,
+          password: 'ADMIN_USER_NO_PASSWORD', // Placeholder - admins use Admin table for auth
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
       });
     }
 
@@ -52,16 +62,26 @@ router.get(
   '/unread-count',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    // Get the admin's user record
-    const adminUser = await prisma.user.findUnique({
+    // Get or create the admin's user record
+    let adminUser = await prisma.user.findUnique({
       where: { email: req.admin!.email },
       select: { id: true },
     });
 
+    // If user record doesn't exist, create it
     if (!adminUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Admin user record not found',
+      // Map AdminRole to UserRole
+      const userRole = req.admin!.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      
+      adminUser = await prisma.user.create({
+        data: {
+          email: req.admin!.email,
+          name: req.admin!.name,
+          password: 'ADMIN_USER_NO_PASSWORD', // Placeholder - admins use Admin table for auth
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
       });
     }
 
@@ -85,16 +105,24 @@ router.patch(
   '/:id/read',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    // Get the admin's user record
-    const adminUser = await prisma.user.findUnique({
+    // Get or create the admin's user record
+    let adminUser = await prisma.user.findUnique({
       where: { email: req.admin!.email },
       select: { id: true },
     });
 
+    // If user record doesn't exist, create it
     if (!adminUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Admin user record not found',
+      const userRole = req.admin!.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      adminUser = await prisma.user.create({
+        data: {
+          email: req.admin!.email,
+          name: req.admin!.name,
+          password: 'ADMIN_USER_NO_PASSWORD',
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
       });
     }
 
@@ -115,16 +143,24 @@ router.patch(
   '/read-all',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    // Get the admin's user record
-    const adminUser = await prisma.user.findUnique({
+    // Get or create the admin's user record
+    let adminUser = await prisma.user.findUnique({
       where: { email: req.admin!.email },
       select: { id: true },
     });
 
+    // If user record doesn't exist, create it
     if (!adminUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Admin user record not found',
+      const userRole = req.admin!.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      adminUser = await prisma.user.create({
+        data: {
+          email: req.admin!.email,
+          name: req.admin!.name,
+          password: 'ADMIN_USER_NO_PASSWORD',
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
       });
     }
 
@@ -145,16 +181,24 @@ router.delete(
   '/:id',
   protectAdmin,
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
-    // Get the admin's user record
-    const adminUser = await prisma.user.findUnique({
+    // Get or create the admin's user record
+    let adminUser = await prisma.user.findUnique({
       where: { email: req.admin!.email },
       select: { id: true },
     });
 
+    // If user record doesn't exist, create it
     if (!adminUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Admin user record not found',
+      const userRole = req.admin!.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+      adminUser = await prisma.user.create({
+        data: {
+          email: req.admin!.email,
+          name: req.admin!.name,
+          password: 'ADMIN_USER_NO_PASSWORD',
+          role: userRole,
+          isActive: true,
+        },
+        select: { id: true },
       });
     }
 
