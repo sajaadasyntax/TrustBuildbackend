@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { protectAdmin, AdminAuthRequest, requirePermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
+import { generateInvoicePDF } from '../services/pdfService';
 
 const router = Router();
 
@@ -178,9 +179,9 @@ export const getAllInvoices = catchAsync(async (req: AdminAuthRequest, res: Resp
       type: 'manual',
       contractorId: inv.contractorId,
       contractor: inv.contractor,
-      totalAmount: inv.total / 100, // Convert from pence
-      amount: inv.subtotal / 100, // Convert from pence
-      vatAmount: inv.tax / 100, // Convert from pence
+      totalAmount: (inv.total || 0) / 100, // Convert from pence, handle null/undefined
+      amount: (inv.subtotal || 0) / 100, // Convert from pence, handle null/undefined
+      vatAmount: (inv.tax || 0) / 100, // Convert from pence, handle null/undefined
       status: inv.status,
       createdAt: inv.createdAt,
       issuedAt: inv.issuedAt,
@@ -292,9 +293,9 @@ export const getInvoiceById = catchAsync(async (req: AdminAuthRequest, res: Resp
         invoiceNumber: manualInvoice.number,
         type: 'manual',
         contractorId: manualInvoice.contractorId,
-        totalAmount: manualInvoice.total / 100, // Convert from pence
-        amount: manualInvoice.subtotal / 100, // Convert from pence
-        vatAmount: manualInvoice.tax / 100, // Convert from pence
+        totalAmount: (manualInvoice.total || 0) / 100, // Convert from pence, handle null/undefined
+        amount: (manualInvoice.subtotal || 0) / 100, // Convert from pence, handle null/undefined
+        vatAmount: (manualInvoice.tax || 0) / 100, // Convert from pence, handle null/undefined
         status: manualInvoice.status,
         createdAt: manualInvoice.createdAt,
         issuedAt: manualInvoice.issuedAt,
@@ -450,8 +451,106 @@ export const getInvoiceStats = catchAsync(async (req: AdminAuthRequest, res: Res
 // Routes
 router.use(protectAdmin); // All routes require admin authentication
 
+// @desc    Download invoice PDF
+// @route   GET /api/admin/invoices/:id/download
+// @access  Private (Admin only)
+export const downloadInvoice = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+
+  // Try to find in regular invoices first
+  let invoice = await prisma.invoice.findUnique({
+    where: { id },
+    include: {
+      payments: {
+        take: 1
+      }
+    }
+  });
+
+  let invoiceData: any;
+
+  if (invoice) {
+    // Regular invoice
+    invoiceData = {
+      invoiceNumber: invoice.invoiceNumber,
+      recipientName: invoice.recipientName,
+      recipientEmail: invoice.recipientEmail,
+      recipientAddress: invoice.recipientAddress || undefined,
+      description: invoice.description,
+      amount: Number(invoice.amount),
+      vatAmount: Number(invoice.vatAmount || 0),
+      totalAmount: Number(invoice.totalAmount),
+      issuedAt: invoice.issuedAt,
+      dueAt: invoice.dueAt || undefined,
+      paidAt: invoice.paidAt || undefined,
+      paymentType: invoice.payments[0]?.type || undefined,
+      vatRate: Number(invoice.vatRate || 20)
+    };
+  } else {
+    // Try manual invoice
+    const manualInvoice = await prisma.manualInvoice.findUnique({
+      where: { id },
+      include: {
+        contractor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        items: true,
+      }
+    });
+
+    if (!manualInvoice) {
+      return next(new AppError('Invoice not found', 404));
+    }
+
+    invoiceData = {
+      invoiceNumber: manualInvoice.number,
+      recipientName: manualInvoice.contractor.businessName || manualInvoice.contractor.user.name,
+      recipientEmail: manualInvoice.contractor.user.email,
+      recipientAddress: manualInvoice.contractor.businessAddress || undefined,
+      description: manualInvoice.reason || manualInvoice.notes || 'Manual Invoice',
+      amount: (manualInvoice.subtotal || 0) / 100,
+      vatAmount: (manualInvoice.tax || 0) / 100,
+      totalAmount: (manualInvoice.total || 0) / 100,
+      issuedAt: manualInvoice.issuedAt || manualInvoice.createdAt,
+      dueAt: manualInvoice.dueDate || undefined,
+      paidAt: manualInvoice.paidAt || undefined,
+      paymentType: 'Manual Invoice',
+      vatRate: 20,
+      items: manualInvoice.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        amount: item.amount / 100,
+      }))
+    };
+  }
+
+  try {
+    // Generate PDF on the fly
+    const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoiceData.invoiceNumber}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send the PDF buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Failed to generate invoice PDF:', error);
+    return next(new AppError('Failed to generate invoice PDF', 500));
+  }
+});
+
 router.get('/stats', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceStats);
 router.get('/', requirePermission(AdminPermission.PAYMENTS_READ), getAllInvoices);
+router.get('/:id/download', requirePermission(AdminPermission.PAYMENTS_READ), downloadInvoice);
 router.get('/:id', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceById);
 router.patch('/:id/status', requirePermission(AdminPermission.PAYMENTS_WRITE), updateInvoiceStatus);
 
