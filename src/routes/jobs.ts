@@ -287,6 +287,11 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     requirements,
   } = req.body;
 
+  // Validate budget is required
+  if (!budget || Number(budget) <= 0) {
+    return next(new AppError('Budget is required and must be a positive number', 400));
+  }
+
   // Get or create customer profile
   let customer = await prisma.customer.findUnique({
     where: { userId: req.user!.id },
@@ -355,7 +360,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       jobSize: jobSize || 'MEDIUM',
       urgency: urgency || 'flexible',
       isUrgent: urgent || false,
-      requiresQuote: !budget || budget === 0,
+      requiresQuote: false,
       status: 'POSTED', // Automatically post the job when created
       maxContractorsPerJob: 10, // Allow up to 10 contractors to purchase access
     },
@@ -410,7 +415,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       const notifications = subscribedContractors.map((contractor) => ({
         userId: contractor.user.id,
         title: 'New Job Posted',
-        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}"${budget ? ` (Budget: £${Number(budget).toFixed(2)})` : ' (Quote required)'}`,
+        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}" (Budget: £${Number(budget).toFixed(2)})`,
         type: (job.isUrgent ? 'WARNING' : 'INFO') as 'WARNING' | 'INFO',
         actionLink: `/dashboard/contractor/jobs/${job.id}`,
         actionText: 'View Job',
@@ -476,6 +481,11 @@ export const updateJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     contactPreference,
     status,
   } = req.body;
+
+  // Validate budget if provided - it must be positive
+  if (budget !== undefined && (budget === null || Number(budget) <= 0)) {
+    return next(new AppError('Budget must be a positive number', 400));
+  }
 
   const updatedJob = await prisma.job.update({
     where: { id: req.params.id },
@@ -628,11 +638,6 @@ export const applyForJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     return next(new AppError('Please provide a valid quote for this job', 400));
   }
 
-  // For quote-on-request jobs (no budget specified), ensure quote is provided
-  if ((!job.budget || Number(job.budget) <= 0) && !estimatedCost) {
-    return next(new AppError('This is a quote-on-request job. Please provide your quote.', 400));
-  }
-
   // Validate proposal is provided
   if (!proposal || proposal.trim().length === 0) {
     return next(new AppError('Please provide a proposal or cover letter', 400));
@@ -698,7 +703,7 @@ export const applyForJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     data: {
       application,
     },
-    message: job.budget ? 'Application submitted successfully' : 'Quote submitted successfully',
+    message: 'Application submitted successfully',
   });
 });
 
@@ -1004,9 +1009,9 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
 
   let { proposal, estimatedCost, timeline } = req.body;
 
-  // For quote-on-request jobs, direct acceptance is not allowed
+  // Budget is required for all jobs
   if (!job.budget || Number(job.budget) <= 0) {
-    return next(new AppError('This is a quote-on-request job. Please apply with your quote instead of direct acceptance.', 400));
+    return next(new AppError('Job budget is required for direct acceptance.', 400));
   }
 
   // Validate estimated cost for fixed-budget jobs
