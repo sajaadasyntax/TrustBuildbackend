@@ -2141,7 +2141,12 @@ export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, r
     const whereClause: any = {};
     
     if (status && status !== 'all') {
-      whereClause.status = status.toString().toUpperCase();
+      // Map frontend status names to backend enum values
+      let mappedStatus = status.toString().toUpperCase();
+      if (mappedStatus === 'SUCCEEDED') {
+        mappedStatus = 'COMPLETED';
+      }
+      whereClause.status = mappedStatus;
     }
     
     if (type && type !== 'all') {
@@ -2264,7 +2269,7 @@ export const getPaymentTransactions = catchAsync(async (req: AdminAuthRequest, r
         id: payment.id,
         amount: Number(payment.amount),
         currency: 'GBP',
-        status: payment.status.toLowerCase(),
+        status: payment.status === 'COMPLETED' ? 'succeeded' : payment.status.toLowerCase(),
         type: displayType,
         customer: {
           name: payment.job?.customer?.user?.name || payment.contractor?.user?.name || 'Unknown',
