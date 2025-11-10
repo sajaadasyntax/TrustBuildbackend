@@ -412,7 +412,7 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
           await createNotification({
             userId: contractorUserId,
             title: 'Invoice Paid',
-            message: `Your invoice ${updatedInvoice.invoiceNumber} has been marked as paid. Amount: £${((updatedInvoice.totalAmount || 0) / 100).toFixed(2)}`,
+            message: `Your invoice ${updatedInvoice.invoiceNumber} has been marked as paid. Amount: £${(Number(updatedInvoice.totalAmount || 0) / 100).toFixed(2)}`,
             type: 'SUCCESS',
             actionLink: '/dashboard/contractor/invoices',
             actionText: 'View Invoices',

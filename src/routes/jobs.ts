@@ -386,14 +386,14 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     // Get all active subscribed contractors who provide this service
     const subscribedContractors = await prisma.contractor.findMany({
       where: {
-        isActive: true,
+        accountStatus: 'ACTIVE',
         profileApproved: true,
         subscription: {
           status: 'ACTIVE',
         },
         services: {
           some: {
-            serviceId: finalServiceId,
+            id: finalServiceId,
           },
         },
       },
@@ -411,7 +411,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
         userId: contractor.user.id,
         title: 'New Job Posted',
         message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}"${budget ? ` (Budget: £${Number(budget).toFixed(2)})` : ' (Quote required)'}`,
-        type: job.isUrgent ? 'WARNING' : 'INFO',
+        type: (job.isUrgent ? 'WARNING' : 'INFO') as 'WARNING' | 'INFO',
         actionLink: `/dashboard/contractor/jobs/${job.id}`,
         actionText: 'View Job',
         metadata: {

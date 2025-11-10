@@ -176,6 +176,7 @@ router.post(
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
                 email: true,
               },

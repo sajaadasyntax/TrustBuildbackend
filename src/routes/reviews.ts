@@ -157,11 +157,13 @@ export const createReview = catchAsync(async (req: AuthenticatedRequest, res: Re
   // Notify contractor about new review
   try {
     const { notifyNewReview } = await import('../services/notificationService');
-    await notifyNewReview(
-      review.contractor.user.id,
-      rating,
-      review.job.title
-    );
+    if (review.job) {
+      await notifyNewReview(
+        review.contractor.user.id,
+        rating,
+        review.job.title
+      );
+    }
   } catch (error) {
     console.error('Failed to send review notification:', error);
   }
