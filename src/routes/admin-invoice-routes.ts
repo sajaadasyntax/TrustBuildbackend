@@ -384,6 +384,49 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
       });
     }
 
+    // Notify contractor when invoice is marked as paid
+    if (status === 'PAID') {
+      try {
+        const invoiceWithContractor = await prisma.invoice.findUnique({
+          where: { id },
+          include: {
+            payments: {
+              include: {
+                contractor: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        const contractorUserId = invoiceWithContractor?.payments?.[0]?.contractor?.user?.id;
+        if (contractorUserId) {
+          const { createNotification } = await import('../services/notificationService');
+          await createNotification({
+            userId: contractorUserId,
+            title: 'Invoice Paid',
+            message: `Your invoice ${updatedInvoice.invoiceNumber} has been marked as paid. Amount: £${((updatedInvoice.totalAmount || 0) / 100).toFixed(2)}`,
+            type: 'SUCCESS',
+            actionLink: '/dashboard/contractor/invoices',
+            actionText: 'View Invoices',
+            metadata: {
+              invoiceId: id,
+              invoiceNumber: updatedInvoice.invoiceNumber,
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Failed to send invoice paid notification:', error);
+      }
+    }
+
     return res.status(200).json({
       status: 'success',
       data: { invoice: updatedInvoice }
@@ -443,6 +486,7 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
                 email: true
               }
@@ -452,6 +496,28 @@ export const updateInvoiceStatus = catchAsync(async (req: AdminAuthRequest, res:
         items: true
       }
     });
+
+    // Notify contractor when manual invoice is marked as paid
+    if (status === 'PAID') {
+      try {
+        const { createNotification } = await import('../services/notificationService');
+        await createNotification({
+          userId: updatedManualInvoice.contractor.user.id,
+          title: 'Invoice Paid',
+          message: `Your invoice ${updatedManualInvoice.number} has been marked as paid. Amount: £${((updatedManualInvoice.total || 0) / 100).toFixed(2)}`,
+          type: 'SUCCESS',
+          actionLink: '/dashboard/contractor/invoices',
+          actionText: 'View Invoices',
+          metadata: {
+            invoiceId: id,
+            invoiceNumber: updatedManualInvoice.number,
+            isManual: true,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to send manual invoice paid notification:', error);
+      }
+    }
 
     // Format response to match regular invoice structure
     const formattedInvoice = {

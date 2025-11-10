@@ -198,7 +198,7 @@ model Contractor {
 
   // Admin controls
   accountStatus     ContractorAccountStatus @default(ACTIVE)
-  freeJobAllocation Int                     @default(0) // Admin-configurable free job leads
+  freeJobAllocation Int                     @default(1) // Admin-configurable free job leads
   frozenAt          DateTime?
   frozenBy          String? // Admin ID who froze account
   frozenReason      String?                 @db.Text

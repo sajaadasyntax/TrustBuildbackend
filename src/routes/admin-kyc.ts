@@ -23,13 +23,30 @@ router.get('/documents/:path(*)', (req, res) => {
   // The path parameter should be relative to uploads/kyc (e.g., "contractorId/filename.jpg")
   // But it might also be a full path from old records, so we handle both cases
   let filePath: string;
+  let receivedPath = req.params.path;
   
-  // Check if it's already an absolute path (legacy data)
-  if (path.isAbsolute(req.params.path)) {
-    filePath = req.params.path;
+  // Decode URL-encoded path
+  try {
+    receivedPath = decodeURIComponent(receivedPath);
+  } catch (e) {
+    // If decoding fails, use the original path
+  }
+  
+  // Check if it's an absolute path (legacy data)
+  // Absolute paths might look like: /var/www/.../uploads/kyc/contractorId/file.jpg
+  // Or they might be relative paths like: kyc/contractorId/file.jpg
+  if (path.isAbsolute(receivedPath)) {
+    // It's an absolute path - use it directly
+    filePath = receivedPath;
   } else {
-    // It's a relative path - construct from uploads/kyc
-    filePath = path.join(process.cwd(), 'uploads', 'kyc', req.params.path);
+    // It's a relative path - check if it already includes 'kyc/' or if we need to add it
+    if (receivedPath.startsWith('kyc/')) {
+      // Path already includes 'kyc/', so construct from uploads/
+      filePath = path.join(process.cwd(), 'uploads', receivedPath);
+    } else {
+      // Path is relative to uploads/kyc (e.g., "contractorId/filename.jpg")
+      filePath = path.join(process.cwd(), 'uploads', 'kyc', receivedPath);
+    }
   }
 
   // Normalize the path to prevent directory traversal
@@ -49,7 +66,7 @@ router.get('/documents/:path(*)', (req, res) => {
   } else {
     res.status(404).json({
       status: 'fail',
-      message: `File not found: ${req.params.path}`,
+      message: `Can't find ${receivedPath} on this server!`,
     });
   }
 });
@@ -456,6 +473,25 @@ router.post(
 
     await emailService.sendMail(emailContent);
 
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: kyc.contractor.user.id,
+        title: 'KYC Verification Approved',
+        message: `Your KYC verification has been approved! Your account is now fully verified and you can access all platform features.`,
+        type: 'SUCCESS',
+        actionLink: '/dashboard/contractor',
+        actionText: 'Go to Dashboard',
+        metadata: {
+          kycId: kycId,
+          status: 'APPROVED',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send KYC approval notification:', error);
+    }
+
     await logActivity({
       adminId: req.admin!.id,
       action: 'KYC_DECISION',
@@ -553,6 +589,26 @@ router.post(
     });
 
     await emailService.sendMail(emailContent);
+
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: kyc.contractor.user.id,
+        title: 'KYC Verification Rejected',
+        message: `Your KYC verification has been rejected. Reason: ${reason}. Please re-submit your documents with the required corrections.`,
+        type: 'WARNING',
+        actionLink: '/dashboard/kyc',
+        actionText: 'Re-submit Documents',
+        metadata: {
+          kycId: kycId,
+          status: 'REJECTED',
+          reason,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send KYC rejection notification:', error);
+    }
 
     await logActivity({
       adminId: req.admin!.id,

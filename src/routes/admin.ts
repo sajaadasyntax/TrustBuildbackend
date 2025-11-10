@@ -366,6 +366,46 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
       console.error(`❌ Failed to send approval email to contractor ${contractor.user.email}:`, error);
       // Don't fail the approval if email fails - log it for manual follow-up
     }
+
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: contractor.user.id,
+        title: 'Profile Approved',
+        message: `Your contractor profile has been approved!${bypassKyc ? ' Your account is now active.' : ' Please complete KYC verification to activate your account.'}`,
+        type: 'SUCCESS',
+        actionLink: bypassKyc ? '/dashboard/contractor' : '/dashboard/kyc',
+        actionText: bypassKyc ? 'Go to Dashboard' : 'Complete KYC',
+        metadata: {
+          contractorId: contractor.id,
+          approved: true,
+          bypassKyc,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send approval notification:', error);
+    }
+  } else {
+    // Contractor rejected - send notification
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: contractor.user.id,
+        title: 'Profile Rejected',
+        message: `Your contractor profile has been rejected.${reason ? ` Reason: ${reason}` : ''} Please contact support for more information.`,
+        type: 'ERROR',
+        actionLink: '/dashboard/contractor',
+        actionText: 'View Dashboard',
+        metadata: {
+          contractorId: contractor.id,
+          approved: false,
+          reason,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send rejection notification:', error);
+    }
   }
 
   // If manual approval (bypassing KYC), send different email
@@ -1516,7 +1556,43 @@ export const updateContractorStatus = catchAsync(async (req: AdminAuthRequest, r
       },
     });
 
+    // Notify contractor about account status change
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      let title = '';
+      let message = '';
+      let notificationType: 'SUCCESS' | 'WARNING' | 'ERROR' | 'INFO' = 'INFO';
 
+      if (status === 'ACTIVE') {
+        title = 'Account Activated';
+        message = `Your contractor account has been activated. You can now access all platform features.${reason ? ` Reason: ${reason}` : ''}`;
+        notificationType = 'SUCCESS';
+      } else if (status === 'SUSPENDED') {
+        title = 'Account Suspended';
+        message = `Your contractor account has been suspended.${reason ? ` Reason: ${reason}` : ''} Please contact support for assistance.`;
+        notificationType = 'ERROR';
+      } else if (status === 'INACTIVE') {
+        title = 'Account Deactivated';
+        message = `Your contractor account has been deactivated.${reason ? ` Reason: ${reason}` : ''}`;
+        notificationType = 'WARNING';
+      }
+
+      await createNotification({
+        userId: updatedContractor.user.id,
+        title,
+        message,
+        type: notificationType,
+        actionLink: '/dashboard/contractor',
+        actionText: 'View Dashboard',
+        metadata: {
+          contractorId: req.params.id,
+          status,
+          reason,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send account status change notification:', error);
+    }
 
     // Log the admin action to activity log
     try {

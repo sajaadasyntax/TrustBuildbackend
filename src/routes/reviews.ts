@@ -132,10 +132,39 @@ export const createReview = catchAsync(async (req: AuthenticatedRequest, res: Re
       projectType: job.title,
       projectDate: job.completionDate,
     },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+      job: {
+        select: {
+          title: true,
+        },
+      },
+    },
   });
 
   // Update contractor rating
   await updateContractorRating(contractorId);
+
+  // Notify contractor about new review
+  try {
+    const { notifyNewReview } = await import('../services/notificationService');
+    await notifyNewReview(
+      review.contractor.user.id,
+      rating,
+      review.job.title
+    );
+  } catch (error) {
+    console.error('Failed to send review notification:', error);
+  }
 
   res.status(201).json({
     status: 'success',

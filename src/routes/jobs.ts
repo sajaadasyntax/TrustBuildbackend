@@ -372,6 +372,78 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       },
       service: {
         select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  // Notify subscribed contractors about new job posting
+  try {
+    const { createBulkNotifications } = await import('../services/notificationService');
+    
+    // Get all active subscribed contractors who provide this service
+    const subscribedContractors = await prisma.contractor.findMany({
+      where: {
+        isActive: true,
+        profileApproved: true,
+        subscription: {
+          status: 'ACTIVE',
+        },
+        services: {
+          some: {
+            serviceId: finalServiceId,
+          },
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (subscribedContractors.length > 0) {
+      const notifications = subscribedContractors.map((contractor) => ({
+        userId: contractor.user.id,
+        title: 'New Job Posted',
+        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}"${budget ? ` (Budget: £${Number(budget).toFixed(2)})` : ' (Quote required)'}`,
+        type: job.isUrgent ? 'WARNING' : 'INFO',
+        actionLink: `/dashboard/contractor/jobs/${job.id}`,
+        actionText: 'View Job',
+        metadata: {
+          jobId: job.id,
+          jobTitle: title,
+          isUrgent: job.isUrgent,
+        },
+      }));
+
+      await createBulkNotifications(notifications);
+    }
+  } catch (error) {
+    console.error('Failed to notify contractors about new job:', error);
+  }
+
+  res.status(201).json({
+    status: 'success',
+    message: 'Job created and posted successfully',
+    data: {
+      job: {
+        ...job,
+        customer: {
+          ...job.customer,
+          user: {
+            id: job.customer.user.id,
+            name: job.customer.user.name,
+            },
+          },
+        },
+      },
+      service: {
+        select: {
           name: true,
           category: true,
         },
@@ -608,14 +680,41 @@ export const applyForJob = catchAsync(async (req: AuthenticatedRequest, res: Res
         },
       },
       job: {
-        select: {
-          title: true,
-          budget: true,
-          requiresQuote: true,
+        include: {
+          customer: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       },
     },
   });
+
+  // Notify customer about new application
+  try {
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: application.job.customer.userId,
+      title: 'New Job Application',
+      message: `${application.contractor.user.name} has applied for your job: "${application.job.title}". Quote: £${Number(estimatedCost).toFixed(2)}`,
+      type: 'INFO',
+      actionLink: `/dashboard/client/jobs/${req.params.id}`,
+      actionText: 'View Application',
+      metadata: {
+        jobId: req.params.id,
+        applicationId: application.id,
+        contractorName: application.contractor.user.name,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to send application notification:', error);
+  }
 
   res.status(201).json({
     status: 'success',
@@ -2569,6 +2668,27 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
 
     } catch (error) {
       console.error('Failed to send final price rejection email:', error);
+    }
+
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: job.wonByContractor?.user?.id || '',
+        title: 'Final Price Rejected',
+        message: `The customer rejected your final price proposal for "${job.title}". Reason: ${rejectionReason}. You can propose a new price.`,
+        type: 'WARNING',
+        actionLink: `/dashboard/contractor/jobs/${jobId}`,
+        actionText: 'Propose New Price',
+        metadata: {
+          jobId,
+          jobTitle: job.title,
+          rejectedPrice: Number(job.contractorProposedAmount),
+          rejectionReason,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send final price rejection notification:', error);
     }
   }
 

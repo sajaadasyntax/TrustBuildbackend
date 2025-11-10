@@ -204,6 +204,27 @@ router.post(
       req.admin!.name
     );
 
+    // Notify contractor about new manual invoice
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: invoice.contractor.user.id,
+        title: 'New Invoice Created',
+        message: `A new invoice ${invoice.number} has been created for you. Amount: £${(total / 100).toFixed(2)}${dueDate ? `. Due date: ${new Date(dueDate).toLocaleDateString()}` : ''}`,
+        type: 'INFO',
+        actionLink: '/dashboard/contractor/invoices',
+        actionText: 'View Invoice',
+        metadata: {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.number,
+          amount: total,
+          isManual: true,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send manual invoice creation notification:', error);
+    }
+
     res.status(201).json({
       status: 'success',
       data: { invoice },

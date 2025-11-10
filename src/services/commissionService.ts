@@ -100,6 +100,20 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
       console.error('Failed to send commission invoice email:', emailError);
     }
 
+    // Send in-app notification to contractor about commission invoice
+    try {
+      const { createCommissionDueNotification } = await import('./notificationService');
+      await createCommissionDueNotification(
+        job.wonByContractor.user.id,
+        commissionPayment.id,
+        job.title,
+        totalAmount,
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      );
+    } catch (notificationError) {
+      console.error('Failed to send commission invoice notification:', notificationError);
+    }
+
     // Update job to mark commission as paid
     await prisma.job.update({
       where: { id: jobId },
