@@ -301,18 +301,12 @@ router.post(
       });
     }
 
-    // Prevent creating additional Main Super Admins - only one can exist
+    // Prevent creating Main Super Admin via API - it can only be created via seeding
     if (req.body.isMainSuperAdmin === true) {
-      const existingMainSuperAdmin = await prisma.admin.findFirst({
-        where: { isMainSuperAdmin: true },
+      return res.status(403).json({
+        status: 'error',
+        message: 'Main Super Admin can only be created via database seeding, not through the API',
       });
-
-      if (existingMainSuperAdmin) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'A Main Super Admin already exists. Only one Main Super Admin is allowed.',
-        });
-      }
     }
 
     // For regular admins (non-SUPER_ADMIN), permissions are required
@@ -344,6 +338,7 @@ router.post(
         role: role as AdminRole,
         passwordHash,
         permissions: role === 'SUPER_ADMIN' ? null : permissions, // SUPER_ADMIN doesn't need permissions
+        isMainSuperAdmin: false, // Explicitly set to false - Main Super Admin can only be created via seeding
       },
       select: {
         id: true,
@@ -380,7 +375,63 @@ router.patch(
   restrictToAdminRole(AdminRole.SUPER_ADMIN),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, role, isActive } = req.body;
+    const { name, role, isActive, isMainSuperAdmin } = req.body;
+
+    // Get the target admin first to check if it's Main Super Admin
+    const targetAdmin = await prisma.admin.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        isMainSuperAdmin: true,
+      },
+    });
+
+    if (!targetAdmin) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Admin not found',
+      });
+    }
+
+    // Prevent changing isMainSuperAdmin via API - it can only be set during seeding
+    if (isMainSuperAdmin !== undefined) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'isMainSuperAdmin cannot be changed via API. It can only be set during database seeding.',
+      });
+    }
+
+    // Prevent changing the Main Super Admin's role
+    if (targetAdmin.isMainSuperAdmin && role !== undefined && role !== targetAdmin.role) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'The Main Super Admin role cannot be changed',
+      });
+    }
+
+    // Only Main Super Admin can change other Super Admins' roles
+    if (targetAdmin.role === AdminRole.SUPER_ADMIN && role !== undefined && role !== targetAdmin.role) {
+      if (!req.admin!.isMainSuperAdmin) {
+        return res.status(403).json({
+          status: 'error',
+          message: 'Only the Main Super Admin can change other Super Admins\' roles',
+        });
+      }
+    }
+
+    // Only Main Super Admin can assign Super Admin role to others
+    if (role === AdminRole.SUPER_ADMIN && targetAdmin.role !== AdminRole.SUPER_ADMIN) {
+      if (!req.admin!.isMainSuperAdmin) {
+        return res.status(403).json({
+          status: 'error',
+          message: 'Only the Main Super Admin can assign the Super Admin role',
+        });
+      }
+    }
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
@@ -396,6 +447,7 @@ router.patch(
         name: true,
         role: true,
         isActive: true,
+        isMainSuperAdmin: true,
         createdAt: true,
       },
     });
