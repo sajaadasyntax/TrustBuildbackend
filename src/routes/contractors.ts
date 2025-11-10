@@ -1004,7 +1004,7 @@ export const getFeaturedContractors = catchAsync(async (req: AuthenticatedReques
   const where: any = {
     featuredContractor: true,
     profileApproved: true,
-    status: 'VERIFIED',
+    accountStatus: 'ACTIVE', // Use accountStatus instead of status
     user: { isActive: true },
   };
 
@@ -1053,9 +1053,24 @@ export const getFeaturedContractors = catchAsync(async (req: AuthenticatedReques
     ],
   });
 
+  // Transform contractors to match frontend expected format
+  const transformedContractors = contractors.map((contractor) => ({
+    id: contractor.id,
+    name: contractor.user.name,
+    email: contractor.user.email,
+    rating: contractor.averageRating || 0,
+    completedJobs: contractor.jobsCompleted || 0,
+    specialties: contractor.services?.map((s: any) => s.name) || [],
+    location: contractor.city || contractor.operatingArea || 'Not specified',
+    joinedDate: contractor.createdAt.toISOString(),
+    revenue: 0, // Revenue not tracked at contractor level
+    businessName: contractor.businessName,
+    avatarUrl: contractor.logoUrl,
+  }));
+
   res.status(200).json({
     status: 'success',
-    data: contractors,
+    data: transformedContractors,
   });
 });
 
