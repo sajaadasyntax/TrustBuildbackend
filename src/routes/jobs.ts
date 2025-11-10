@@ -431,29 +431,6 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     status: 'success',
     message: 'Job created and posted successfully',
     data: {
-      job: {
-        ...job,
-        customer: {
-          ...job.customer,
-          user: {
-            id: job.customer.user.id,
-            name: job.customer.user.name,
-            },
-          },
-        },
-      },
-      service: {
-        select: {
-          name: true,
-          category: true,
-        },
-      },
-    },
-  });
-
-  res.status(201).json({
-    status: 'success',
-    data: {
       job,
     },
   });
