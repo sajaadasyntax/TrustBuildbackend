@@ -66,9 +66,10 @@ export const getDashboardStats = catchAsync(async (req: AdminAuthRequest, res: R
     prisma.service.count({
       where: { isActive: true },
     }),
-    prisma.job.aggregate({
+    // Get actual revenue from completed payments (not job budgets)
+    prisma.payment.aggregate({
       where: { status: 'COMPLETED' },
-      _sum: { budget: true },
+      _sum: { amount: true },
     }),
     prisma.user.findMany({
       take: 5,
@@ -135,7 +136,7 @@ export const getDashboardStats = catchAsync(async (req: AdminAuthRequest, res: R
       active: activeServices,
     },
     revenue: {
-      total: totalRevenue._sum.budget || 0,
+      total: Number(totalRevenue._sum.amount || 0),
     },
     recent: {
       users: recentUsers,
