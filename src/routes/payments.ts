@@ -873,10 +873,8 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
     // This is the key difference: subscribed contractors pay commission based on settings, non-subscribed don't
     if (contractor.subscription && contractor.subscription.isActive && contractor.subscription.status === 'active') {
       // Get commission rate from settings
-      const commissionRateSetting = await prisma.setting.findUnique({
-        where: { key: 'COMMISSION_RATE' },
-      });
-      const commissionRate = (commissionRateSetting?.value as any)?.rate || 5.0;
+      const { getCommissionRate } = await import('../services/settingsService');
+      const commissionRate = await getCommissionRate();
       const commissionAmount = (finalAmount * commissionRate) / 100;
       const vatAmount = 0; // No additional VAT - commission amount already includes VAT
       const totalAmount = commissionAmount; // Total is just the commission amount

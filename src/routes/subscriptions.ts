@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
+import { getSubscriptionPricingFromSettings } from '../services/settingsService';
 
 const router = Router();
 
@@ -39,6 +40,7 @@ function getStripeInstance(): Stripe | null {
 }
 
 // Subscription pricing helper (prices include 20% VAT)
+// This is the synchronous fallback version - use getSubscriptionPricingAsync for admin settings
 export function getSubscriptionPricing(plan: string) {
   switch (plan) {
     case 'MONTHLY':
@@ -92,15 +94,83 @@ export function getSubscriptionPricing(plan: string) {
   }
 }
 
+// Async version that uses admin settings
+export async function getSubscriptionPricingAsync(plan: string) {
+  const pricing = await getSubscriptionPricingFromSettings();
+  
+  switch (plan) {
+    case 'MONTHLY':
+      return {
+        monthly: pricing.monthly,
+        total: pricing.monthly,
+        basePrice: pricing.monthly,
+        vatAmount: 0,
+        discount: 0,
+        discountPercentage: 0,
+        duration: 1,
+        durationUnit: 'month',
+        includesVAT: true,
+      };
+    case 'SIX_MONTHS':
+      const sixMonthTotal = pricing.sixMonths;
+      const sixMonthMonthly = sixMonthTotal / 6;
+      const monthlyTotal = pricing.monthly * 6;
+      const sixMonthDiscount = monthlyTotal - sixMonthTotal;
+      return {
+        monthly: sixMonthMonthly,
+        total: sixMonthTotal,
+        basePrice: sixMonthTotal,
+        vatAmount: 0,
+        discount: sixMonthDiscount,
+        discountPercentage: Math.round((sixMonthDiscount / monthlyTotal) * 100),
+        duration: 6,
+        durationUnit: 'months',
+        includesVAT: true,
+      };
+    case 'YEARLY':
+      const yearlyTotal = pricing.yearly;
+      const yearlyMonthly = yearlyTotal / 12;
+      const monthlyTotalYearly = pricing.monthly * 12;
+      const yearlyDiscount = monthlyTotalYearly - yearlyTotal;
+      return {
+        monthly: yearlyMonthly,
+        total: yearlyTotal,
+        basePrice: yearlyTotal,
+        vatAmount: 0,
+        discount: yearlyDiscount,
+        discountPercentage: Math.round((yearlyDiscount / monthlyTotalYearly) * 100),
+        duration: 12,
+        durationUnit: 'months',
+        includesVAT: true,
+      };
+    default:
+      return {
+        monthly: pricing.monthly,
+        total: pricing.monthly,
+        basePrice: pricing.monthly,
+        vatAmount: 0,
+        discount: 0,
+        discountPercentage: 0,
+        duration: 1,
+        durationUnit: 'month',
+        includesVAT: true,
+      };
+  }
+}
+
 // @desc    Get subscription plans
 // @route   GET /api/subscriptions/plans
 // @access  Private
 export const getSubscriptionPlans = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const monthlyPricing = await getSubscriptionPricingAsync('MONTHLY');
+  const sixMonthPricing = await getSubscriptionPricingAsync('SIX_MONTHS');
+  const yearlyPricing = await getSubscriptionPricingAsync('YEARLY');
+  
   const plans = [
     {
       id: 'MONTHLY',
       name: 'Monthly',
-      ...getSubscriptionPricing('MONTHLY'),
+      ...monthlyPricing,
       features: [
         'Access to all job listings',
         'No commission on completed jobs',
@@ -112,10 +182,10 @@ export const getSubscriptionPlans = catchAsync(async (req: AuthenticatedRequest,
     {
       id: 'SIX_MONTHS',
       name: '6-Month',
-      ...getSubscriptionPricing('SIX_MONTHS'),
+      ...sixMonthPricing,
       features: [
         'All Monthly plan features',
-        '10% discount',
+        `${sixMonthPricing.discountPercentage}% discount`,
         'Priority in search results',
         'Featured profile badge',
         'Extended profile customization',
@@ -124,10 +194,10 @@ export const getSubscriptionPlans = catchAsync(async (req: AuthenticatedRequest,
     {
       id: 'YEARLY',
       name: 'Yearly',
-      ...getSubscriptionPricing('YEARLY'),
+      ...yearlyPricing,
       features: [
         'All 6-Month plan features',
-        '20% discount',
+        `${yearlyPricing.discountPercentage}% discount`,
         'Top placement in search results',
         'Premium profile badge',
         'Advanced analytics dashboard',
@@ -239,8 +309,8 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
   }
 
   // Get pricing for selected plan
-  const pricing = getSubscriptionPricing(plan);
-  const amount = pricing.total;
+    const pricing = await getSubscriptionPricingAsync(plan);
+    const amount = pricing.total;
 
   // Create payment intent
   try {
@@ -567,7 +637,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   let invoice;
   try {
-    const pricing = getSubscriptionPricing(plan);
+    const pricing = await getSubscriptionPricingAsync(plan);
     invoice = await prisma.invoice.create({
       data: {
         payments: { connect: { id: payment.id } },

@@ -3,7 +3,7 @@ import { prisma } from '../config/database';
 import { protectAdmin, AdminAuthRequest } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
-import { getSubscriptionPricing } from './subscriptions.js';
+import { getSubscriptionPricing, getSubscriptionPricingAsync } from './subscriptions.js';
 
 const router = Router();
 
@@ -530,7 +530,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
   if (contractor.stripeCustomerId) {
     try {
       const stripe = getStripeInstance();
-      const pricing = getSubscriptionPricing(plan);
+      const pricing = await getSubscriptionPricingAsync(plan);
       
       if (stripeSubscriptionId) {
         // Update existing Stripe subscription
@@ -603,7 +603,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
         isActive: true,
         currentPeriodStart: now,
         currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
+        monthlyPrice: (await getSubscriptionPricingAsync(plan)).monthly,
         ...(stripeSubscriptionId && { stripeSubscriptionId }),
       },
     });
@@ -617,7 +617,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
         isActive: true,
         currentPeriodStart: now,
         currentPeriodEnd: endDate,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
+        monthlyPrice: (await getSubscriptionPricingAsync(plan)).monthly,
         ...(stripeSubscriptionId && { stripeSubscriptionId }),
       },
     });
@@ -627,7 +627,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
   const payment = await prisma.payment.create({
     data: {
       contractorId,
-      amount: getSubscriptionPricing(plan).total,
+      amount: (await getSubscriptionPricingAsync(plan)).total,
       type: 'SUBSCRIPTION',
       status: 'COMPLETED',
       description: `${plan} subscription payment (admin created)`,
@@ -635,7 +635,7 @@ export const createSubscriptionForContractor = catchAsync(async (req: AdminAuthR
   });
   
   // Create invoice for the subscription
-  const pricing = getSubscriptionPricing(plan);
+  const pricing = await getSubscriptionPricingAsync(plan);
   const invoice = await prisma.invoice.create({
     data: {
       payments: { connect: { id: payment.id } },
@@ -733,7 +733,7 @@ export const updateSubscription = catchAsync(async (req: AdminAuthRequest, res: 
     data: {
       ...(plan && { 
         plan,
-        monthlyPrice: getSubscriptionPricing(plan).monthly,
+        monthlyPrice: (await getSubscriptionPricingAsync(plan)).monthly,
       }),
       ...(status !== undefined && { status }),
       ...(isActive !== undefined && { isActive }),

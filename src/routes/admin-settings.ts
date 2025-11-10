@@ -127,6 +127,22 @@ router.patch(
       },
     });
 
+    // Also sync to Setting table for backward compatibility
+    // Convert value to JSON format for Setting table
+    const settingValue = typeof value === 'object' ? value : JSON.parse(valueString);
+    await prisma.setting.upsert({
+      where: { key: key.toUpperCase() },
+      update: {
+        value: settingValue,
+        updatedBy: req.admin!.id,
+      },
+      create: {
+        key: key.toUpperCase(),
+        value: settingValue,
+        updatedBy: req.admin!.id,
+      },
+    });
+
     // Determine action type for critical settings
     let action = 'SETTINGS_UPDATE';
     if (key.toUpperCase() === 'COMMISSION_RATE') {

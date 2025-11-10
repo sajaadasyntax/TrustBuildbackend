@@ -2924,10 +2924,8 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   
   if (winningContractor && accessedViaCredits && !job.commissionPaid) {
     // Get commission rate from settings
-    const commissionRateSetting = await prisma.setting.findUnique({
-      where: { key: 'COMMISSION_RATE' },
-    });
-    const commissionRatePercent = (commissionRateSetting?.value as any)?.rate || 5.0;
+    const { getCommissionRate } = await import('../services/settingsService');
+    const commissionRatePercent = await getCommissionRate();
     commissionAmount = (Number(job.finalAmount) * commissionRatePercent) / 100;
     
 

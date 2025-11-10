@@ -55,11 +55,8 @@ router.patch(
 
     // If commission already exists, recalculate it
     if (job.commissionPayment) {
-      const commissionRate = await prisma.setting.findUnique({
-        where: { key: 'COMMISSION_RATE' },
-      });
-
-      const rate = (commissionRate?.value as any)?.rate || 5.0;
+      const { getCommissionRate } = await import('../services/settingsService');
+      const rate = await getCommissionRate();
       const commissionAmount = (value * rate) / 100;
       const vatAmount = 0; // No additional VAT - commission amount already includes VAT
       const totalAmount = commissionAmount;

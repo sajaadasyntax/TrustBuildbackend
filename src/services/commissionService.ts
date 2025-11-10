@@ -4,6 +4,7 @@ import {
   createCommissionDueNotification, 
   createAccountSuspendedNotification 
 } from './notificationService';
+import { getCommissionRate } from './settingsService';
 
 // Process commission for a job
 export async function processCommissionForJob(jobId: string, finalAmount: number) {
@@ -38,10 +39,7 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
   // IMPORTANT: Commission applies even when using free trial point
   if ((accessedViaCredits || accessedViaFreePoint) && !job.commissionPaid) {
     // Get commission rate from settings
-    const commissionRateSetting = await prisma.setting.findUnique({
-      where: { key: 'COMMISSION_RATE' },
-    });
-    const commissionRatePercent = (commissionRateSetting?.value as any)?.rate || 5.0;
+    const commissionRatePercent = await getCommissionRate();
     const commissionAmount = (finalAmount * commissionRatePercent) / 100;
     const vatAmount = 0; // No additional VAT
     const totalAmount = commissionAmount;
