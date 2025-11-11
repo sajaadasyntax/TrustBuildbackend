@@ -354,9 +354,42 @@ export const getConversation = catchAsync(async (req: AuthenticatedRequest, res:
   });
 });
 
+// @desc    Get list of admins (for customers/contractors to message)
+// @route   GET /api/messages/admins
+// @access  Private (Customer/Contractor only)
+export const getAdmins = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+  const userRole = req.user!.role;
+
+  // Only customers and contractors can get list of admins
+  if (userRole !== 'CUSTOMER' && userRole !== 'CONTRACTOR') {
+    throw new AppError('Only customers and contractors can access this endpoint', 403);
+  }
+
+  // Get all active admins
+  const admins = await prisma.user.findMany({
+    where: {
+      role: { in: ['ADMIN', 'SUPER_ADMIN'] },
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: { admins },
+  });
+});
+
 // Register routes
 router.post('/', protect, sendMessage);
 router.get('/', protect, getMessages);
+router.get('/admins', protect, getAdmins);
 router.get('/conversation/:userId', protect, getConversation);
 router.get('/:id', protect, getMessage);
 router.patch('/:id/read', protect, markMessageAsRead);
