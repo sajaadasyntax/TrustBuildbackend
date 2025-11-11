@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { prisma } from '../config/database';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { getFreeJobAllocation } from '../services/settingsService';
 
 const router = express.Router();
 
@@ -162,6 +163,9 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       // Don't fail registration if email fails
     }
   } else if (role === 'CONTRACTOR') {
+    // Get free job allocation from admin settings (default: 1)
+    const freeCredits = await getFreeJobAllocation();
+    
     // Create contractor profile
     const newContractor = await prisma.contractor.create({
       data: {
@@ -182,10 +186,11 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         unsatisfiedCustomers,
         preferredClients,
         usesContracts: usesContracts || false,
-        creditsBalance: 0, // No initial credits for non-subscribers
+        creditsBalance: freeCredits, // Use admin setting for free credits
         lastCreditReset: null, // No credit reset for non-subscribers
         profileApproved: false, // Requires admin approval
         accountStatus: 'PAUSED', // Start paused until KYC is completed
+        hasUsedFreeTrial: false, // Track if they've used their free credits
       },
     });
 
@@ -201,8 +206,17 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       },
     });
 
-    // Note: Credits will only be allocated when contractor subscribes
-    // No initial credit transaction for non-subscribers
+    // Create credit transaction record for the free trial credits
+    if (freeCredits > 0) {
+      await prisma.creditTransaction.create({
+        data: {
+          contractorId: newContractor.id,
+          amount: freeCredits,
+          type: 'BONUS',
+          description: `Free trial credit${freeCredits > 1 ? 's' : ''} - new contractor welcome bonus (valid for small jobs only)`,
+        },
+      });
+    }
 
     // Send welcome email to contractor
     try {

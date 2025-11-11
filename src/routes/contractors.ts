@@ -184,7 +184,11 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     services,
   } = req.body;
 
-  // Create contractor profile with 1 free credit
+  // Get free job allocation from admin settings (default: 1)
+  const { getFreeJobAllocation } = await import('../services/settingsService');
+  const freeCredits = await getFreeJobAllocation();
+
+  // Create contractor profile with free credits from admin setting
   // STANDARD tier contractors don't get weekly credits (weeklyCreditsLimit = 0)
   const contractor = await prisma.contractor.create({
     data: {
@@ -207,10 +211,10 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       unsatisfiedCustomers,
       preferredClients,
       usesContracts,
-      creditsBalance: 1, // Every new contractor gets 1 free credit (trial)
+      creditsBalance: freeCredits, // Use admin setting for free credits
       weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits
       lastCreditReset: null,
-      hasUsedFreeTrial: false, // Track if they've used their free credit
+      hasUsedFreeTrial: false, // Track if they've used their free credits
       services: services ? {
         connect: services.map((serviceId: string) => ({ id: serviceId })),
       } : undefined,
@@ -227,22 +231,24 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     },
   });
 
-  // Create credit transaction record for the free trial credit
-  await prisma.creditTransaction.create({
-    data: {
-      contractorId: contractor.id,
-      amount: 1,
-      type: 'BONUS',
-      description: 'Free trial credit - new contractor welcome bonus (valid for small jobs only)',
-    },
-  });
+  // Create credit transaction record for the free trial credits
+  if (freeCredits > 0) {
+    await prisma.creditTransaction.create({
+      data: {
+        contractorId: contractor.id,
+        amount: freeCredits,
+        type: 'BONUS',
+        description: `Free trial credit${freeCredits > 1 ? 's' : ''} - new contractor welcome bonus (valid for small jobs only)`,
+      },
+    });
+  }
 
   res.status(201).json({
     status: 'success',
     data: {
       contractor,
     },
-    message: 'Contractor profile created successfully. You have received 1 free credit to try the platform (valid for small jobs only).',
+    message: `Contractor profile created successfully. You have received ${freeCredits} free credit${freeCredits > 1 ? 's' : ''} to try the platform (valid for small jobs only).`,
   });
 });
 

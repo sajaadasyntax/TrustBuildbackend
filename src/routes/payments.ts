@@ -191,7 +191,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
                               contractor.subscription.status === 'active';
 
   // Check if using free trial credit
-  const isUsingFreeTrial = !hasActiveSubscription && contractor.creditsBalance > 0 && !contractor.hasUsedFreeTrial;
+  // If contractor is not subscribed and has credits, all credits are considered free trial credits
+  // (with SMALL job restriction) until they subscribe
+  const isUsingFreeTrial = !hasActiveSubscription && contractor.creditsBalance > 0;
 
   // Validate payment method based on subscription status
   if (hasActiveSubscription) {
@@ -264,19 +266,20 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError(`Insufficient credits. Current balance: ${currentContractor.creditsBalance}. Please top up or use card payment.`, 400);
       }
       
-      // Check if this is their free trial credit
+      // Check if this is a free trial credit (non-subscriber using credits)
       const isSubscribed = currentContractor.subscription !== null;
-      usedFreeTrial = !isSubscribed && !currentContractor.hasUsedFreeTrial;
+      usedFreeTrial = !isSubscribed;
       
       // CRITICAL: Use the current balance and subtract 1
       const newBalance = currentContractor.creditsBalance - 1;
       
       // Update the contractor's balance and mark free trial as used if applicable
+      // Mark hasUsedFreeTrial as true if this is the first time using a free credit
       const updatedContractor = await tx.contractor.update({
         where: { id: contractor.id },
         data: { 
           creditsBalance: newBalance,
-          ...(usedFreeTrial && { hasUsedFreeTrial: true })
+          ...(usedFreeTrial && !currentContractor.hasUsedFreeTrial && { hasUsedFreeTrial: true })
         },
         select: { creditsBalance: true }
       });
