@@ -272,6 +272,8 @@ export const getCurrentSubscription = catchAsync(async (req: AuthenticatedReques
       }),
       endDate: formattedNextBillingDate,
       nextBillingDate: formattedNextBillingDate,
+      currentPeriodEnd: contractor.subscription.currentPeriodEnd.toISOString(),
+      currentPeriodStart: contractor.subscription.currentPeriodStart.toISOString(),
       pricing,
       daysRemaining: Math.max(0, Math.floor((contractor.subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
       stripeSubscriptionId: contractor.subscription.stripeSubscriptionId,
