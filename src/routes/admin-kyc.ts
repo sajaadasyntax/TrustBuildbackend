@@ -465,6 +465,16 @@ router.post(
         <p>We're pleased to inform you that your KYC verification has been approved!</p>
         <p>Your contractor account is now fully verified and you can access all platform features.</p>
         ${notes ? `<p><strong>Notes from our team:</strong><br/>${notes}</p>` : ''}
+        
+        <h3>What's Next?</h3>
+        <p>To start accessing job leads, you'll need to subscribe to one of our plans:</p>
+        <ul>
+          <li><strong>Standard Plan:</strong> 3 weekly credit points</li>
+          <li><strong>Premium Plan:</strong> 6 weekly credit points</li>
+          <li><strong>Enterprise Plan:</strong> Unlimited credit points</li>
+        </ul>
+        <p><strong>Note:</strong> Credit points are allocated through active subscriptions only. No free credits are provided automatically.</p>
+        
         <p>Thank you for completing the verification process.</p>
       `,
       ctaText: 'Go to Dashboard',
