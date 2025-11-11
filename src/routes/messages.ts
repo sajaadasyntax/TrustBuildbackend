@@ -72,12 +72,29 @@ export const sendMessage = catchAsync(async (req: AuthenticatedRequest, res: Res
 
   // Create notification for recipient
   const { createNotification } = await import('../services/notificationService');
+  
+  // Set correct actionLink based on recipient role
+  let actionLink: string;
+  if (recipient.role === 'ADMIN' || recipient.role === 'SUPER_ADMIN') {
+    // Admin recipients go to admin chat page
+    actionLink = `/admin/support/chat?userId=${senderId}`;
+  } else if (recipient.role === 'CONTRACTOR') {
+    // Contractor recipients go to contractor messages page
+    actionLink = `/dashboard/contractor/messages`;
+  } else if (recipient.role === 'CUSTOMER') {
+    // Customer recipients go to customer messages page
+    actionLink = `/dashboard/client/messages`;
+  } else {
+    // Fallback (shouldn't happen)
+    actionLink = `/messages/${message.id}`;
+  }
+  
   await createNotification({
     userId: recipientId,
     title: subject || 'New Message',
     message: `You have a new message from ${req.user!.name}`,
     type: 'MESSAGE_RECEIVED',
-    actionLink: `/messages/${message.id}`,
+    actionLink,
     actionText: 'View Message',
   });
 

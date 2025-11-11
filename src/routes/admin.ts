@@ -3492,12 +3492,26 @@ export const sendMessageAsAdmin = catchAsync(async (req: AdminAuthRequest, res: 
 
   // Create notification for recipient
   const { createNotification } = await import('../services/notificationService');
+  
+  // Set correct actionLink based on recipient role
+  let actionLink: string;
+  if (recipient.role === 'CONTRACTOR') {
+    // Contractor recipients go to contractor messages page
+    actionLink = `/dashboard/contractor/messages`;
+  } else if (recipient.role === 'CUSTOMER') {
+    // Customer recipients go to customer messages page
+    actionLink = `/dashboard/client/messages`;
+  } else {
+    // Fallback (shouldn't happen as we check for admin recipients above)
+    actionLink = `/messages/${message.id}`;
+  }
+  
   await createNotification({
     userId: recipientId,
     title: subject || 'New Message',
     message: `You have a new message from ${adminUserRecord.name}`,
     type: 'MESSAGE_RECEIVED',
-    actionLink: `/messages/${message.id}`,
+    actionLink,
     actionText: 'View Message',
   });
 
