@@ -995,6 +995,20 @@ async function main() {
       wonByContractorIndex: 6, // Mark Harrison - Carpentry
     },
     {
+      customerIndex: 2,
+      serviceIndex: 0, // Bathroom Fitting
+      title: 'Bathroom Refurbishment',
+      description: 'Complete bathroom refurbishment including new suite, tiling, and plumbing work. Modern design with walk-in shower.',
+      budget: 5500,
+      location: 'Birmingham, B1',
+      postcode: 'B1 1AA',
+      urgency: 'within_week',
+      status: JobStatus.WON,
+      jobSize: JobSize.MEDIUM,
+      estimatedValue: 5500,
+      wonByContractorIndex: 2, // Robert Davies - Plumbing, Heating, Bathroom
+    },
+    {
       customerIndex: 1,
       serviceIndex: 3, // Central Heating
       title: 'New Boiler Installation',
@@ -1027,6 +1041,9 @@ async function main() {
       leadPrice = service.largeJobPrice;
     }
 
+    // Set wonAt timestamp if contractor won the job
+    const wonAt = jobData.wonByContractorIndex !== undefined ? new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)) : null; // 7 days ago
+    
     const job = await prisma.job.create({
       data: {
         customerId: customer.id,
@@ -1043,17 +1060,23 @@ async function main() {
         estimatedValue: jobData.estimatedValue,
         maxContractorsPerJob: 5,
         wonByContractorId: jobData.wonByContractorIndex !== undefined ? contractors[jobData.wonByContractorIndex].id : null,
+        wonAt: wonAt,
         finalAmount: jobData.finalAmount || null,
         customerConfirmed: jobData.customerConfirmed || false,
         commissionPaid: jobData.commissionPaid || false,
+        completionDate: jobData.status === JobStatus.COMPLETED && jobData.finalAmount ? new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000)) : null, // 3 days ago if completed
       },
     });
 
     jobs.push(job);
     console.log(`  ✅ Job created: ${jobData.title} (${jobData.status})`);
 
-    // Create job applications for posted jobs
-    if (jobData.status === JobStatus.POSTED || jobData.status === JobStatus.IN_PROGRESS) {
+    // Create job applications for posted jobs, IN_PROGRESS, WON, and COMPLETED jobs
+    // All jobs with a wonByContractorId need applications
+    if (jobData.status === JobStatus.POSTED || 
+        jobData.status === JobStatus.IN_PROGRESS || 
+        jobData.status === JobStatus.WON ||
+        (jobData.status === JobStatus.COMPLETED && jobData.wonByContractorIndex !== undefined)) {
       // Get 2-3 random contractors who provide this service
       // Only check contractors from the original contractorData array (they have servicesIndexes)
       const applicableContractors = originalContractors.filter((c, index) => {
@@ -1064,8 +1087,25 @@ async function main() {
       });
 
       const numApplications = Math.min(3, applicableContractors.length);
+      const wonContractorIndex = jobData.wonByContractorIndex;
+      
       for (let i = 0; i < numApplications; i++) {
         const contractor = applicableContractors[i];
+        const isWonContractor = wonContractorIndex !== undefined && 
+                                 contractors[wonContractorIndex]?.id === contractor.id;
+        
+        // Determine application status
+        let applicationStatus = 'PENDING';
+        if (jobData.status === JobStatus.IN_PROGRESS && i === 0) {
+          applicationStatus = 'ACCEPTED';
+        } else if (isWonContractor) {
+          // Contractor who won must have ACCEPTED application
+          applicationStatus = 'ACCEPTED';
+        } else if (jobData.status === JobStatus.WON || jobData.status === JobStatus.COMPLETED) {
+          // For WON/COMPLETED jobs, only the winner has ACCEPTED, others are PENDING
+          applicationStatus = 'PENDING';
+        }
+        
         await prisma.jobApplication.create({
           data: {
             jobId: job.id,
@@ -1073,7 +1113,7 @@ async function main() {
             coverLetter: `I would be delighted to work on your ${jobData.title.toLowerCase()} project. With my experience and expertise, I can deliver excellent results.`,
             proposedRate: jobData.budget * (0.85 + Math.random() * 0.15),
             timeline: jobData.urgency === 'asap' ? '1 week' : jobData.urgency === 'within_week' ? '2 weeks' : '3-4 weeks',
-            status: jobData.status === JobStatus.IN_PROGRESS && i === 0 ? 'ACCEPTED' : 'PENDING',
+            status: applicationStatus,
           },
         });
       }
@@ -1081,48 +1121,58 @@ async function main() {
       // Create job access for contractors who applied
       for (let i = 0; i < numApplications; i++) {
         const contractor = applicableContractors[i];
-        const useCredit = contractor.creditsBalance > 0 && Math.random() > 0.5;
-
-        await prisma.jobAccess.create({
-          data: {
+        // Check if job access already exists (for jobs that were created with wonByContractorId)
+        const existingAccess = await prisma.jobAccess.findFirst({
+          where: {
             jobId: job.id,
             contractorId: contractor.id,
-            accessMethod: useCredit ? 'CREDIT' : 'PAYMENT',
-            paidAmount: useCredit ? null : leadPrice,
-            creditUsed: useCredit,
           },
         });
 
-        if (useCredit) {
-          // Deduct credit
-          await prisma.contractor.update({
-            where: { id: contractor.id },
-            data: { creditsBalance: { decrement: 1 } },
+        if (!existingAccess) {
+          const useCredit = contractor.creditsBalance > 0 && Math.random() > 0.5;
+
+          await prisma.jobAccess.create({
+            data: {
+              jobId: job.id,
+              contractorId: contractor.id,
+              accessMethod: useCredit ? 'CREDIT' : 'PAYMENT',
+              paidAmount: useCredit ? null : leadPrice,
+              creditUsed: useCredit,
+            },
           });
 
-          // Create credit transaction
-          await prisma.creditTransaction.create({
-            data: {
-              contractorId: contractor.id,
-              amount: -1,
-              type: 'JOB_ACCESS',
-              description: `Credit used to access job: ${jobData.title}`,
-              jobId: job.id,
-            },
-          });
-        } else {
-          // Create payment
-          await prisma.payment.create({
-            data: {
-              contractorId: contractor.id,
-              jobId: job.id,
-              amount: leadPrice,
-              type: 'LEAD_ACCESS',
-              status: 'COMPLETED',
-              description: `Lead access payment for: ${jobData.title}`,
-              stripePaymentId: `pi_${Math.random().toString(36).substring(7)}`,
-            },
-          });
+          if (useCredit) {
+            // Deduct credit
+            await prisma.contractor.update({
+              where: { id: contractor.id },
+              data: { creditsBalance: { decrement: 1 } },
+            });
+
+            // Create credit transaction
+            await prisma.creditTransaction.create({
+              data: {
+                contractorId: contractor.id,
+                amount: -1,
+                type: 'JOB_ACCESS',
+                description: `Credit used to access job: ${jobData.title}`,
+                jobId: job.id,
+              },
+            });
+          } else {
+            // Create payment
+            await prisma.payment.create({
+              data: {
+                contractorId: contractor.id,
+                jobId: job.id,
+                amount: leadPrice,
+                type: 'LEAD_ACCESS',
+                status: 'COMPLETED',
+                description: `Lead access payment for: ${jobData.title}`,
+                stripePaymentId: `pi_${Math.random().toString(36).substring(7)}`,
+              },
+            });
+          }
         }
       }
     }

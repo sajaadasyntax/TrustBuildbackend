@@ -474,11 +474,11 @@ export const getDashboardData = catchAsync(async (req: AuthenticatedRequest, res
       orderBy: { createdAt: 'desc' },
     }),
 
-    // Active jobs
+    // Active jobs (POSTED, IN_PROGRESS, WON - jobs that are not yet completed)
     prisma.job.findMany({
       where: {
         customerId: customer.id,
-        status: { in: ['POSTED', 'IN_PROGRESS'] },
+        status: { in: ['POSTED', 'IN_PROGRESS', 'WON'] },
       },
       include: {
         service: {
