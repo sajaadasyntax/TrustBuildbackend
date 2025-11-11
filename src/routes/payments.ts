@@ -185,10 +185,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError(`This job has reached its limit. ${job.jobAccess.length}/${job.maxContractorsPerJob} contractors have already purchased access.`, 400));
   }
 
-  // Check if contractor has an active subscription
-  const hasActiveSubscription = contractor.subscription && 
-                              contractor.subscription.isActive && 
-                              contractor.subscription.status === 'active';
+  // Use unified subscription status check
+  const { checkSubscriptionStatus } = await import('../services/subscriptionService');
+  const subscriptionStatus = await checkSubscriptionStatus(contractor.id);
+  const hasActiveSubscription = subscriptionStatus.hasActiveSubscription;
 
   // Check if using free trial credit
   // If contractor is not subscribed and has credits, all credits are considered free trial credits

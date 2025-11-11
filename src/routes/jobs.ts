@@ -1644,13 +1644,13 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       
 
       
-      // Check for active subscription (pricing benefits but still requires access record)
-      hasSubscription = !!contractor.subscription && 
-                        !!contractor.subscription.isActive && 
-                        contractor.subscription.status === 'active';
+      // Use unified subscription status check
+      const { checkSubscriptionStatus } = await import('../services/subscriptionService');
+      const subscriptionStatus = await checkSubscriptionStatus(contractor.id);
+      hasSubscription = subscriptionStatus.hasActiveSubscription;
       
-      if (hasSubscription && contractor.subscription) {
-        subscriptionPlan = contractor.subscription.plan;
+      if (hasSubscription && subscriptionStatus.subscription) {
+        subscriptionPlan = subscriptionStatus.subscription.plan;
       }
       
       // Access is granted ONLY if the contractor has purchased access through a JobAccess record

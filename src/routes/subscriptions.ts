@@ -3,7 +3,12 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
-import { getSubscriptionPricingFromSettings } from '../services/settingsService';
+import { 
+  checkSubscriptionStatusByUserId,
+  getSubscriptionPricing,
+  calculateSubscriptionEndDate,
+  formatSubscriptionDetails
+} from '../services/subscriptionService';
 
 const router = Router();
 
@@ -39,132 +44,16 @@ function getStripeInstance(): Stripe | null {
   return stripe;
 }
 
-// Subscription pricing helper (prices include 20% VAT)
-// This is the synchronous fallback version - use getSubscriptionPricingAsync for admin settings
-export function getSubscriptionPricing(plan: string) {
-  switch (plan) {
-    case 'MONTHLY':
-      return {
-        monthly: 49.99,
-        total: 49.99,
-        basePrice: 49.99, // Total amount (VAT included)
-        vatAmount: 0,     // No additional VAT calculation
-        discount: 0,
-        discountPercentage: 0,
-        duration: 1,
-        durationUnit: 'month',
-        includesVAT: true,
-      };
-    case 'SIX_MONTHS':
-      return {
-        monthly: 44.99,
-        total: 269.94,
-        basePrice: 269.94, // Total amount (VAT included)
-        vatAmount: 0,      // No additional VAT calculation
-        discount: 30.00,
-        discountPercentage: 10,
-        duration: 6,
-        durationUnit: 'months',
-        includesVAT: true,
-      };
-    case 'YEARLY':
-      return {
-        monthly: 39.99,
-        total: 479.88,
-        basePrice: 479.88, // Total amount (VAT included)
-        vatAmount: 0,      // No additional VAT calculation
-        discount: 119.88,
-        discountPercentage: 20,
-        duration: 12,
-        durationUnit: 'months',
-        includesVAT: true,
-      };
-    default:
-      return {
-        monthly: 49.99,
-        total: 49.99,
-        basePrice: 49.99, // Total amount (VAT included)
-        vatAmount: 0,     // No additional VAT calculation
-        discount: 0,
-        discountPercentage: 0,
-        duration: 1,
-        durationUnit: 'month',
-        includesVAT: true,
-      };
-  }
-}
-
-// Async version that uses admin settings
-export async function getSubscriptionPricingAsync(plan: string) {
-  const pricing = await getSubscriptionPricingFromSettings();
-  
-  switch (plan) {
-    case 'MONTHLY':
-      return {
-        monthly: pricing.monthly,
-        total: pricing.monthly,
-        basePrice: pricing.monthly,
-        vatAmount: 0,
-        discount: 0,
-        discountPercentage: 0,
-        duration: 1,
-        durationUnit: 'month',
-        includesVAT: true,
-      };
-    case 'SIX_MONTHS':
-      const sixMonthTotal = pricing.sixMonths;
-      const sixMonthMonthly = sixMonthTotal / 6;
-      const monthlyTotal = pricing.monthly * 6;
-      const sixMonthDiscount = monthlyTotal - sixMonthTotal;
-      return {
-        monthly: sixMonthMonthly,
-        total: sixMonthTotal,
-        basePrice: sixMonthTotal,
-        vatAmount: 0,
-        discount: sixMonthDiscount,
-        discountPercentage: Math.round((sixMonthDiscount / monthlyTotal) * 100),
-        duration: 6,
-        durationUnit: 'months',
-        includesVAT: true,
-      };
-    case 'YEARLY':
-      const yearlyTotal = pricing.yearly;
-      const yearlyMonthly = yearlyTotal / 12;
-      const monthlyTotalYearly = pricing.monthly * 12;
-      const yearlyDiscount = monthlyTotalYearly - yearlyTotal;
-      return {
-        monthly: yearlyMonthly,
-        total: yearlyTotal,
-        basePrice: yearlyTotal,
-        vatAmount: 0,
-        discount: yearlyDiscount,
-        discountPercentage: Math.round((yearlyDiscount / monthlyTotalYearly) * 100),
-        duration: 12,
-        durationUnit: 'months',
-        includesVAT: true,
-      };
-    default:
-      return {
-        monthly: pricing.monthly,
-        total: pricing.monthly,
-        basePrice: pricing.monthly,
-        vatAmount: 0,
-        discount: 0,
-        discountPercentage: 0,
-        duration: 1,
-        durationUnit: 'month',
-        includesVAT: true,
-      };
-  }
-}
+// Note: Subscription pricing and status checking are now handled by subscriptionService.ts
+// This ensures consistency across the entire application
 
 // @desc    Get subscription plans
 // @route   GET /api/subscriptions/plans
 // @access  Private
 export const getSubscriptionPlans = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const monthlyPricing = await getSubscriptionPricingAsync('MONTHLY');
-  const sixMonthPricing = await getSubscriptionPricingAsync('SIX_MONTHS');
-  const yearlyPricing = await getSubscriptionPricingAsync('YEARLY');
+  const monthlyPricing = await getSubscriptionPricing('MONTHLY');
+  const sixMonthPricing = await getSubscriptionPricing('SIX_MONTHS');
+  const yearlyPricing = await getSubscriptionPricing('YEARLY');
   
   const plans = [
     {
@@ -220,71 +109,48 @@ export const getSubscriptionPlans = catchAsync(async (req: AuthenticatedRequest,
 export const getCurrentSubscription = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const userId = req.user!.id;
 
-  // Get contractor profile with subscription
+  // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
-    include: {
-      subscription: true,
-    },
+    select: { id: true },
   });
 
   if (!contractor) {
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Format subscription details
+  // Use unified subscription status check
+  const subscriptionStatus = await checkSubscriptionStatusByUserId(userId);
+  
+  // Format subscription details if active
   let subscriptionDetails = null;
-  if (contractor.subscription) {
-    const plan = contractor.subscription.plan;
-    const pricing = getSubscriptionPricing(plan);
-    
-    // Format the next billing date
-    const nextBillingDate = contractor.subscription.currentPeriodEnd;
-    const formattedNextBillingDate = nextBillingDate.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
+  if (subscriptionStatus.hasActiveSubscription && subscriptionStatus.subscription) {
+    subscriptionDetails = await formatSubscriptionDetails(subscriptionStatus.subscription);
     
     // Get Stripe subscription if available
-    let stripeSubscription = null;
-    if (contractor.subscription.stripeSubscriptionId) {
+    if (subscriptionStatus.subscription.stripeSubscriptionId) {
       try {
         const stripe = getStripeInstance();
-        stripeSubscription = await stripe!.subscriptions.retrieve(
-          contractor.subscription.stripeSubscriptionId
-        );
+        if (stripe) {
+          const stripeSubscription = await stripe.subscriptions.retrieve(
+            subscriptionStatus.subscription.stripeSubscriptionId
+          );
+          // Add Stripe subscription details if needed
+          if (subscriptionDetails) {
+            (subscriptionDetails as any).stripeDetails = stripeSubscription;
+          }
+        }
       } catch (error) {
         console.error('Failed to retrieve Stripe subscription:', error);
       }
     }
-    
-    subscriptionDetails = {
-      id: contractor.subscription.id,
-      plan: contractor.subscription.plan,
-      planName: plan === 'MONTHLY' ? 'Monthly' : plan === 'SIX_MONTHS' ? '6-Month' : 'Yearly',
-      status: contractor.subscription.status,
-      isActive: contractor.subscription.isActive,
-      startDate: contractor.subscription.currentPeriodStart.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      }),
-      endDate: formattedNextBillingDate,
-      nextBillingDate: formattedNextBillingDate,
-      currentPeriodEnd: contractor.subscription.currentPeriodEnd.toISOString(),
-      currentPeriodStart: contractor.subscription.currentPeriodStart.toISOString(),
-      pricing,
-      daysRemaining: Math.max(0, Math.floor((contractor.subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))),
-      stripeSubscriptionId: contractor.subscription.stripeSubscriptionId,
-    };
   }
 
   res.status(200).json({
     status: 'success',
     data: {
       subscription: subscriptionDetails,
-      hasSubscription: !!subscriptionDetails && subscriptionDetails.isActive,
+      hasSubscription: subscriptionStatus.hasActiveSubscription,
     },
   });
 });
@@ -310,8 +176,8 @@ export const createSubscriptionPaymentIntent = catchAsync(async (req: Authentica
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get pricing for selected plan
-    const pricing = await getSubscriptionPricingAsync(plan);
+  // Get pricing for selected plan using unified service
+    const pricing = await getSubscriptionPricing(plan);
     const amount = pricing.total;
 
   // Create payment intent
@@ -453,23 +319,9 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     return next(new AppError('Payment not completed', 400));
   }
 
-  // Calculate subscription period
+  // Calculate subscription period using unified function
   const now = new Date();
-  let endDate = new Date();
-  
-  switch (plan) {
-    case 'MONTHLY':
-      endDate.setMonth(endDate.getMonth() + 1);
-      break;
-    case 'SIX_MONTHS':
-      endDate.setMonth(endDate.getMonth() + 6);
-      break;
-    case 'YEARLY':
-      endDate.setFullYear(endDate.getFullYear() + 1);
-      break;
-    default:
-      return next(new AppError('Invalid subscription plan', 400));
-  }
+  const endDate = calculateSubscriptionEndDate(plan, now);
 
   // Check if contractor already has a subscription
 
@@ -541,6 +393,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     // Update existing subscription
 
     try {
+      const pricing = await getSubscriptionPricing(plan);
       subscription = await prisma.subscription.update({
         where: { id: existingSubscription.id },
         data: {
@@ -549,7 +402,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           isActive: true,
           currentPeriodStart: now,
           currentPeriodEnd: endDate,
-          monthlyPrice: getSubscriptionPricing(plan).monthly,
+          monthlyPrice: pricing.monthly,
           ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
@@ -562,6 +415,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
     // Create new subscription
 
     try {
+      const pricing = await getSubscriptionPricing(plan);
       subscription = await prisma.subscription.create({
         data: {
           contractorId: contractor.id,
@@ -571,7 +425,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
           isActive: true,
           currentPeriodStart: now,
           currentPeriodEnd: endDate,
-          monthlyPrice: getSubscriptionPricing(plan).monthly,
+          monthlyPrice: pricing.monthly,
           ...(stripeSubscriptionId && { stripeSubscriptionId }),
         },
       });
@@ -586,10 +440,11 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   let payment;
   try {
+    const pricing = await getSubscriptionPricing(plan);
     payment = await prisma.payment.create({
       data: {
         contractorId: contractor.id,
-        amount: getSubscriptionPricing(plan).total,
+        amount: pricing.total,
         type: 'SUBSCRIPTION',
         status: 'COMPLETED',
         stripePaymentId: stripePaymentIntentId,
