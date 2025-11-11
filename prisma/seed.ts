@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, AdminRole, ContractorTier, JobStatus, JobSize, ContractorStatus, SubscriptionPlan } from '@prisma/client';
+import { PrismaClient, UserRole, AdminRole, ContractorTier, JobStatus, JobSize, ContractorStatus, SubscriptionPlan, ApplicationStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -1095,15 +1095,15 @@ async function main() {
                                  contractors[wonContractorIndex]?.id === contractor.id;
         
         // Determine application status
-        let applicationStatus = 'PENDING';
+        let applicationStatus: ApplicationStatus = ApplicationStatus.PENDING;
         if (jobData.status === JobStatus.IN_PROGRESS && i === 0) {
-          applicationStatus = 'ACCEPTED';
+          applicationStatus = ApplicationStatus.ACCEPTED;
         } else if (isWonContractor) {
           // Contractor who won must have ACCEPTED application
-          applicationStatus = 'ACCEPTED';
+          applicationStatus = ApplicationStatus.ACCEPTED;
         } else if (jobData.status === JobStatus.WON || jobData.status === JobStatus.COMPLETED) {
           // For WON/COMPLETED jobs, only the winner has ACCEPTED, others are PENDING
-          applicationStatus = 'PENDING';
+          applicationStatus = ApplicationStatus.PENDING;
         }
         
         await prisma.jobApplication.create({
