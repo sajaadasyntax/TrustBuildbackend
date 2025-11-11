@@ -494,7 +494,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   let invoice;
   try {
-    const pricing = await getSubscriptionPricingAsync(plan);
+    const pricing = await getSubscriptionPricing(plan);
     invoice = await prisma.invoice.create({
       data: {
         payments: { connect: { id: payment.id } },

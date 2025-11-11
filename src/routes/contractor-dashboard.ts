@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest, restrictTo } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
-import { getSubscriptionPricing } from '../services/commissionService';
+import { getSubscriptionPricing } from '../services/subscriptionService';
 import Stripe from 'stripe';
 
 const router = Router();
@@ -125,7 +125,7 @@ export const getDashboardSummary = catchAsync(async (req: AuthenticatedRequest, 
   let subscriptionDetails = null;
   if (contractor.subscription) {
     const plan = contractor.subscription.plan;
-    const pricing = getSubscriptionPricing(plan);
+    const pricing = await getSubscriptionPricing(plan);
     
     // Format the next billing date
     const nextBillingDate = contractor.subscription.currentPeriodEnd;
@@ -222,7 +222,7 @@ export const getSubscriptionDetails = catchAsync(async (req: AuthenticatedReques
   let subscriptionDetails = null;
   if (contractor.subscription) {
     const plan = contractor.subscription.plan;
-    const pricing = getSubscriptionPricing(plan);
+    const pricing = await getSubscriptionPricing(plan);
     
     // Format the next billing date
     const nextBillingDate = contractor.subscription.currentPeriodEnd;
@@ -256,21 +256,25 @@ export const getSubscriptionDetails = catchAsync(async (req: AuthenticatedReques
   }
 
   // Get available plans and pricing
+  const monthlyPricing = await getSubscriptionPricing('MONTHLY');
+  const sixMonthPricing = await getSubscriptionPricing('SIX_MONTHS');
+  const yearlyPricing = await getSubscriptionPricing('YEARLY');
+  
   const availablePlans = [
     {
       id: 'MONTHLY',
       name: 'Monthly',
-      ...getSubscriptionPricing('MONTHLY'),
+      ...monthlyPricing,
     },
     {
       id: 'SIX_MONTHS',
       name: '6-Month',
-      ...getSubscriptionPricing('SIX_MONTHS'),
+      ...sixMonthPricing,
     },
     {
       id: 'YEARLY',
       name: 'Yearly',
-      ...getSubscriptionPricing('YEARLY'),
+      ...yearlyPricing,
     },
   ];
 
@@ -305,7 +309,7 @@ export const createSubscriptionIntent = catchAsync(async (req: AuthenticatedRequ
   }
 
   // Get pricing for selected plan
-  const pricing = getSubscriptionPricing(plan);
+  const pricing = await getSubscriptionPricing(plan);
   const amount = pricing.total;
 
   // Create payment intent
