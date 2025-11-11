@@ -192,7 +192,7 @@ model Contractor {
 
   // Credit system
   creditsBalance     Int       @default(1) // Every new contractor gets 1 free credit
-  weeklyCreditsLimit Int       @default(3)
+  weeklyCreditsLimit Int       @default(0) // Non-subscribed contractors have 0 weekly limit (set to 3 when subscribed)
   lastCreditReset    DateTime?
   hasUsedFreeTrial   Boolean   @default(false) // Track if the free trial credit has been used
 

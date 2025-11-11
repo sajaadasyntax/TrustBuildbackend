@@ -187,6 +187,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         preferredClients,
         usesContracts: usesContracts || false,
         creditsBalance: freeCredits, // Use admin setting for free credits
+        weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits
         lastCreditReset: null, // No credit reset for non-subscribers
         profileApproved: false, // Requires admin approval
         accountStatus: 'PAUSED', // Start paused until KYC is completed
