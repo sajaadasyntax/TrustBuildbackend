@@ -3031,13 +3031,24 @@ export const updateJobContractorLimit = catchAsync(async (req: AdminAuthRequest,
 // @route   GET /api/admin/messages/conversations
 // @access  Private/Admin
 export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  // Map the authenticated admin to a corresponding User (by email) to align with messages sender/recipient relations
+  const adminEmail = req.admin!.email;
+  const adminUser = await prisma.user.findUnique({
+    where: { email: adminEmail },
+    select: { id: true, role: true, email: true },
+  });
+
+  if (!adminUser) {
+    return next(new AppError('Admin user mapping not found for messaging. Ensure an ADMIN user exists with this email.', 500));
+  }
+
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 50;
   const skip = (page - 1) * limit;
   const { role, search } = req.query;
 
   // Build where clause - only messages involving this admin
-  const adminId = req.admin!.id;
+  const adminId = adminUser.id;
   const whereClause: any = {
     OR: [
       { senderId: adminId },
@@ -3200,7 +3211,18 @@ export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res:
 // @route   GET /api/admin/messages/conversation/:userId
 // @access  Private/Admin
 export const getConversationWithUser = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
-  const adminId = req.admin!.id;
+  // Map the authenticated admin to a corresponding User (by email)
+  const adminEmail = req.admin!.email;
+  const adminUser = await prisma.user.findUnique({
+    where: { email: adminEmail },
+    select: { id: true, role: true, email: true },
+  });
+
+  if (!adminUser) {
+    return next(new AppError('Admin user mapping not found for messaging. Ensure an ADMIN user exists with this email.', 500));
+  }
+
+  const adminId = adminUser.id;
   const userId = req.params.userId;
 
   // Get user details
@@ -3422,7 +3444,18 @@ export const broadcastNotification = catchAsync(async (req: AdminAuthRequest, re
 // @access  Private/Admin
 export const sendMessageAsAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { recipientId, subject, content, relatedJobId, attachmentUrls } = req.body;
-  const adminId = req.admin!.id;
+  // Map the authenticated admin to a corresponding User (by email)
+  const adminEmail = req.admin!.email;
+  const adminUserRecord = await prisma.user.findUnique({
+    where: { email: adminEmail },
+    select: { id: true, role: true, name: true },
+  });
+
+  if (!adminUserRecord) {
+    return next(new AppError('Admin user mapping not found for messaging. Ensure an ADMIN user exists with this email.', 500));
+  }
+
+  const adminId = adminUserRecord.id;
 
   if (!recipientId || !content) {
     return next(new AppError('Recipient and message content are required', 400));
@@ -3443,24 +3476,14 @@ export const sendMessageAsAdmin = catchAsync(async (req: AdminAuthRequest, res: 
     return next(new AppError('Cannot send messages to other admins', 403));
   }
 
-  // Get admin user record for sender role
-  const adminUser = await prisma.user.findUnique({
-    where: { id: adminId },
-    select: { id: true, role: true, name: true },
-  });
-
-  if (!adminUser) {
-    return next(new AppError('Admin user not found', 404));
-  }
-
   // Create the message
   const message = await prisma.message.create({
     data: {
       senderId: adminId,
-      senderRole: adminUser.role as UserRole,
+      senderRole: adminUserRecord.role as UserRole,
       recipientId,
       recipientRole: recipient.role as UserRole,
-      subject: subject || `Message from ${adminUser.name}`,
+      subject: subject || `Message from ${adminUserRecord.name}`,
       content,
       relatedJobId,
       attachmentUrls: attachmentUrls || [],
@@ -3472,7 +3495,7 @@ export const sendMessageAsAdmin = catchAsync(async (req: AdminAuthRequest, res: 
   await createNotification({
     userId: recipientId,
     title: subject || 'New Message',
-    message: `You have a new message from ${adminUser.name}`,
+    message: `You have a new message from ${adminUserRecord.name}`,
     type: 'MESSAGE_RECEIVED',
     actionLink: `/messages/${message.id}`,
     actionText: 'View Message',
