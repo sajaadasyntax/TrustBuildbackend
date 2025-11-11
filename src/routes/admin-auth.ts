@@ -413,6 +413,14 @@ router.patch(
       });
     }
 
+    // Prevent disabling the Main Super Admin
+    if (targetAdmin.isMainSuperAdmin && isActive !== undefined && isActive === false) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'The Main Super Admin cannot be disabled',
+      });
+    }
+
     // Only Main Super Admin can change other Super Admins' roles
     if (targetAdmin.role === AdminRole.SUPER_ADMIN && role !== undefined && role !== targetAdmin.role) {
       if (!req.admin!.isMainSuperAdmin) {
