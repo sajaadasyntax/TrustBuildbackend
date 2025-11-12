@@ -255,7 +255,14 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Get the most current contractor data within the transaction
       const currentContractor = await tx.contractor.findUnique({
         where: { id: contractor.id },
-        select: { creditsBalance: true, id: true, hasUsedFreeTrial: true, subscription: true }
+        select: { 
+          creditsBalance: true, 
+          id: true, 
+          hasUsedFreeTrial: true, 
+          subscription: true,
+          weeklyCreditsLimit: true,
+          lastCreditReset: true
+        }
       });
       
       if (!currentContractor) {
@@ -266,8 +273,32 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError(`Insufficient credits. Current balance: ${currentContractor.creditsBalance}. Please top up or use card payment.`, 400);
       }
       
-      // Check if this is a free trial credit (non-subscriber using credits)
+      // Check if contractor has exceeded weekly credit limit (for subscribers)
       const isSubscribed = currentContractor.subscription !== null;
+      if (isSubscribed && currentContractor.weeklyCreditsLimit > 0) {
+        // Calculate how many credits have been used this week
+        const now = new Date();
+        const lastReset = currentContractor.lastCreditReset || new Date(0);
+        const daysSinceReset = Math.floor((now.getTime() - lastReset.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // If within the same week, check if they've exceeded their limit
+        if (daysSinceReset < 7) {
+          // Calculate credits used this week (weekly limit - current balance)
+          const creditsUsedThisWeek = currentContractor.weeklyCreditsLimit - currentContractor.creditsBalance;
+          
+          // If they've already used all their weekly credits, prevent further usage
+          if (creditsUsedThisWeek >= currentContractor.weeklyCreditsLimit) {
+            const nextResetDate = new Date(lastReset);
+            nextResetDate.setDate(nextResetDate.getDate() + 7);
+            throw new AppError(
+              `Maximum credits exceeded. You have used all ${currentContractor.weeklyCreditsLimit} weekly credits. Your credits will reset on ${nextResetDate.toLocaleDateString()}. Please use card payment or wait for the weekly reset.`,
+              400
+            );
+          }
+        }
+      }
+      
+      // Check if this is a free trial credit (non-subscriber using credits)
       usedFreeTrial = !isSubscribed;
       
       // CRITICAL: Use the current balance and subtract 1
