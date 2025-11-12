@@ -89,28 +89,67 @@ export const protectAdmin = catchAsync(
   }
 );
 
+// Role-based default permissions for SUPPORT_ADMIN and FINANCE_ADMIN
+// Used when permissions array is empty or null (fallback)
+const SUPPORT_ADMIN_PERMISSIONS = [
+  'users:read', 'users:write',
+  'contractors:read', 'contractors:write',
+  'kyc:read', 'kyc:write',
+  'jobs:read', 'jobs:write',
+  'reviews:read', 'reviews:write',
+  'content:read', 'content:write',
+  'support:read', 'support:write',
+  'pricing:read', 'pricing:write',
+  'disputes:read', 'disputes:write',
+];
+
+const FINANCE_ADMIN_PERMISSIONS = [
+  'users:read', 'users:write',
+  'contractors:read', 'contractors:write',
+  'contractors:approve',
+  'kyc:read', 'kyc:write',
+  'kyc:approve',
+  'jobs:read', 'jobs:write',
+  'payments:read', 'payments:write',
+  'payments:refund',
+  'settings:read', 'settings:write',
+  'pricing:read', 'pricing:write',
+  'disputes:read', 'disputes:write',
+  'disputes:resolve',
+  'final_price:read', 'final_price:write',
+];
+
 // Check if admin has specific permission
 export const hasPermission = (admin: AdminAuthRequest['admin'], permission: string): boolean => {
   if (!admin) {
     return false;
   }
 
-  // Super Admin has all permissions
+  // Super Admin has all permissions (bypass all checks)
   if (admin.role === AdminRole.SUPER_ADMIN) {
     return true;
   }
 
-  // Check admin's assigned permissions
+  // Get admin's assigned permissions
   const adminPermissions = admin.permissions || [];
   
+  // For SUPPORT_ADMIN and FINANCE_ADMIN: if permissions array is empty/null, use role-based fallback
+  let effectivePermissions = adminPermissions;
+  
+  if (admin.role === AdminRole.SUPPORT_ADMIN && (!adminPermissions || adminPermissions.length === 0)) {
+    effectivePermissions = SUPPORT_ADMIN_PERMISSIONS;
+  } else if (admin.role === AdminRole.FINANCE_ADMIN && (!adminPermissions || adminPermissions.length === 0)) {
+    effectivePermissions = FINANCE_ADMIN_PERMISSIONS;
+  }
+  
   // Check for exact permission match
-  if (adminPermissions.includes(permission)) {
+  if (effectivePermissions.includes(permission)) {
     return true;
   }
 
   // Check for wildcard permission (e.g., 'jobs:*' for all job permissions)
   const [resource, action] = permission.split(':');
-  if (adminPermissions.includes(`${resource}:*`)) {
+  if (effectivePermissions.includes(`${resource}:*`)) {
     return true;
   }
 
