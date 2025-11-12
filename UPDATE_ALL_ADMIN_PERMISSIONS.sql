@@ -34,7 +34,10 @@ SET permissions = '[
   "content:read",
   "content:write",
   "support:read",
-  "support:write"
+  "support:write",
+  "disputes:read",
+  "disputes:write",
+  "disputes:resolve"
 ]'::jsonb
 WHERE role = 'SUPPORT_ADMIN';
 
@@ -66,7 +69,10 @@ SET permissions = '[
   "settings:read",
   "settings:write",
   "final_price:read",
-  "final_price:write"
+  "final_price:write",
+  "disputes:read",
+  "disputes:write",
+  "disputes:resolve"
 ]'::jsonb
 WHERE role = 'FINANCE_ADMIN';
 
