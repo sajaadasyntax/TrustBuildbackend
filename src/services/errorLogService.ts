@@ -26,9 +26,32 @@ export const logError = async (error: any, req?: Request, additionalData?: any):
     }
 
     // Extract error details
-    const message = error.message || String(error) || 'Unknown error';
+    let message = error.message || String(error) || 'Unknown error';
     const stack = error.stack || undefined;
-    const statusCode = error.statusCode || error.status || undefined;
+    let statusCode = error.statusCode || error.status || undefined;
+    
+    // Handle errors with nested response.errors array (common in API clients like axios)
+    if (error.response && error.response.errors && Array.isArray(error.response.errors)) {
+      const nestedMessages = error.response.errors
+        .map((err: any) => err.message || err)
+        .filter((msg: string) => msg)
+        .join('; ');
+      if (nestedMessages) {
+        message = `${message} - ${nestedMessages}`;
+      }
+      // Use the response status code if available
+      if (error.response.status && !statusCode) {
+        statusCode = error.response.status;
+      }
+    }
+    
+    // Handle Stripe errors specifically
+    if (error.type && error.type.startsWith('Stripe')) {
+      message = `Stripe Error: ${message}`;
+      if (error.code) {
+        message += ` (Code: ${error.code})`;
+      }
+    }
 
     // Determine source
     let source = 'unknown';
