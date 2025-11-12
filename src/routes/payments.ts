@@ -283,11 +283,24 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         
         // If within the same week, check if they've exceeded their limit
         if (daysSinceReset < 7) {
-          // Calculate credits used this week (weekly limit - current balance)
-          const creditsUsedThisWeek = currentContractor.weeklyCreditsLimit - currentContractor.creditsBalance;
+          // Count actual credits used this week by checking credit transactions
+          const weekStart = lastReset;
+          const creditsUsedThisWeek = await tx.creditTransaction.aggregate({
+            where: {
+              contractorId: contractor.id,
+              type: 'JOB_ACCESS',
+              amount: { lt: 0 }, // Only count deductions (negative amounts)
+              createdAt: { gte: weekStart }
+            },
+            _sum: {
+              amount: true
+            }
+          });
+          
+          const totalUsed = Math.abs(creditsUsedThisWeek._sum.amount || 0);
           
           // If they've already used all their weekly credits, prevent further usage
-          if (creditsUsedThisWeek >= currentContractor.weeklyCreditsLimit) {
+          if (totalUsed >= currentContractor.weeklyCreditsLimit) {
             const nextResetDate = new Date(lastReset);
             nextResetDate.setDate(nextResetDate.getDate() + 7);
             throw new AppError(
