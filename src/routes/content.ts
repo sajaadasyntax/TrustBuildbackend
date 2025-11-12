@@ -157,7 +157,7 @@ router.get(
 router.patch(
   '/platform',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { content } = req.body;
 
@@ -216,7 +216,7 @@ router.patch(
 router.patch(
   '/platform/:section',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { section } = req.params;
     const { data } = req.body;
@@ -292,7 +292,7 @@ router.patch(
 router.post(
   '/platform/reset',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const contentString = JSON.stringify(DEFAULT_CONTENT);
 

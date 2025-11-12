@@ -10,6 +10,7 @@ import {
   getClientUserAgent,
   AdminAuthRequest,
 } from '../middleware/adminAuth';
+import { AdminPermission } from '../config/permissions';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { logActivity } from '../services/auditService';
 import * as adminNotificationService from '../services/adminNotificationService';
@@ -316,7 +317,7 @@ router.post(
 router.get(
   '/queue',
   protectAdmin,
-  requirePermission('kyc:read'),
+  requirePermission(AdminPermission.KYC_READ),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { status = 'SUBMITTED', page = '1', limit = '100' } = req.query;
 
@@ -373,7 +374,7 @@ router.get(
 router.get(
   '/:kycId',
   protectAdmin,
-  requirePermission('kyc:read'),
+  requirePermission(AdminPermission.KYC_READ),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { kycId } = req.params;
 
@@ -411,7 +412,7 @@ router.get(
 router.post(
   '/:kycId/approve',
   protectAdmin,
-  requirePermission('kyc:approve'),
+  requirePermission(AdminPermission.KYC_APPROVE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { kycId } = req.params;
     const { notes } = req.body;
@@ -532,7 +533,7 @@ router.post(
 router.post(
   '/:kycId/reject',
   protectAdmin,
-  requirePermission('kyc:reject'),
+  requirePermission(AdminPermission.KYC_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { kycId } = req.params;
     const { reason, notes } = req.body;

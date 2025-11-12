@@ -95,7 +95,7 @@ router.get(
 router.get(
   '/admin',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_READ),
+  requirePermission(AdminPermission.CONTENT_READ),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { category, status } = req.query;
 
@@ -127,7 +127,7 @@ router.get(
 router.post(
   '/',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { question, answer, category, sortOrder, isActive } = req.body;
 
@@ -187,7 +187,7 @@ router.post(
 router.patch(
   '/:id',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { id } = req.params;
     const { question, answer, category, sortOrder, isActive } = req.body;
@@ -245,7 +245,7 @@ router.patch(
 router.delete(
   '/:id',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { id } = req.params;
 
@@ -289,7 +289,7 @@ router.delete(
 router.patch(
   '/:id/toggle',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { id } = req.params;
 
@@ -338,7 +338,7 @@ router.patch(
 router.post(
   '/:id/reorder',
   protectAdmin,
-  requirePermission(AdminPermission.SETTINGS_WRITE),
+  requirePermission(AdminPermission.CONTENT_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { id } = req.params;
     const { direction } = req.body; // 'up' or 'down'
