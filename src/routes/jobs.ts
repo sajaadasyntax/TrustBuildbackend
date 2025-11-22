@@ -3132,7 +3132,7 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
     userId: job.customer.userId,
     title: 'Contractor Claims They Won Your Job',
     message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} claims that they won your job: ${job.title}. Please confirm if this is correct.`,
-    type: 'CONTRACTOR_CLAIMED_WIN',
+    type: 'CONTRACTOR_SELECTED',
     actionLink: `/dashboard/client/jobs/${job.id}`,
     actionText: 'Review & Confirm',
   });
@@ -3172,9 +3172,11 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
             },
           },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [
+          {
+            createdAt: 'desc' as const,
+          },
+        ],
       },
     },
   });
@@ -3202,7 +3204,7 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
   }
 
   // Verify the contractor has applied
-  const hasApplied = job.applications.some(app => app.contractorId === winningContractorId);
+  const hasApplied = job.applications.some((app: any) => app.contractorId === winningContractorId);
   if (!hasApplied) {
     return next(new AppError('The claimed contractor has not applied for this job', 400));
   }
@@ -3227,6 +3229,15 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
           user: true,
         },
       },
+      applications: {
+        include: {
+          contractor: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -3236,24 +3247,24 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     userId: updatedJob.wonByContractor!.userId,
     title: 'You Won the Job!',
     message: `Congratulations! The customer has confirmed that you won the job: ${job.title}. You can now start working.`,
-    type: 'JOB_WON',
+    type: 'JOB_STARTED',
     actionLink: `/dashboard/contractor/jobs/${job.id}`,
     actionText: 'View Job',
   });
 
   // Send notification to other contractors that applications are closed
   const otherContractorIds = job.applications
-    .filter(app => app.contractorId !== winningContractorId)
-    .map(app => app.contractor.userId);
+    .filter((app: any) => app.contractorId !== winningContractorId)
+    .map((app: any) => app.contractor.userId);
 
   if (otherContractorIds.length > 0) {
     await Promise.all(
-      otherContractorIds.map(contractorUserId =>
+      otherContractorIds.map((contractorUserId: string) =>
         createNotification({
           userId: contractorUserId,
           title: 'Job Applications Closed',
           message: `The job "${job.title}" has been assigned to another contractor. Applications are now closed.`,
-          type: 'JOB_CLOSED',
+          type: 'JOB_STATUS_CHANGED',
           actionLink: `/jobs/${job.id}`,
         }).catch(err => console.error('Failed to notify contractor:', err))
       )
@@ -3334,7 +3345,7 @@ export const suggestPriceChange = catchAsync(async (req: AuthenticatedRequest, r
     userId: job.wonByContractor!.userId,
     title: 'Customer Suggested Price Change',
     message: `The customer has suggested a different price of £${suggestedAmount} for the job "${job.title}". ${feedback ? `Reason: ${feedback}` : ''}`,
-    type: 'PRICE_CHANGE_SUGGESTED',
+    type: 'FINAL_PRICE_PROPOSED',
     actionLink: `/dashboard/contractor/jobs/${job.id}`,
     actionText: 'View Job',
   });

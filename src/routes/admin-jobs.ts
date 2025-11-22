@@ -9,6 +9,7 @@ import {
 } from '../middleware/adminAuth';
 import { logActivity } from '../services/auditService';
 import { prisma } from '../config/database';
+import { processCommissionForJob } from '../services/commissionService';
 
 const router = express.Router();
 
@@ -423,14 +424,14 @@ router.patch(
 
     // Send notification to contractor
     const { createNotification } = await import('../services/notificationService');
-    await createNotification({
-      userId: contractor.userId,
-      title: 'You Won the Job! (Admin Approved)',
-      message: `An admin has approved you as the winner for the job: ${job.title}. You can now start working.`,
-      type: 'JOB_WON',
-      actionLink: `/dashboard/contractor/jobs/${jobId}`,
-      actionText: 'View Job',
-    });
+      await createNotification({
+        userId: contractor.userId,
+        title: 'You Won the Job! (Admin Approved)',
+        message: `An admin has approved you as the winner for the job: ${job.title}. You can now start working.`,
+        type: 'JOB_STARTED',
+        actionLink: `/dashboard/contractor/jobs/${jobId}`,
+        actionText: 'View Job',
+      });
 
     await logActivity({
       adminId: req.admin!.id,
@@ -574,9 +575,9 @@ router.patch(
     });
 
     // Process commission if needed
-    if (job.wonByContractorId && !job.commissionPaid) {
+    if (job.wonByContractorId && !job.commissionPaid && finalAmount) {
       try {
-        await processCommissionForJob(jobId);
+        await processCommissionForJob(jobId, Number(finalAmount));
       } catch (error) {
         console.error('Failed to process commission:', error);
         // Continue even if commission processing fails
@@ -673,14 +674,14 @@ router.patch(
 
     // Send notification to contractor
     const { createNotification } = await import('../services/notificationService');
-    await createNotification({
-      userId: job.wonByContractor!.userId,
-      title: 'You Can Now Request a Review',
-      message: `An admin has enabled review requests for the job "${job.title}". You can now request a review from the customer.`,
-      type: 'REVIEW_REQUEST_ENABLED',
-      actionLink: `/dashboard/contractor/jobs/${jobId}`,
-      actionText: 'View Job',
-    });
+      await createNotification({
+        userId: job.wonByContractor!.userId,
+        title: 'You Can Now Request a Review',
+        message: `An admin has enabled review requests for the job "${job.title}". You can now request a review from the customer.`,
+        type: 'JOB_COMPLETED',
+        actionLink: `/dashboard/contractor/jobs/${jobId}`,
+        actionText: 'View Job',
+      });
 
     await logActivity({
       adminId: req.admin!.id,

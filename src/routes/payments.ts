@@ -1318,11 +1318,6 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
       },
     });
 
-    // Safely convert commission total amount to number for response
-    const commissionTotalAmount = typeof commissionPayment.totalAmount?.toNumber === 'function' 
-      ? commissionPayment.totalAmount.toNumber() 
-      : Number(commissionPayment.totalAmount);
-
     res.status(200).json({
       status: 'success',
       data: {
