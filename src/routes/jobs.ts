@@ -1103,9 +1103,8 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
   const updatedJob = await prisma.job.update({
     where: { id: req.params.id },
     data: {
-      status: 'WON',
+      status: 'WON' as const,
       wonByContractorId: contractor.id,
-      wonAt: new Date(),
     },
     include: {
       customer: {
