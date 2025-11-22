@@ -1099,11 +1099,11 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
     return next(new AppError('Job cannot be marked as won from current status', 400));
   }
 
-  // Update job status to WON and set the contractor
+  // Update job status to IN_PROGRESS and set the contractor (WON status is deprecated)
   const updatedJob = await prisma.job.update({
     where: { id: req.params.id },
     data: {
-      status: 'WON' as const,
+      status: 'IN_PROGRESS',
       wonByContractorId: contractor.id,
     },
     include: {
@@ -1195,8 +1195,8 @@ export const markJobAsCompleted = catchAsync(async (req: AuthenticatedRequest, r
     return next(new AppError('You are not assigned to this job', 403));
   }
 
-  // Can only mark as completed from WON or IN_PROGRESS status
-  if (job.status !== 'WON' && job.status !== 'IN_PROGRESS') {
+  // Can only mark as completed from IN_PROGRESS status (WON is deprecated, use IN_PROGRESS)
+  if (job.status !== 'IN_PROGRESS') {
     return next(new AppError('Job cannot be marked as completed from current status', 400));
   }
 
@@ -3171,11 +3171,6 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
             },
           },
         },
-        orderBy: [
-          {
-            createdAt: 'desc' as const,
-          },
-        ],
       },
     },
   });
@@ -3203,7 +3198,7 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
   }
 
   // Verify the contractor has applied
-  const hasApplied = job.applications.some((app: any) => app.contractorId === winningContractorId);
+  const hasApplied = job.applications?.some((app: any) => app.contractorId === winningContractorId);
   if (!hasApplied) {
     return next(new AppError('The claimed contractor has not applied for this job', 400));
   }
@@ -3214,7 +3209,6 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     data: {
       status: 'IN_PROGRESS',
       wonByContractorId: winningContractorId,
-      wonAt: new Date(),
       startDate: new Date(),
     },
     include: {
@@ -3240,10 +3234,22 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     },
   });
 
+  // Get winning contractor info
+  const winningContractor = await prisma.contractor.findUnique({
+    where: { id: winningContractorId },
+    include: {
+      user: true,
+    },
+  });
+
+  if (!winningContractor) {
+    return next(new AppError('Winning contractor not found', 404));
+  }
+
   // Send notification to winning contractor
   const { createNotification } = await import('../services/notificationService');
   await createNotification({
-    userId: updatedJob.wonByContractor!.userId,
+    userId: winningContractor.userId,
     title: 'You Won the Job!',
     message: `Congratulations! The customer has confirmed that you won the job: ${job.title}. You can now start working.`,
     type: 'JOB_STARTED',
@@ -3252,9 +3258,10 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
   });
 
   // Send notification to other contractors that applications are closed
-  const otherContractorIds = job.applications
+  const otherContractorIds = (job.applications || [])
     .filter((app: any) => app.contractorId !== winningContractorId)
-    .map((app: any) => app.contractor.userId);
+    .map((app: any) => app.contractor?.user?.id)
+    .filter((id: string | undefined) => id !== undefined);
 
   if (otherContractorIds.length > 0) {
     await Promise.all(

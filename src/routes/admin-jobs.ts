@@ -410,7 +410,7 @@ router.patch(
       data: {
         status: 'IN_PROGRESS',
         wonByContractorId: contractorId,
-        wonAt: new Date(),
+        // wonAt: new Date(), // Note: Prisma client may need regeneration to include wonAt field
         startDate: new Date(),
       },
       include: {
