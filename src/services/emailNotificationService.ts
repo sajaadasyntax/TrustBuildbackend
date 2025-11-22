@@ -113,11 +113,23 @@ export const createEmailNotificationService = () => {
         footerText: 'Welcome to the TrustBuild contractor community! Complete your verification to get started.'
       });
 
-      await emailService.sendMail(mailOptions);
-
+      const result = await emailService.sendMail(mailOptions);
+      
+      // Verify email was sent successfully
+      if (!result) {
+        console.error(`❌ Email service returned no result for contractor approval email to ${contractorData.email}`);
+        return false;
+      }
+      
+      console.log(`✅ Contractor approval email sent successfully to ${contractorData.email}`);
       return true;
     } catch (error) {
       console.error(`❌ Failed to send contractor approval email to ${contractorData.email}:`, error);
+      // Log detailed error information
+      if (error instanceof Error) {
+        console.error(`Error details: ${error.message}`);
+        console.error(`Error stack: ${error.stack}`);
+      }
       return false;
     }
   };

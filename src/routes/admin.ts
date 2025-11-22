@@ -3622,6 +3622,55 @@ router.patch('/jobs/:id/lead-price', requirePermission(AdminPermission.PRICING_W
 router.patch('/jobs/:id/budget', requirePermission(AdminPermission.JOBS_WRITE), setJobBudget);
 router.patch('/jobs/:id/contractor-limit', requirePermission(AdminPermission.JOBS_WRITE), updateJobContractorLimit);
 
+// @desc    Get unpaid commissions
+// @route   GET /api/admin/unpaid-commissions
+// @access  Private (Admin with payments:read permission)
+export const getUnpaidCommissions = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const commissions = await prisma.commissionPayment.findMany({
+    where: {
+      status: {
+        in: ['PENDING', 'OVERDUE']
+      }
+    },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            }
+          }
+        }
+      },
+      job: {
+        select: {
+          id: true,
+          title: true,
+        }
+      },
+      invoice: {
+        select: {
+          invoiceNumber: true,
+        }
+      }
+    },
+    orderBy: {
+      dueDate: 'asc'
+    }
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      commissions,
+    },
+  });
+});
+
+router.get('/unpaid-commissions', requirePermission(AdminPermission.PAYMENTS_READ), getUnpaidCommissions);
+
 // Pricing Management
 router.get('/services', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);
 router.get('/services-pricing', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing); // Alias for backward compatibility

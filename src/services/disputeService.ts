@@ -334,10 +334,51 @@ export const disputeService = {
 
   /**
    * Get disputes for a user (customer or contractor)
+   * Includes disputes they raised AND disputes filed against them
    */
   async getDisputesForUser(userId: string) {
+    // Get user's customer/contractor profile
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        customer: true,
+        contractor: true,
+      },
+    });
+
+    if (!user) {
+      return [];
+    }
+
+    // Build where clause to include:
+    // 1. Disputes raised by this user
+    // 2. Disputes where user is the other party (customer or contractor on the job)
+    const whereClause: any = {
+      OR: [
+        { raisedByUserId: userId },
+      ],
+    };
+
+    // If user is a customer, include disputes on their jobs
+    if (user.customer) {
+      whereClause.OR.push({
+        job: {
+          customerId: user.customer.id,
+        },
+      });
+    }
+
+    // If user is a contractor, include disputes on jobs they won
+    if (user.contractor) {
+      whereClause.OR.push({
+        job: {
+          wonByContractorId: user.contractor.id,
+        },
+      });
+    }
+
     return await prisma.dispute.findMany({
-      where: { raisedByUserId: userId },
+      where: whereClause,
       include: {
         job: {
           include: {

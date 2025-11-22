@@ -348,5 +348,362 @@ router.patch(
   })
 );
 
+// Admin override: Approve contractor winner
+router.patch(
+  '/:jobId/approve-winner',
+  protectAdmin,
+  requirePermission('jobs:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+    const { contractorId, reason } = req.body;
+
+    if (!contractorId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Contractor ID is required',
+      });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        applications: {
+          where: {
+            contractorId: contractorId,
+          },
+          include: {
+            contractor: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Job not found',
+      });
+    }
+
+    if (job.applications.length === 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Contractor has not applied for this job',
+      });
+    }
+
+    const contractor = job.applications[0].contractor;
+
+    // Update job: set winner, change status to IN_PROGRESS
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: 'IN_PROGRESS',
+        wonByContractorId: contractorId,
+        wonAt: new Date(),
+        startDate: new Date(),
+      },
+      include: {
+        wonByContractor: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    // Send notification to contractor
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: contractor.userId,
+      title: 'You Won the Job! (Admin Approved)',
+      message: `An admin has approved you as the winner for the job: ${job.title}. You can now start working.`,
+      type: 'JOB_WON',
+      actionLink: `/dashboard/contractor/jobs/${jobId}`,
+      actionText: 'View Job',
+    });
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'JOB_WINNER_APPROVED',
+      entityType: 'Job',
+      entityId: jobId,
+      description: reason || 'Contractor approved as winner by admin',
+      diff: {
+        contractorId,
+        previousStatus: job.status,
+        newStatus: 'IN_PROGRESS',
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Contractor approved as winner successfully',
+      data: {
+        job: updatedJob,
+      },
+    });
+  })
+);
+
+// Admin override: Lock/unlock job
+router.patch(
+  '/:jobId/lock',
+  protectAdmin,
+  requirePermission('jobs:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+    const { locked, reason } = req.body;
+
+    if (typeof locked !== 'boolean') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Locked status (boolean) is required',
+      });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Job not found',
+      });
+    }
+
+    // For now, we'll use the isFlagged field to represent locked status
+    // In production, you might want to add a dedicated isLocked field
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        isFlagged: locked,
+        flaggedAt: locked ? new Date() : null,
+        flaggedBy: locked ? req.admin!.id : null,
+        flagReason: locked ? (reason || 'Job locked by admin') : null,
+      },
+    });
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: locked ? 'JOB_LOCKED' : 'JOB_UNLOCKED',
+      entityType: 'Job',
+      entityId: jobId,
+      description: reason || (locked ? 'Job locked by admin' : 'Job unlocked by admin'),
+      diff: {
+        locked,
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: locked ? 'Job locked successfully' : 'Job unlocked successfully',
+      data: {
+        job: updatedJob,
+      },
+    });
+  })
+);
+
+// Admin override: Mark job as completed
+router.patch(
+  '/:jobId/mark-completed',
+  protectAdmin,
+  requirePermission('jobs:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+    const { finalAmount, reason } = req.body;
+
+    if (!finalAmount || finalAmount <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Final amount is required and must be greater than 0',
+      });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        wonByContractor: {
+          include: {
+            user: true,
+          },
+        },
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Job not found',
+      });
+    }
+
+    // Update job to completed
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: 'COMPLETED',
+        finalAmount: finalAmount,
+        completionDate: new Date(),
+        customerConfirmed: true,
+        adminOverrideAt: new Date(),
+        adminOverrideBy: req.admin!.id,
+      },
+    });
+
+    // Process commission if needed
+    if (job.wonByContractorId && !job.commissionPaid) {
+      try {
+        await processCommissionForJob(jobId);
+      } catch (error) {
+        console.error('Failed to process commission:', error);
+        // Continue even if commission processing fails
+      }
+    }
+
+    // Send notification to contractor
+    if (job.wonByContractor) {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: job.wonByContractor.userId,
+        title: 'Job Completed (Admin Override)',
+        message: `An admin has marked the job "${job.title}" as completed with final amount £${finalAmount}.`,
+        type: 'JOB_COMPLETED',
+        actionLink: `/dashboard/contractor/jobs/${jobId}`,
+        actionText: 'View Job',
+      });
+    }
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'JOB_MARKED_COMPLETED',
+      entityType: 'Job',
+      entityId: jobId,
+      description: reason || 'Job marked as completed by admin',
+      diff: {
+        finalAmount,
+        previousStatus: job.status,
+        newStatus: 'COMPLETED',
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Job marked as completed successfully',
+      data: {
+        job: updatedJob,
+      },
+    });
+  })
+);
+
+// Admin override: Allow contractor to request review
+router.patch(
+  '/:jobId/allow-review-request',
+  protectAdmin,
+  requirePermission('jobs:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+    const { reason } = req.body;
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        wonByContractor: {
+          include: {
+            user: true,
+          },
+        },
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Job not found',
+      });
+    }
+
+    if (!job.wonByContractorId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'No contractor assigned to this job',
+      });
+    }
+
+    // Mark job as customer confirmed so contractor can request review
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        customerConfirmed: true,
+        adminOverrideAt: new Date(),
+        adminOverrideBy: req.admin!.id,
+      },
+    });
+
+    // Send notification to contractor
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: job.wonByContractor!.userId,
+      title: 'You Can Now Request a Review',
+      message: `An admin has enabled review requests for the job "${job.title}". You can now request a review from the customer.`,
+      type: 'REVIEW_REQUEST_ENABLED',
+      actionLink: `/dashboard/contractor/jobs/${jobId}`,
+      actionText: 'View Job',
+    });
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'REVIEW_REQUEST_ENABLED',
+      entityType: 'Job',
+      entityId: jobId,
+      description: reason || 'Review request enabled by admin',
+      diff: {
+        reason,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Contractor can now request review',
+      data: {
+        job: updatedJob,
+      },
+    });
+  })
+);
+
 export default router;
 

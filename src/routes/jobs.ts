@@ -232,8 +232,20 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
       },
     }) : null;
 
-    if (!hasAccess) {
-      // Filter sensitive data for contractors without access
+    // Check if contractor has applied for this job - if so, show customer info
+    const contractor = req.user?.role === 'CONTRACTOR' ? await prisma.contractor.findUnique({
+      where: { userId: req.user.id },
+    }) : null;
+    
+    const hasApplied = contractor ? await prisma.jobApplication.findFirst({
+      where: {
+        jobId: job.id,
+        contractorId: contractor.id,
+      },
+    }) : null;
+
+    if (!hasAccess && !hasApplied) {
+      // Filter sensitive data for contractors without access or application
       filteredJob = {
         ...job,
         location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
@@ -287,9 +299,9 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     requirements,
   } = req.body;
 
-  // Validate budget is required
-  if (!budget || Number(budget) <= 0) {
-    return next(new AppError('Budget is required and must be a positive number', 400));
+  // Validate budget if provided - it must be positive
+  if (budget !== undefined && budget !== null && (Number(budget) <= 0 || isNaN(Number(budget)))) {
+    return next(new AppError('Budget must be a positive number if provided', 400));
   }
 
   // Get or create customer profile
@@ -1009,15 +1021,10 @@ export const acceptJobDirectly = catchAsync(async (req: AuthenticatedRequest, re
 
   let { proposal, estimatedCost, timeline } = req.body;
 
-  // Budget is required for all jobs
-  if (!job.budget || Number(job.budget) <= 0) {
-    return next(new AppError('Job budget is required for direct acceptance.', 400));
-  }
-
-  // Validate estimated cost for fixed-budget jobs
-  if (!estimatedCost) {
-    // Use job budget as default for direct acceptance
-    estimatedCost = Number(job.budget);
+  // Budget is optional - contractors can propose their own price
+  // If no estimated cost provided, contractor must provide one
+  if (!estimatedCost || estimatedCost <= 0) {
+    return next(new AppError('Please provide your estimated cost for this job', 400));
   }
 
   // Create application and mark as accepted, but keep job status as POSTED
@@ -1738,7 +1745,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       contractorName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod,
-      paidAmount: access.paidAmount ? Number(access.paidAmount) : 0,
+      // Don't expose paidAmount to customers - they shouldn't know how much contractors paid
       // Include contractor details for customers
       ...(req.user?.role === 'CUSTOMER' && {
         portfolio: access.contractor.portfolio,
@@ -3049,6 +3056,299 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
   });
 });
 
+// @desc    Contractor claims "I won the job" - sends notification but doesn't close job
+// @route   POST /api/jobs/:id/claim-won
+// @access  Private (Contractor only)
+export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId: req.user!.id },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      applications: {
+        where: {
+          contractorId: contractor.id,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Verify contractor has applied for this job
+  if (job.applications.length === 0) {
+    return next(new AppError('You must apply for this job before claiming you won', 403));
+  }
+
+  // Can only claim if job is POSTED
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not available for claiming', 400));
+  }
+
+  // Check if another contractor already claimed
+  if (job.wonByContractorId && job.wonByContractorId !== contractor.id) {
+    return next(new AppError('Another contractor has already claimed this job', 400));
+  }
+
+  // Get contractor with user info for notification
+  const contractorWithUser = await prisma.contractor.findUnique({
+    where: { id: contractor.id },
+    include: {
+      user: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  // Store the claim by setting wonByContractorId but keeping status as POSTED
+  // This allows customer to see who claimed while keeping job open
+  await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      wonByContractorId: contractor.id,
+      // Don't set wonAt yet - that happens when customer confirms
+      // Status remains POSTED so other contractors can still apply
+    },
+  });
+
+  // Send notification to customer
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: job.customer.userId,
+    title: 'Contractor Claims They Won Your Job',
+    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} claims that they won your job: ${job.title}. Please confirm if this is correct.`,
+    type: 'CONTRACTOR_CLAIMED_WIN',
+    actionLink: `/dashboard/client/jobs/${job.id}`,
+    actionText: 'Review & Confirm',
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Customer has been notified. They will confirm if you won the job.',
+    data: {
+      job: {
+        id: job.id,
+        title: job.title,
+        status: job.status, // Still POSTED - job remains open
+      },
+    },
+  });
+});
+
+// @desc    Customer confirms contractor winner - moves job to IN_PROGRESS and closes applications
+// @route   PATCH /api/jobs/:id/confirm-winner
+// @access  Private (Customer only)
+export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const userId = req.user!.id;
+
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      applications: {
+        include: {
+          contractor: {
+            include: {
+              user: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Only customer can confirm winner
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Only the job owner can confirm the winner', 403));
+  }
+
+  // Job must be POSTED
+  if (job.status !== 'POSTED') {
+    return next(new AppError('Job is not in a state to confirm winner', 400));
+  }
+
+  // Find the contractor who claimed they won
+  // The wonByContractorId should be set when contractor claims
+  const winningContractorId = job.wonByContractorId;
+
+  if (!winningContractorId) {
+    return next(new AppError('No contractor has claimed this job', 400));
+  }
+
+  // Verify the contractor has applied
+  const hasApplied = job.applications.some(app => app.contractorId === winningContractorId);
+  if (!hasApplied) {
+    return next(new AppError('The claimed contractor has not applied for this job', 400));
+  }
+
+  // Update job: set winner, change status to IN_PROGRESS
+  const updatedJob = await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      status: 'IN_PROGRESS',
+      wonByContractorId: winningContractorId,
+      wonAt: new Date(),
+      startDate: new Date(),
+    },
+    include: {
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  // Send notification to winning contractor
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: updatedJob.wonByContractor!.userId,
+    title: 'You Won the Job!',
+    message: `Congratulations! The customer has confirmed that you won the job: ${job.title}. You can now start working.`,
+    type: 'JOB_WON',
+    actionLink: `/dashboard/contractor/jobs/${job.id}`,
+    actionText: 'View Job',
+  });
+
+  // Send notification to other contractors that applications are closed
+  const otherContractorIds = job.applications
+    .filter(app => app.contractorId !== winningContractorId)
+    .map(app => app.contractor.userId);
+
+  if (otherContractorIds.length > 0) {
+    await Promise.all(
+      otherContractorIds.map(contractorUserId =>
+        createNotification({
+          userId: contractorUserId,
+          title: 'Job Applications Closed',
+          message: `The job "${job.title}" has been assigned to another contractor. Applications are now closed.`,
+          type: 'JOB_CLOSED',
+          actionLink: `/jobs/${job.id}`,
+        }).catch(err => console.error('Failed to notify contractor:', err))
+      )
+    );
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Contractor confirmed. Job is now in progress and applications are closed.',
+    data: {
+      job: updatedJob,
+    },
+  });
+});
+
+// @desc    Customer suggests price change
+// @route   PATCH /api/jobs/:id/suggest-price-change
+// @access  Private (Customer only)
+export const suggestPriceChange = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { suggestedAmount, feedback } = req.body;
+  const userId = req.user!.id;
+
+  if (!suggestedAmount || suggestedAmount <= 0) {
+    return next(new AppError('Suggested amount is required and must be greater than 0', 400));
+  }
+
+  const job = await prisma.job.findUnique({
+    where: { id: req.params.id },
+    include: {
+      customer: {
+        include: {
+          user: true,
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Only customer can suggest price change
+  if (job.customer.userId !== userId) {
+    return next(new AppError('Only the job owner can suggest price changes', 403));
+  }
+
+  // Job must be awaiting final price confirmation
+  if (job.status !== 'AWAITING_FINAL_PRICE_CONFIRMATION') {
+    return next(new AppError('Job is not awaiting final price confirmation', 400));
+  }
+
+  if (!job.wonByContractorId) {
+    return next(new AppError('No contractor assigned to this job', 400));
+  }
+
+  // Store suggested price (we can use finalPriceRejectionReason or add a new field)
+  // For now, we'll update the job with the suggested amount in metadata
+  const updatedJob = await prisma.job.update({
+    where: { id: req.params.id },
+    data: {
+      finalPriceRejectedAt: new Date(),
+      finalPriceRejectionReason: feedback || `Customer suggested price change to £${suggestedAmount}`,
+      // Reset proposed amount so contractor can propose again
+      contractorProposedAmount: null,
+      finalPriceProposedAt: null,
+      status: 'IN_PROGRESS', // Back to IN_PROGRESS so contractor can propose new price
+    },
+  });
+
+  // Send notification to contractor
+  const { createNotification } = await import('../services/notificationService');
+  await createNotification({
+    userId: job.wonByContractor!.userId,
+    title: 'Customer Suggested Price Change',
+    message: `The customer has suggested a different price of £${suggestedAmount} for the job "${job.title}". ${feedback ? `Reason: ${feedback}` : ''}`,
+    type: 'PRICE_CHANGE_SUGGESTED',
+    actionLink: `/dashboard/contractor/jobs/${job.id}`,
+    actionText: 'View Job',
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Price change suggestion sent to contractor',
+    data: {
+      job: updatedJob,
+      suggestedAmount,
+    },
+  });
+});
+
 // @desc    Test commission creation for debugging
 // @route   POST /api/jobs/:id/test-commission
 // @access  Private (Admin only)
@@ -3585,6 +3885,11 @@ router.post('/:id/request-review', protect, requestReview);
 router.patch('/:id/propose-final-price', protect, proposeFinalPrice);
 router.patch('/:id/confirm-final-price', protect, confirmFinalPrice);
 router.patch('/:id/admin-override-final-price', protect, adminOverrideFinalPrice);
+
+// New job winner workflow routes
+router.post('/:id/claim-won', protect, claimWon);
+router.patch('/:id/confirm-winner', protect, confirmWinner);
+router.patch('/:id/suggest-price-change', protect, suggestPriceChange);
 
 // Milestone routes
 router.get('/:id/milestones', protect, getJobMilestones);

@@ -399,8 +399,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Payment amount mismatch', 400);
       }
 
-      // Amount already includes 20% VAT
-      const vatAmount = 0; // No additional VAT calculation needed
+      // Calculate 20% VAT on top of lead price
+      const vatRate = 0.20; // 20% VAT
+      const baseAmount = leadPrice / (1 + vatRate); // Calculate base amount excluding VAT
+      const vatAmount = leadPrice - baseAmount; // Calculate VAT amount
+      const totalAmount = leadPrice; // Total includes VAT
 
       // Create payment record
       payment = await tx.payment.create({
@@ -417,10 +420,10 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Create invoice
       invoice = await tx.invoice.create({
         data: {
-          amount: leadPrice,  // Total amount (VAT included)
-          vatAmount,          // No additional VAT
-          totalAmount: leadPrice, // Total price (VAT included)
-          description: `Job Lead Access - ${job.title} (VAT included)`,
+          amount: baseAmount,  // Base amount excluding VAT
+          vatAmount: vatAmount, // 20% VAT
+          totalAmount: totalAmount, // Total price including VAT
+          description: `Job Lead Access - ${job.title}`,
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: job.customer?.user?.name || 'Unknown',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
@@ -449,12 +452,18 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice with lead price
+      // Calculate 20% VAT on top of lead price
+      const vatRate = 0.20; // 20% VAT
+      const baseAmount = leadPrice / (1 + vatRate); // Calculate base amount excluding VAT
+      const vatAmount = leadPrice - baseAmount; // Calculate VAT amount
+      const totalAmount = leadPrice; // Total includes VAT
+
+      // Create invoice with VAT
       invoice = await tx.invoice.create({
         data: {
-          amount: leadPrice,
-          vatAmount: 0, // No additional VAT - amount already includes VAT
-          totalAmount: leadPrice,
+          amount: baseAmount, // Base amount excluding VAT
+          vatAmount: vatAmount, // 20% VAT
+          totalAmount: totalAmount, // Total including VAT
           description: `Job Lead Access (Subscriber) - ${job.title}`,
           invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: contractor.businessName || 'Contractor',
@@ -922,9 +931,12 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
       // Get commission rate from settings
       const { getCommissionRate } = await import('../services/settingsService');
       const commissionRate = await getCommissionRate();
-      const commissionAmount = (finalAmount * commissionRate) / 100;
-      const vatAmount = 0; // No additional VAT - commission amount already includes VAT
-      const totalAmount = commissionAmount; // Total is just the commission amount
+      const baseCommissionAmount = (finalAmount * commissionRate) / 100; // Base commission amount
+      // Calculate 20% VAT on top of commission amount
+      const vatRate = 0.20; // 20% VAT
+      const vatAmount = baseCommissionAmount * vatRate; // VAT is 20% of base commission
+      const totalAmount = baseCommissionAmount + vatAmount; // Total includes VAT
+      const commissionAmount = baseCommissionAmount; // Store base commission amount
       const dueDate = new Date();
       dueDate.setHours(dueDate.getHours() + 48); // 48 hours from now
 
@@ -1153,14 +1165,18 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   
 
   
-  // For development: allow requires_payment_method status (test mode)
-  if (paymentIntent.status !== 'succeeded' && paymentIntent.status !== 'requires_payment_method') {
+  // Verify payment status
+  if (paymentIntent.status !== 'succeeded') {
     return next(new AppError(`Payment not completed. Status: ${paymentIntent.status}`, 400));
   }
 
-  // For development: skip amount verification if in test mode
-  if (paymentIntent.status === 'succeeded' && paymentIntent.amount !== Number(commissionPayment.totalAmount) * 100) {
-    return next(new AppError('Payment amount mismatch', 400));
+  // Verify payment amount matches commission payment total
+  const commissionTotalAmount = typeof commissionPayment.totalAmount?.toNumber === 'function' 
+    ? commissionPayment.totalAmount.toNumber() 
+    : Number(commissionPayment.totalAmount);
+  
+  if (paymentIntent.amount !== Math.round(commissionTotalAmount * 100)) {
+    return next(new AppError(`Payment amount mismatch. Expected: £${commissionTotalAmount}, Received: £${paymentIntent.amount / 100}`, 400));
   }
 
   // Update commission payment as paid
@@ -1277,8 +1293,17 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
   try {
     const stripe = getStripeInstance();
     
+    // Safely convert commission total amount to number
+    const commissionTotalAmount = typeof commissionPayment.totalAmount?.toNumber === 'function' 
+      ? commissionPayment.totalAmount.toNumber() 
+      : Number(commissionPayment.totalAmount);
+    
+    if (isNaN(commissionTotalAmount) || commissionTotalAmount <= 0) {
+      return next(new AppError('Invalid commission payment amount', 400));
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Number(commissionPayment.totalAmount) * 100, // Convert to cents
+      amount: Math.round(commissionTotalAmount * 100), // Convert to cents, ensure integer
       currency: 'gbp',
       // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
@@ -1293,11 +1318,16 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
       },
     });
 
+    // Safely convert commission total amount to number for response
+    const commissionTotalAmount = typeof commissionPayment.totalAmount?.toNumber === 'function' 
+      ? commissionPayment.totalAmount.toNumber() 
+      : Number(commissionPayment.totalAmount);
+
     res.status(200).json({
       status: 'success',
       data: {
         clientSecret: paymentIntent.client_secret,
-        amount: Number(commissionPayment.totalAmount),
+        amount: commissionTotalAmount,
         dueDate: commissionPayment.dueDate,
         jobTitle: commissionPayment.job.title,
       },
