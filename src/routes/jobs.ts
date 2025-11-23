@@ -3203,35 +3203,55 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('The claimed contractor has not applied for this job', 400));
   }
 
-  // Update job: set winner, change status to IN_PROGRESS
-  const updatedJob = await prisma.job.update({
-    where: { id: req.params.id },
-    data: {
-      status: 'IN_PROGRESS',
-      wonByContractorId: winningContractorId,
-      startDate: new Date(),
-    },
-    include: {
-      wonByContractor: {
-        include: {
-          user: true,
-        },
+  // Update job: set winner, change status to IN_PROGRESS, set wonAt timestamp
+  // Note: wonAt field exists in schema but Prisma client may need regeneration
+  // Using $executeRaw to set wonAt if Prisma client doesn't recognize it
+  const updatedJob = await prisma.$transaction(async (tx) => {
+    const job = await tx.job.update({
+      where: { id: req.params.id },
+      data: {
+        status: 'IN_PROGRESS',
+        wonByContractorId: winningContractorId,
+        startDate: new Date(),
       },
-      customer: {
-        include: {
-          user: true,
+    });
+    
+    // Set wonAt using raw SQL if Prisma client doesn't have the field
+    try {
+      await tx.$executeRaw`UPDATE "jobs" SET "wonAt" = ${new Date()} WHERE id = ${req.params.id}`;
+    } catch (error) {
+      // If raw SQL fails, try updating with wonAt field directly
+      console.warn('Failed to set wonAt via raw SQL, trying direct update:', error);
+      await tx.job.update({
+        where: { id: req.params.id },
+        data: { wonAt: new Date() } as any,
+      });
+    }
+    
+    return tx.job.findUnique({
+      where: { id: req.params.id },
+      include: {
+        wonByContractor: {
+          include: {
+            user: true,
+          },
         },
-      },
-      applications: {
-        include: {
-          contractor: {
-            include: {
-              user: true,
+        customer: {
+          include: {
+            user: true,
+          },
+        },
+        applications: {
+          include: {
+            contractor: {
+              include: {
+                user: true,
+              },
             },
           },
         },
       },
-    },
+    });
   });
 
   // Get winning contractor info
@@ -3246,6 +3266,22 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Winning contractor not found', 404));
   }
 
+  // Get all applications for notifications
+  const allApplications = await prisma.jobApplication.findMany({
+    where: { jobId: req.params.id },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
   // Send notification to winning contractor
   const { createNotification } = await import('../services/notificationService');
   await createNotification({
@@ -3258,10 +3294,10 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
   });
 
   // Send notification to other contractors that applications are closed
-  const otherContractorIds = (job.applications || [])
-    .filter((app: any) => app.contractorId !== winningContractorId)
-    .map((app: any) => app.contractor?.user?.id)
-    .filter((id: string | undefined) => id !== undefined);
+  const otherContractorIds = allApplications
+    .filter((app) => app.contractorId !== winningContractorId)
+    .map((app) => app.contractor?.user?.id)
+    .filter((id): id is string => id !== undefined);
 
   if (otherContractorIds.length > 0) {
     await Promise.all(
