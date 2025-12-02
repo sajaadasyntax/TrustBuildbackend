@@ -1748,7 +1748,10 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
       where: whereClause,
       include: {
         customer: {
-          include: {
+          select: {
+            id: true,
+            phone: true,
+            userId: true,
             user: {
               select: {
                 id: true,
@@ -1782,6 +1785,40 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
             },
           },
         },
+        jobAccess: {
+          include: {
+            contractor: {
+              select: {
+                id: true,
+                businessName: true,
+                jobsCompleted: true,
+                averageRating: true,
+                reviewCount: true,
+                user: {
+                  select: {
+                    name: true,
+                  },
+                },
+                reviews: {
+                  select: {
+                    rating: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { accessedAt: 'desc' },
+        },
+        wonByContractor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -1790,7 +1827,7 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
     prisma.job.count({ where: whereClause }),
   ]);
 
-  // Calculate current lead price for each job
+  // Calculate current lead price and transform jobAccess to purchasedBy for each job
   const jobsWithPricing = jobs.map(job => {
     let currentLeadPrice = 0;
     
@@ -1812,9 +1849,35 @@ export const getAllJobsAdmin = catchAsync(async (req: AdminAuthRequest, res: Res
       }
     }
 
+    // Transform jobAccess to purchasedBy format with contractor details
+    const purchasedBy = (job.jobAccess || []).map((access: any) => {
+      const contractor = access.contractor;
+      const reviews = contractor.reviews || [];
+      const reviewCount = contractor.reviewCount || reviews.length;
+      // Use contractor's averageRating if available, otherwise calculate from reviews
+      const averageRating = contractor.averageRating !== null && contractor.averageRating !== undefined
+        ? Number(contractor.averageRating)
+        : (reviewCount > 0
+          ? reviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviewCount
+          : 0);
+
+      return {
+        contractorId: contractor.id,
+        contractorName: contractor.businessName || contractor.user?.name || 'Unknown',
+        purchasedAt: access.accessedAt.toISOString(),
+        method: access.accessMethod,
+        paidAmount: access.paidAmount ? Number(access.paidAmount) : undefined,
+        averageRating: averageRating > 0 ? averageRating : undefined,
+        reviewCount: reviewCount > 0 ? reviewCount : 0,
+        jobsCompleted: contractor.jobsCompleted || 0,
+      };
+    });
+
     return {
       ...job,
       currentLeadPrice,
+      contractorsWithAccess: job.jobAccess?.length || 0,
+      purchasedBy,
     };
   });
 
