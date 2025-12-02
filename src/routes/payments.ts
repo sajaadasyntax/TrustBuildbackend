@@ -518,6 +518,28 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     // Don't fail the transaction if email fails
   }
   
+  // Notify customer that a contractor has purchased access to their job
+  try {
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: job.customer.userId,
+      title: 'Contractor Interested in Your Job! 📞',
+      message: `${contractor.businessName || contractor.user.name} has purchased access to your job "${job.title}" and can see your contact details. They may call you soon to discuss the job.`,
+      type: 'INFO',
+      actionLink: `/dashboard/client/jobs/${jobId}`,
+      actionText: 'View Job',
+      metadata: {
+        jobId,
+        contractorId: contractor.id,
+        contractorName: contractor.businessName || contractor.user.name,
+        event: 'contractor_bought_access',
+      },
+    });
+  } catch (error) {
+    console.error('Failed to send customer notification for job access:', error);
+    // Don't fail the transaction if notification fails
+  }
+  
   // Fetch the contractor's updated balance to return in response
   const updatedContractorData = await prisma.contractor.findUnique({
     where: { id: contractor.id },

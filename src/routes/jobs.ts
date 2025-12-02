@@ -200,6 +200,7 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
             include: {
               user: {
                 select: {
+                  id: true, // Include user id for matching applications to contractors
                   name: true,
                 },
               },
@@ -218,25 +219,29 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
 
   // Apply access control and data filtering based on user role
   let filteredJob = job;
+  let hasAccessFlag = null;
 
   // If user is not authenticated or is a contractor, filter sensitive data
   if (!req.user || req.user.role === 'CONTRACTOR') {
+    // Get contractor profile once
+    const contractor = req.user?.role === 'CONTRACTOR' ? await prisma.contractor.findUnique({
+      where: { userId: req.user.id },
+    }) : null;
+
     // Check if contractor has purchased access to this job via JobAccess record
     // Contractors MUST have a JobAccess record regardless of subscription status
-    const hasAccess = req.user?.role === 'CONTRACTOR' ? await prisma.jobAccess.findUnique({
+    const hasAccess = contractor ? await prisma.jobAccess.findUnique({
       where: {
         jobId_contractorId: {
           jobId: job.id,
-          contractorId: req.user.id,
+          contractorId: contractor.id,
         },
       },
     }) : null;
 
-    // Check if contractor has applied for this job - if so, show customer info
-    const contractor = req.user?.role === 'CONTRACTOR' ? await prisma.contractor.findUnique({
-      where: { userId: req.user.id },
-    }) : null;
+    hasAccessFlag = hasAccess;
     
+    // Check if contractor has applied for this job - if so, show customer info
     const hasApplied = contractor ? await prisma.jobApplication.findFirst({
       where: {
         jobId: job.id,
@@ -263,6 +268,13 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
         // Hide applications from contractors without access
         applications: [],
       };
+    } else {
+      // Contractor has access or has applied - show all applications
+      // Ensure the job object includes all applications from the original query
+      filteredJob = {
+        ...job,
+        applications: job.applications || [],
+      };
     }
   }
 
@@ -274,6 +286,7 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
     data: {
       ...filteredJob,
       applicationCount, // Show contractors how many have applied
+      hasAccess: !!hasAccessFlag, // Flag for frontend to know if contractor has purchased access
     },
   });
 });
@@ -1546,6 +1559,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
             include: {
               user: {
                 select: {
+                  id: true, // Include user id for matching applications to contractors
                   name: true,
                 },
               },
@@ -3075,7 +3089,7 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
           user: true,
         },
       },
-      applications: {
+      jobAccess: {
         where: {
           contractorId: contractor.id,
         },
@@ -3087,9 +3101,9 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
     return next(new AppError('Job not found', 404));
   }
 
-  // Verify contractor has applied for this job
-  if (job.applications.length === 0) {
-    return next(new AppError('You must apply for this job before claiming you won', 403));
+  // Verify contractor has purchased access to this job
+  if (job.jobAccess.length === 0) {
+    return next(new AppError('You must purchase job access before claiming you won', 403));
   }
 
   // Can only claim if job is POSTED
@@ -3129,11 +3143,17 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
   const { createNotification } = await import('../services/notificationService');
   await createNotification({
     userId: job.customer.userId,
-    title: 'Contractor Claims They Won Your Job',
-    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} claims that they won your job: ${job.title}. Please confirm if this is correct.`,
+    title: 'Contractor Says They Won Your Job! ✅',
+    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} says they&apos;ve agreed to do your job "${job.title}". Please confirm if this is correct so they can start work.`,
     type: 'CONTRACTOR_SELECTED',
     actionLink: `/dashboard/client/jobs/${job.id}`,
     actionText: 'Review & Confirm',
+    metadata: {
+      jobId: job.id,
+      contractorId: contractor.id,
+      contractorName: contractor.businessName || contractorWithUser?.user.name,
+      event: 'contractor_claimed_won',
+    },
   });
 
   res.status(200).json({
@@ -3149,7 +3169,7 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
   });
 });
 
-// @desc    Customer confirms contractor winner - moves job to IN_PROGRESS and closes applications
+// @desc    Customer confirms contractor winner - moves job to IN_PROGRESS
 // @route   PATCH /api/jobs/:id/confirm-winner
 // @access  Private (Customer only)
 export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -3163,7 +3183,7 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
           user: true,
         },
       },
-      applications: {
+      jobAccess: {
         include: {
           contractor: {
             include: {
@@ -3197,10 +3217,10 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('No contractor has claimed this job', 400));
   }
 
-  // Verify the contractor has applied
-  const hasApplied = job.applications?.some((app: any) => app.contractorId === winningContractorId);
-  if (!hasApplied) {
-    return next(new AppError('The claimed contractor has not applied for this job', 400));
+  // Verify the contractor has purchased access
+  const hasAccess = job.jobAccess?.some((access: any) => access.contractorId === winningContractorId);
+  if (!hasAccess) {
+    return next(new AppError('The claimed contractor has not purchased access to this job', 400));
   }
 
   // Update job: set winner, change status to IN_PROGRESS, set wonAt timestamp
@@ -3266,8 +3286,8 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Winning contractor not found', 404));
   }
 
-  // Get all applications for notifications
-  const allApplications = await prisma.jobApplication.findMany({
+  // Get all contractors with access for notifications
+  const allAccessRecords = await prisma.jobAccess.findMany({
     where: { jobId: req.params.id },
     include: {
       contractor: {
@@ -3286,17 +3306,21 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
   const { createNotification } = await import('../services/notificationService');
   await createNotification({
     userId: winningContractor.userId,
-    title: 'You Won the Job!',
-    message: `Congratulations! The customer has confirmed that you won the job: ${job.title}. You can now start working.`,
+    title: 'You Won the Job! 🎉',
+    message: `Congratulations! The customer has confirmed that you won the job: ${job.title}. The job is now In Progress and you can start working.`,
     type: 'JOB_STARTED',
     actionLink: `/dashboard/contractor/jobs/${job.id}`,
     actionText: 'View Job',
+    metadata: {
+      jobId: job.id,
+      event: 'contractor_confirmed_winner',
+    },
   });
 
-  // Send notification to other contractors that applications are closed
-  const otherContractorIds = allApplications
-    .filter((app) => app.contractorId !== winningContractorId)
-    .map((app) => app.contractor?.user?.id)
+  // Send notification to other contractors who had access that job is now assigned
+  const otherContractorIds = allAccessRecords
+    .filter((access) => access.contractorId !== winningContractorId)
+    .map((access) => access.contractor?.user?.id)
     .filter((id): id is string => id !== undefined);
 
   if (otherContractorIds.length > 0) {
@@ -3304,8 +3328,8 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
       otherContractorIds.map((contractorUserId: string) =>
         createNotification({
           userId: contractorUserId,
-          title: 'Job Applications Closed',
-          message: `The job "${job.title}" has been assigned to another contractor. Applications are now closed.`,
+          title: 'Job Assigned to Another Contractor',
+          message: `The job "${job.title}" has been assigned to another contractor.`,
           type: 'JOB_STATUS_CHANGED',
           actionLink: `/jobs/${job.id}`,
         }).catch(err => console.error('Failed to notify contractor:', err))

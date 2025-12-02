@@ -1,0 +1,6 @@
+# Additional testing dependencies needed for backend (if not already installed)
+# Install with: npm install --save-dev
+
+supertest@^6.3.3
+@types/supertest@^6.0.2
+
