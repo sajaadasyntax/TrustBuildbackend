@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { catchAsync, AppError } from '../middleware/errorHandler';
-import { UserRole } from '@prisma/client';
+import { UserRole, Message } from '@prisma/client';
 
 const router = Router();
 
@@ -132,7 +132,7 @@ export const getMessages = catchAsync(async (req: AuthenticatedRequest, res: Res
 
   // Fetch sender and recipient details for each message
   const messages = await Promise.all(
-    messagesData.map(async (msg) => {
+    messagesData.map(async (msg: Message) => {
       const [sender, recipient] = await Promise.all([
         prisma.user.findUnique({
           where: { id: msg.senderId },
@@ -338,7 +338,7 @@ export const getConversation = catchAsync(async (req: AuthenticatedRequest, res:
 
   // Fetch sender and recipient details for each message
   const messages = await Promise.all(
-    messagesData.map(async (msg) => {
+    messagesData.map(async (msg: Message) => {
       const [sender, recipient] = await Promise.all([
         prisma.user.findUnique({
           where: { id: msg.senderId },

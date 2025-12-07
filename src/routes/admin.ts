@@ -6,7 +6,7 @@ import { AdminPermission } from '../config/permissions';
 import { logActivity } from '../services/auditService';
 import * as adminNotificationService from '../services/adminNotificationService';
 import bcrypt from 'bcryptjs';
-import { UserRole } from '@prisma/client';
+import { UserRole, Message } from '@prisma/client';
 
 const router = Router();
 
@@ -3206,7 +3206,7 @@ export const getAllConversations = catchAsync(async (req: AdminAuthRequest, res:
   // Each admin has separate conversations with each user
   const conversationMap = new Map<string, any>();
   
-  messagesData.forEach((message) => {
+  messagesData.forEach((message: Message & { sender: any; recipient: any }) => {
     const senderId = message.senderId;
     const recipientId = message.recipientId;
     

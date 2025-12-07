@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
+import { JobStatus } from '@prisma/client';
 
 const router = Router();
 
@@ -478,7 +479,7 @@ export const getDashboardData = catchAsync(async (req: AuthenticatedRequest, res
     prisma.job.findMany({
       where: {
         customerId: customer.id,
-        status: { in: ['POSTED', 'IN_PROGRESS', 'WON'] },
+        status: { in: [JobStatus.POSTED, JobStatus.IN_PROGRESS, JobStatus.WON] },
       },
       include: {
         service: {
