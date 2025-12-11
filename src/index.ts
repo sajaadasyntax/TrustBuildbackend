@@ -255,15 +255,52 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 // Import the new email service
 import { sendTestEmail } from './services/emailService';
+import { processCommissionReminders } from './services/commissionService';
+import { processFinalPriceReminders, processFinalPriceTimeouts } from './services/finalPriceReminderService';
+
+// Schedule recurring tasks (run every 30 minutes)
+const TASK_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
+async function runScheduledTasks() {
+  console.log('⏰ Running scheduled tasks...');
+  
+  try {
+    // Process commission reminders and suspend overdue accounts
+    await processCommissionReminders();
+    console.log('✅ Commission reminders processed');
+  } catch (error) {
+    console.error('❌ Failed to process commission reminders:', error);
+  }
+  
+  try {
+    // Process final price reminders
+    await processFinalPriceReminders();
+    console.log('✅ Final price reminders processed');
+  } catch (error) {
+    console.error('❌ Failed to process final price reminders:', error);
+  }
+  
+  try {
+    // Process expired final price confirmations (timeouts)
+    await processFinalPriceTimeouts();
+    console.log('✅ Final price timeouts processed');
+  } catch (error) {
+    console.error('❌ Failed to process final price timeouts:', error);
+  }
+}
 
 // Start server
 app.listen(PORT, () => {
-
-
-
+  console.log(`🚀 TrustBuild API server running on port ${PORT}`);
+  console.log(`📧 Environment: ${process.env.NODE_ENV || 'development'}`);
   
   // Send test email on startup
   sendTestEmail();
+  
+  // Run scheduled tasks on startup and then every 30 minutes
+  runScheduledTasks();
+  setInterval(runScheduledTasks, TASK_INTERVAL);
+  console.log(`⏰ Scheduled tasks will run every ${TASK_INTERVAL / 60000} minutes`);
 });
 
 // Handle unhandled promise rejections

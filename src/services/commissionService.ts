@@ -41,8 +41,10 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
     // Get commission rate from settings
     const commissionRatePercent = await getCommissionRate();
     const commissionAmount = (finalAmount * commissionRatePercent) / 100;
-    const vatAmount = 0; // No additional VAT
-    const totalAmount = commissionAmount;
+    // Add 20% VAT on top of commission
+    const vatRate = 0.20;
+    const vatAmount = commissionAmount * vatRate;
+    const totalAmount = commissionAmount + vatAmount;
 
 
 

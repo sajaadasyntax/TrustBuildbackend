@@ -637,6 +637,53 @@ export const resetPassword = catchAsync(async (req: express.Request, res: expres
   });
 });
 
+// @desc    Refresh access token
+// @route   POST /api/auth/refresh-token
+// @access  Private (requires valid token)
+export const refreshToken = catchAsync(async (req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) => {
+  // User is already authenticated via the protect middleware
+  // Issue a new token with fresh expiration
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+    },
+  });
+
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+
+  if (!user.isActive) {
+    return next(new AppError('Your account has been deactivated.', 401));
+  }
+
+  // Generate new token
+  const newToken = signToken(user.id);
+  
+  // Set new cookie
+  const cookieOptions = {
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+  };
+
+  res.cookie('jwt', newToken, cookieOptions);
+
+  res.status(200).json({
+    status: 'success',
+    token: newToken,
+    data: {
+      user,
+    },
+  });
+});
+
 // Routes
 router.post('/register', register);
 router.post('/login', login);
@@ -646,5 +693,6 @@ router.patch('/update-password', protect, updatePassword);
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-reset-token', verifyResetToken);
 router.post('/reset-password', resetPassword);
+router.post('/refresh-token', protect, refreshToken);
 
 export default router; 

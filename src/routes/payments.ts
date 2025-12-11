@@ -395,21 +395,23 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Payment not completed', 400);
       }
 
-      if (paymentIntent.amount !== leadPrice * 100) { // Stripe uses cents
-        throw new AppError('Payment amount mismatch', 400);
-      }
-
-      // Calculate 20% VAT on top of lead price
+      // Calculate VAT (20%) on top of lead price
       const vatRate = 0.20; // 20% VAT
-      const baseAmount = leadPrice / (1 + vatRate); // Calculate base amount excluding VAT
-      const vatAmount = leadPrice - baseAmount; // Calculate VAT amount
-      const totalAmount = leadPrice; // Total includes VAT
+      const baseAmount = leadPrice; // Base price excluding VAT
+      const vatAmount = baseAmount * vatRate; // VAT is 20% of base price
+      const totalAmount = baseAmount + vatAmount; // Total = base + VAT
+
+      // Verify amount matches (with tolerance for rounding)
+      const expectedAmount = Math.round(totalAmount * 100);
+      if (Math.abs(paymentIntent.amount - expectedAmount) > 1) { // Allow 1 cent tolerance
+        throw new AppError(`Payment amount mismatch: expected ${expectedAmount}, got ${paymentIntent.amount}`, 400);
+      }
 
       // Create payment record
       payment = await tx.payment.create({
         data: {
           contractorId: contractor.id,
-          amount: leadPrice,
+          amount: totalAmount, // Store total amount including VAT
           type: 'LEAD_ACCESS',
           status: 'COMPLETED',
           stripePaymentId: stripePaymentIntentId,
@@ -648,13 +650,16 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
     return next(new AppError('Invalid lead price', 400));
   }
 
+  // Calculate VAT (20%) on top of lead price
+  const vatRate = 0.20;
+  const vatAmount = leadPrice * vatRate;
+  const totalWithVat = leadPrice + vatAmount;
+
   // Create payment intent
   try {
-
-    
     const stripe = getStripeInstance();
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: leadPrice * 100, // Convert to cents
+      amount: Math.round(totalWithVat * 100), // Convert to cents (with VAT)
       currency: 'gbp',
       // Remove payment_method_types when using automatic_payment_methods
       automatic_payment_methods: {
@@ -665,25 +670,28 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
         jobId,
         contractorId: contractor.id,
         leadPrice: leadPrice.toString(),
+        vatAmount: vatAmount.toFixed(2),
+        totalWithVat: totalWithVat.toFixed(2),
         type: 'job_access_purchase'
       },
     });
 
-
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      clientSecret: paymentIntent.client_secret,
-      amount: leadPrice,
-    },
-  });
+    res.status(200).json({
+      status: 'success',
+      data: {
+        clientSecret: paymentIntent.client_secret,
+        baseAmount: leadPrice,
+        vatAmount: vatAmount,
+        vatRate: vatRate * 100, // Return as percentage (20)
+        totalAmount: totalWithVat,
+      },
+    });
   } catch (stripeError: any) {
     console.error('❌ Stripe API Error:', stripeError.message);
     console.error('Stripe Error Type:', stripeError.type);
     console.error('Full Stripe Error:', stripeError);
-         return next(new AppError(`Stripe payment error: ${stripeError.message}`, 400));
-   }
+    return next(new AppError(`Stripe payment error: ${stripeError.message}`, 400));
+  }
 });
 
 // @desc    Get contractor's payment history

@@ -1387,9 +1387,31 @@ export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: R
             id: true,
             status: true,
             plan: true,
+            isActive: true,
+            currentPeriodStart: true,
             currentPeriodEnd: true,
+            monthlyPrice: true,
             stripeSubscriptionId: true,
           },
+        },
+        commissionPayments: {
+          where: {
+            status: { in: ['PENDING', 'OVERDUE'] }
+          },
+          select: {
+            id: true,
+            jobId: true,
+            commissionAmount: true,
+            totalAmount: true,
+            dueDate: true,
+            status: true,
+            job: {
+              select: {
+                title: true,
+              },
+            },
+          },
+          orderBy: { dueDate: 'asc' },
         },
         _count: {
           select: {
@@ -1403,10 +1425,35 @@ export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: R
     prisma.contractor.count({ where: whereClause }),
   ]);
 
+  // Transform contractors to include unpaid commission summary
+  const contractorsWithPayments = contractors.map((contractor: any) => {
+    const unpaidCommissions = contractor.commissionPayments?.map((cp: any) => ({
+      id: cp.id,
+      jobId: cp.jobId,
+      jobTitle: cp.job?.title,
+      commissionAmount: typeof cp.commissionAmount?.toNumber === 'function' ? cp.commissionAmount.toNumber() : Number(cp.commissionAmount),
+      totalAmount: typeof cp.totalAmount?.toNumber === 'function' ? cp.totalAmount.toNumber() : Number(cp.totalAmount),
+      dueDate: cp.dueDate,
+      status: cp.status,
+    })) || [];
+
+    const totalOutstandingAmount = unpaidCommissions.reduce(
+      (sum: number, cp: any) => sum + (cp.totalAmount || 0), 
+      0
+    );
+
+    return {
+      ...contractor,
+      unpaidCommissions,
+      totalOutstandingAmount,
+      commissionPayments: undefined, // Remove raw data
+    };
+  });
+
   res.status(200).json({
     status: 'success',
     data: {
-      contractors,
+      contractors: contractorsWithPayments,
       pagination: {
         page,
         limit,
