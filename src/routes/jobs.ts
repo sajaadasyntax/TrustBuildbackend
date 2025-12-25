@@ -1760,6 +1760,8 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       contractorName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod,
+      claimedWon: access.claimedWon || false,
+      claimedWonAt: access.claimedWonAt?.toISOString() || null,
       // Don't expose paidAmount to customers - they shouldn't know how much contractors paid
       // Include contractor details for customers
       ...(req.user?.role === 'CUSTOMER' && {
@@ -3129,17 +3131,42 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
 
   // Mark this contractor's JobAccess as having claimed won
   // This allows multiple contractors to claim - customer decides who actually won
-  await prisma.jobAccess.update({
-    where: {
-      jobId_contractorId: {
+  // Also create an application record to treat win claims as applications
+  await prisma.$transaction(async (tx) => {
+    // Update JobAccess
+    await tx.jobAccess.update({
+      where: {
+        jobId_contractorId: {
+          jobId: job.id,
+          contractorId: contractor.id,
+        },
+      },
+      data: {
+        claimedWon: true,
+        claimedWonAt: new Date(),
+      },
+    });
+
+    // Create application record if one doesn't exist (treat win claim as application)
+    const existingApplication = await tx.jobApplication.findFirst({
+      where: {
         jobId: job.id,
         contractorId: contractor.id,
       },
-    },
-    data: {
-      claimedWon: true,
-      claimedWonAt: new Date(),
-    },
+    });
+
+    if (!existingApplication) {
+      await tx.jobApplication.create({
+        data: {
+          jobId: job.id,
+          contractorId: contractor.id,
+          coverLetter: 'Contractor claims they won this job after discussing with customer.',
+          proposedRate: job.budget || 0, // Use job budget as proposed rate
+          timeline: 'As discussed with customer',
+          status: 'PENDING', // Application status - customer will accept when confirming winner
+        },
+      });
+    }
   });
 
   // Send notification to customer
