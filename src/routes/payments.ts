@@ -1404,4 +1404,175 @@ router.get('/commissions', getCommissionPayments);
 router.post('/pay-commission', payCommission);
 router.post('/create-commission-payment-intent', createCommissionPaymentIntent);
 
+// @desc    Create Stripe payment intent for manual invoice payment
+// @route   POST /api/payments/create-manual-invoice-payment-intent
+// @access  Private (Contractor only)
+export const createManualInvoicePaymentIntent = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { manualInvoiceId } = req.body;
+  const userId = req.user!.id;
+
+  if (!manualInvoiceId) {
+    return next(new AppError('Manual invoice ID is required', 400));
+  }
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    include: { user: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get manual invoice
+  const manualInvoice = await prisma.manualInvoice.findFirst({
+    where: {
+      id: manualInvoiceId,
+      contractorId: contractor.id,
+      status: { in: ['ISSUED', 'OVERDUE'] }, // Only allow payment for issued or overdue invoices
+    },
+  });
+
+  if (!manualInvoice) {
+    return next(new AppError('Manual invoice not found or not payable', 404));
+  }
+
+  // Create payment intent
+  try {
+    const stripe = getStripeInstance();
+    
+    // Total is stored in pence
+    const totalAmountPence = manualInvoice.total || 0;
+    
+    if (totalAmountPence <= 0) {
+      return next(new AppError('Invalid invoice amount', 400));
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: totalAmountPence, // Already in pence
+      currency: 'gbp',
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: 'never'
+      },
+      metadata: {
+        manualInvoiceId: manualInvoice.id,
+        contractorId: contractor.id,
+        type: 'manual_invoice_payment'
+      },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        clientSecret: paymentIntent.client_secret,
+        amount: totalAmountPence / 100, // Return amount in pounds
+        invoiceNumber: manualInvoice.number,
+      },
+    });
+  } catch (stripeError: any) {
+    console.error('❌ Stripe API Error:', stripeError.message);
+    return next(new AppError(`Stripe payment error: ${stripeError.message}`, 400));
+  }
+});
+
+// @desc    Pay manual invoice
+// @route   POST /api/payments/pay-manual-invoice
+// @access  Private (Contractor only)
+export const payManualInvoice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { manualInvoiceId, stripePaymentIntentId } = req.body;
+  const userId = req.user!.id;
+
+  if (!manualInvoiceId || !stripePaymentIntentId) {
+    return next(new AppError('Manual invoice ID and Stripe payment intent ID are required', 400));
+  }
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    include: { user: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get manual invoice
+  const manualInvoice = await prisma.manualInvoice.findFirst({
+    where: {
+      id: manualInvoiceId,
+      contractorId: contractor.id,
+      status: { in: ['ISSUED', 'OVERDUE'] },
+    },
+  });
+
+  if (!manualInvoice) {
+    return next(new AppError('Manual invoice not found or already paid', 404));
+  }
+
+  // Verify payment with Stripe
+  const stripe = getStripeInstance();
+  const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+  
+  if (paymentIntent.status !== 'succeeded') {
+    return next(new AppError(`Payment not completed. Status: ${paymentIntent.status}`, 400));
+  }
+
+  // Verify payment amount matches invoice total
+  const invoiceTotalPence = manualInvoice.total || 0;
+  
+  if (paymentIntent.amount !== invoiceTotalPence) {
+    return next(new AppError(`Payment amount mismatch. Expected: £${invoiceTotalPence / 100}, Received: £${paymentIntent.amount / 100}`, 400));
+  }
+
+  // Update manual invoice as paid
+  const updatedInvoice = await prisma.manualInvoice.update({
+    where: { id: manualInvoiceId },
+    data: {
+      status: 'PAID',
+      paidAt: new Date(),
+    },
+  });
+
+  // Create payment record
+  await prisma.payment.create({
+    data: {
+      contractorId: contractor.id,
+      amount: invoiceTotalPence / 100, // Store in pounds
+      type: 'MANUAL_INVOICE',
+      status: 'COMPLETED',
+      stripePaymentId: stripePaymentIntentId,
+      description: `Manual invoice payment: ${manualInvoice.number}`,
+    },
+  });
+
+  // Send notification to contractor
+  try {
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: contractor.user.id,
+      title: 'Invoice Payment Successful',
+      message: `Your payment of £${(invoiceTotalPence / 100).toFixed(2)} for invoice ${manualInvoice.number} has been processed successfully.`,
+      type: 'INFO',
+      actionLink: '/dashboard/contractor/invoices',
+      actionText: 'View Invoices',
+    });
+  } catch (error) {
+    console.error('Failed to send payment notification:', error);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Manual invoice payment completed successfully',
+    data: {
+      invoice: updatedInvoice,
+    },
+  });
+});
+
+// Add manual invoice payment routes
+router.post('/create-manual-invoice-payment-intent', createManualInvoicePaymentIntent);
+router.post('/pay-manual-invoice', payManualInvoice);
+
 export default router; 

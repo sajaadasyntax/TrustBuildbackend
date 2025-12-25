@@ -2790,6 +2790,122 @@ export const getAllReviewsAdmin = catchAsync(async (req: AdminAuthRequest, res: 
   });
 });
 
+// Helper function to update contractor rating after review verification
+async function updateContractorRating(contractorId: string) {
+  // Get all verified reviews for the contractor
+  const reviews = await prisma.review.findMany({
+    where: {
+      contractorId,
+      isVerified: true,
+    },
+    select: {
+      rating: true,
+    },
+  });
+
+  // Calculate average rating
+  const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
+  const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+
+  // Count verified reviews
+  const verifiedReviews = await prisma.review.count({
+    where: {
+      contractorId,
+      isVerified: true,
+    },
+  });
+
+  // Update contractor
+  await prisma.contractor.update({
+    where: { id: contractorId },
+    data: {
+      averageRating,
+      reviewCount: reviews.length,
+      verifiedReviews,
+    },
+  });
+}
+
+// @desc    Verify/approve a review (Admin only)
+// @route   PATCH /api/admin/reviews/:id/verify
+// @access  Private/Admin
+export const verifyReviewAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+
+  // Get review
+  const review = await prisma.review.findUnique({
+    where: { id },
+  });
+
+  if (!review) {
+    return next(new AppError('Review not found', 404));
+  }
+
+  // Update review to verified
+  const updatedReview = await prisma.review.update({
+    where: { id },
+    data: {
+      isVerified: true,
+    },
+    include: {
+      customer: { include: { user: true } },
+      contractor: { include: { user: true } },
+      job: { select: { title: true } },
+    },
+  });
+
+  // Update contractor rating and verified reviews count
+  await updateContractorRating(review.contractorId);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      review: updatedReview,
+    },
+  });
+});
+
+// @desc    Reject/unverify a review (Admin only)
+// @route   PATCH /api/admin/reviews/:id/reject
+// @access  Private/Admin
+export const rejectReviewAdmin = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  // Get review
+  const review = await prisma.review.findUnique({
+    where: { id },
+  });
+
+  if (!review) {
+    return next(new AppError('Review not found', 404));
+  }
+
+  // Update review to rejected (unverified with flag reason)
+  const updatedReview = await prisma.review.update({
+    where: { id },
+    data: {
+      isVerified: false,
+      flagReason: reason || 'Rejected by admin',
+    },
+    include: {
+      customer: { include: { user: true } },
+      contractor: { include: { user: true } },
+      job: { select: { title: true } },
+    },
+  });
+
+  // Update contractor rating (in case review was previously verified)
+  await updateContractorRating(review.contractorId);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      review: updatedReview,
+    },
+  });
+});
+
 // @desc    Update job lead price
 // @route   PATCH /api/admin/jobs/:id/lead-price
 // @access  Private/Admin
@@ -3789,6 +3905,8 @@ router.put('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WR
 
 // Reviews Management
 router.get('/reviews', requirePermission(AdminPermission.REVIEWS_READ), getAllReviewsAdmin);
+router.patch('/reviews/:id/verify', requirePermission(AdminPermission.REVIEWS_WRITE), verifyReviewAdmin);
+router.patch('/reviews/:id/reject', requirePermission(AdminPermission.REVIEWS_WRITE), rejectReviewAdmin);
 
 // Settings Management
 router.get('/settings', requirePermission(AdminPermission.SETTINGS_READ), getAdminSettings);

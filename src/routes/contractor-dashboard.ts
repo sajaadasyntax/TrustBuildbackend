@@ -474,6 +474,20 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     take: limit,
   });
 
+  // Get manual invoices created by admin
+  const manualInvoices = await prisma.manualInvoice.findMany({
+    where: {
+      contractorId: contractor.id,
+      status: { not: 'DRAFT' }, // Only show issued invoices to contractors
+    },
+    include: {
+      items: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: limit,
+  });
+
   // Format invoices for consistent response
   const formattedRegularInvoices = regularInvoices.map((invoice: any) => ({
     id: invoice.id,
@@ -505,9 +519,31 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     updatedAt: invoice.updatedAt,
   }));
 
+  // Format manual invoices (amounts are in pence, convert to pounds)
+  const formattedManualInvoices = manualInvoices.map((invoice: any) => ({
+    id: invoice.id,
+    invoiceNumber: invoice.number,
+    type: 'manual',
+    description: invoice.reason || invoice.notes || 'Admin Invoice',
+    amount: (invoice.subtotal || 0) / 100,
+    vatAmount: (invoice.tax || 0) / 100,
+    totalAmount: (invoice.total || 0) / 100,
+    status: invoice.status,
+    dueDate: invoice.dueDate,
+    paidAt: invoice.paidAt,
+    issuedAt: invoice.issuedAt,
+    items: invoice.items?.map((item: any) => ({
+      description: item.description,
+      amount: item.amount / 100,
+      quantity: item.quantity,
+    })),
+    createdAt: invoice.createdAt,
+    updatedAt: invoice.updatedAt,
+  }));
+
   // Combine and sort all invoices by date
-  const allInvoices = [...formattedRegularInvoices, ...formattedCommissionInvoices];
-  allInvoices.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const allInvoices = [...formattedRegularInvoices, ...formattedCommissionInvoices, ...formattedManualInvoices];
+  allInvoices.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Count totals for pagination
   const totalRegularInvoices = await prisma.invoice.count({
@@ -523,8 +559,15 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
       },
     },
   });
+
+  const totalManualInvoices = await prisma.manualInvoice.count({
+    where: {
+      contractorId: contractor.id,
+      status: { not: 'DRAFT' },
+    },
+  });
   
-  const total = totalRegularInvoices + totalCommissionInvoices;
+  const total = totalRegularInvoices + totalCommissionInvoices + totalManualInvoices;
 
   res.status(200).json({
     status: 'success',
