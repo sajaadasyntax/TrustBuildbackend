@@ -73,6 +73,7 @@ enum PaymentType {
   JOB_PAYMENT
   COMMISSION
   REFUND
+  MANUAL_INVOICE
 }
 
 enum SubscriptionPlan {

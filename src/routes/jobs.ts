@@ -261,6 +261,7 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
           user: {
             id: job.customer.user.id,
             name: job.customer.user.name,
+            email: job.customer.user.email,
             createdAt: job.customer.user.createdAt,
           },
           // Remove sensitive customer data
