@@ -175,7 +175,7 @@ router.get(
 router.delete(
   '/logs',
   protectAdmin,
-  requirePermission(AdminPermission.MANAGE_SYSTEM),
+  requirePermission(AdminPermission.SECURITY_LOGS_WRITE),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const {
       level,
