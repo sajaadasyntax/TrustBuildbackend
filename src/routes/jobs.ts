@@ -179,6 +179,7 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
             select: {
               id: true,
               name: true,
+              email: true,
               createdAt: true,
             },
           },
