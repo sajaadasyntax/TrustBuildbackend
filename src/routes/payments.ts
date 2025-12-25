@@ -440,13 +440,32 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       
 
     } else if (paymentMethod === 'STRIPE_SUBSCRIBER') {
-      // Subscriber paying lead price (no credit deduction, no commission)
+      // Subscriber paying lead price via Stripe (no credit deduction, no commission)
+      // IMPORTANT: This payment method requires actual Stripe payment processing
+      
+      if (!stripePaymentIntentId) {
+        throw new AppError('Stripe payment intent ID is required for lead price payment', 400);
+      }
 
-      // Calculate 20% VAT on top of lead price FIRST (before creating payment record)
+      // Verify payment with Stripe
+      const stripe = getStripeInstance();
+      const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+      
+      if (paymentIntent.status !== 'succeeded') {
+        throw new AppError('Payment not completed', 400);
+      }
+
+      // Calculate 20% VAT on top of lead price
       const vatRate = 0.20; // 20% VAT
       const baseAmount = leadPrice; // Lead price is the base amount
       const vatAmount = baseAmount * vatRate; // VAT is 20% added on top
       const totalAmount = baseAmount + vatAmount; // Total = base + VAT
+
+      // Verify amount matches (with tolerance for rounding)
+      const expectedAmount = Math.round(totalAmount * 100);
+      if (Math.abs(paymentIntent.amount - expectedAmount) > 1) { // Allow 1 cent tolerance
+        throw new AppError(`Payment amount mismatch: expected ${expectedAmount}, got ${paymentIntent.amount}`, 400);
+      }
       
       // Create payment record with total amount INCLUDING VAT
       payment = await tx.payment.create({
@@ -455,7 +474,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           amount: totalAmount, // Store total amount including VAT (consistent with STRIPE path)
           type: 'LEAD_ACCESS',
           status: 'COMPLETED',
-          description: `Job lead access purchased (subscriber rate) for: ${job.title}`,
+          stripePaymentId: stripePaymentIntentId,
+          description: `Job lead access purchased (subscriber rate, no commission) for: ${job.title}`,
         },
       });
 
@@ -465,7 +485,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           amount: baseAmount, // Base amount (lead price)
           vatAmount: vatAmount, // 20% VAT on top
           totalAmount: totalAmount, // Total including VAT
-          description: `Job Lead Access (Subscriber) - ${job.title}`,
+          description: `Job Lead Access (Subscriber - No Commission) - ${job.title}`,
           invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
           recipientName: contractor.businessName || 'Contractor',
           recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
