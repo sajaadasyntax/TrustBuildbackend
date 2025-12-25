@@ -442,29 +442,28 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     } else if (paymentMethod === 'STRIPE_SUBSCRIBER') {
       // Subscriber paying lead price (no credit deduction, no commission)
 
+      // Calculate 20% VAT on top of lead price FIRST (before creating payment record)
+      const vatRate = 0.20; // 20% VAT
+      const baseAmount = leadPrice; // Lead price is the base amount
+      const vatAmount = baseAmount * vatRate; // VAT is 20% added on top
+      const totalAmount = baseAmount + vatAmount; // Total = base + VAT
       
-      // Create payment record with lead price
+      // Create payment record with total amount INCLUDING VAT
       payment = await tx.payment.create({
         data: {
           contractorId: contractor.id,
-          amount: leadPrice,
+          amount: totalAmount, // Store total amount including VAT (consistent with STRIPE path)
           type: 'LEAD_ACCESS',
           status: 'COMPLETED',
           description: `Job lead access purchased (subscriber rate) for: ${job.title}`,
         },
       });
 
-      // Calculate 20% VAT on top of lead price
-      const vatRate = 0.20; // 20% VAT
-      const baseAmount = leadPrice / (1 + vatRate); // Calculate base amount excluding VAT
-      const vatAmount = leadPrice - baseAmount; // Calculate VAT amount
-      const totalAmount = leadPrice; // Total includes VAT
-
       // Create invoice with VAT
       invoice = await tx.invoice.create({
         data: {
-          amount: baseAmount, // Base amount excluding VAT
-          vatAmount: vatAmount, // 20% VAT
+          amount: baseAmount, // Base amount (lead price)
+          vatAmount: vatAmount, // 20% VAT on top
           totalAmount: totalAmount, // Total including VAT
           description: `Job Lead Access (Subscriber) - ${job.title}`,
           invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
@@ -537,8 +536,24 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         event: 'contractor_bought_access',
       },
     });
+    
+    // Notify contractor that they have successfully purchased job access
+    await createNotification({
+      userId: contractor.user.id,
+      title: 'Job Access Purchased Successfully! 🎉',
+      message: `You now have access to "${job.title}". Customer contact details are available - contact them now to discuss the job and win the work!`,
+      type: 'INFO',
+      actionLink: `/dashboard/contractor/jobs/${jobId}`,
+      actionText: 'View Customer Details',
+      metadata: {
+        jobId,
+        event: 'job_access_purchased',
+        customerPhone: job.customer.phone,
+        customerName: job.customer.user?.name,
+      },
+    });
   } catch (error) {
-    console.error('Failed to send customer notification for job access:', error);
+    console.error('Failed to send notification for job access:', error);
     // Don't fail the transaction if notification fails
   }
   

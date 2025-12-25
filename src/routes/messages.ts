@@ -382,7 +382,7 @@ export const getAdmins = catchAsync(async (req: AuthenticatedRequest, res: Respo
     throw new AppError('Only customers and contractors can access this endpoint', 403);
   }
 
-  // Get all active admins
+  // Get all active admins - hide email from customers/contractors
   const admins = await prisma.user.findMany({
     where: {
       role: { in: ['ADMIN', 'SUPER_ADMIN'] },
@@ -391,15 +391,21 @@ export const getAdmins = catchAsync(async (req: AuthenticatedRequest, res: Respo
     select: {
       id: true,
       name: true,
-      email: true,
       role: true,
+      // Note: email is intentionally excluded for privacy
     },
     orderBy: { name: 'asc' },
   });
 
+  // Add display role labels without exposing email
+  const adminsWithLabels = admins.map(admin => ({
+    ...admin,
+    displayRole: admin.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin',
+  }));
+
   res.status(200).json({
     status: 'success',
-    data: { admins },
+    data: { admins: adminsWithLabels },
   });
 });
 

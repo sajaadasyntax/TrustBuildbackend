@@ -3067,6 +3067,7 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
 // @desc    Contractor claims "I won the job" - sends notification but doesn't close job
 // @route   POST /api/jobs/:id/claim-won
 // @access  Private (Contractor only)
+// NOTE: Multiple contractors can claim - customer confirms the actual winner
 export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const contractor = await prisma.contractor.findUnique({
     where: { userId: req.user!.id },
@@ -3101,14 +3102,15 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
     return next(new AppError('You must purchase job access before claiming you won', 403));
   }
 
-  // Can only claim if job is POSTED
+  // Can only claim if job is POSTED (not already assigned by customer)
   if (job.status !== 'POSTED') {
     return next(new AppError('Job is not available for claiming', 400));
   }
 
-  // Check if another contractor already claimed
-  if (job.wonByContractorId && job.wonByContractorId !== contractor.id) {
-    return next(new AppError('Another contractor has already claimed this job', 400));
+  // Check if this contractor already claimed
+  const existingAccess = job.jobAccess[0];
+  if (existingAccess.claimedWon) {
+    return next(new AppError('You have already claimed this job. Please wait for customer confirmation.', 400));
   }
 
   // Get contractor with user info for notification
@@ -3123,14 +3125,18 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
     },
   });
 
-  // Store the claim by setting wonByContractorId but keeping status as POSTED
-  // This allows customer to see who claimed while keeping job open
-  await prisma.job.update({
-    where: { id: req.params.id },
+  // Mark this contractor's JobAccess as having claimed won
+  // This allows multiple contractors to claim - customer decides who actually won
+  await prisma.jobAccess.update({
+    where: {
+      jobId_contractorId: {
+        jobId: job.id,
+        contractorId: contractor.id,
+      },
+    },
     data: {
-      wonByContractorId: contractor.id,
-      // Don't set wonAt yet - that happens when customer confirms
-      // Status remains POSTED so other contractors can still apply
+      claimedWon: true,
+      claimedWonAt: new Date(),
     },
   });
 
@@ -3139,7 +3145,7 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
   await createNotification({
     userId: job.customer.userId,
     title: 'Contractor Says They Won Your Job! ✅',
-    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} says they&apos;ve agreed to do your job "${job.title}". Please confirm if this is correct so they can start work.`,
+    message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} says they've agreed to do your job "${job.title}". Please confirm if this is correct so they can start work.`,
     type: 'CONTRACTOR_SELECTED',
     actionLink: `/dashboard/client/jobs/${job.id}`,
     actionText: 'Review & Confirm',
@@ -3151,6 +3157,20 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
     },
   });
 
+  // Notify contractor that their claim was submitted
+  await createNotification({
+    userId: req.user!.id,
+    title: 'Job Win Claim Submitted 📋',
+    message: `Your claim for "${job.title}" has been submitted. The customer will review and confirm the winner.`,
+    type: 'INFO',
+    actionLink: `/dashboard/contractor/jobs/${job.id}`,
+    actionText: 'View Job',
+    metadata: {
+      jobId: job.id,
+      event: 'claim_submitted',
+    },
+  });
+
   res.status(200).json({
     status: 'success',
     message: 'Customer has been notified. They will confirm if you won the job.',
@@ -3159,6 +3179,7 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
         id: job.id,
         title: job.title,
         status: job.status, // Still POSTED - job remains open
+        claimedWon: true,
       },
     },
   });
@@ -3167,8 +3188,10 @@ export const claimWon = catchAsync(async (req: AuthenticatedRequest, res: Respon
 // @desc    Customer confirms contractor winner - moves job to IN_PROGRESS
 // @route   PATCH /api/jobs/:id/confirm-winner
 // @access  Private (Customer only)
+// Body: { contractorId?: string } - optional, customer selects from contractors who claimed
 export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const userId = req.user!.id;
+  const { contractorId: selectedContractorId } = req.body;
 
   const job = await prisma.job.findUnique({
     where: { id: req.params.id },
@@ -3204,18 +3227,35 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Job is not in a state to confirm winner', 400));
   }
 
-  // Find the contractor who claimed they won
-  // The wonByContractorId should be set when contractor claims
-  const winningContractorId = job.wonByContractorId;
+  // Find contractors who have claimed they won
+  const claimedContractors = job.jobAccess?.filter((access: any) => access.claimedWon);
+  
+  if (!claimedContractors || claimedContractors.length === 0) {
+    return next(new AppError('No contractor has claimed this job yet', 400));
+  }
 
-  if (!winningContractorId) {
-    return next(new AppError('No contractor has claimed this job', 400));
+  // If customer provided a contractorId, use that; otherwise use the only one who claimed
+  let winningContractorId: string;
+  
+  if (selectedContractorId) {
+    // Verify the selected contractor has claimed
+    const selectedClaim = claimedContractors.find((c: any) => c.contractorId === selectedContractorId);
+    if (!selectedClaim) {
+      return next(new AppError('The selected contractor has not claimed this job', 400));
+    }
+    winningContractorId = selectedContractorId;
+  } else if (claimedContractors.length === 1) {
+    // Only one contractor claimed, use them
+    winningContractorId = claimedContractors[0].contractorId;
+  } else {
+    // Multiple contractors claimed, customer must select one
+    return next(new AppError('Multiple contractors have claimed this job. Please select which contractor won.', 400));
   }
 
   // Verify the contractor has purchased access
   const hasAccess = job.jobAccess?.some((access: any) => access.contractorId === winningContractorId);
   if (!hasAccess) {
-    return next(new AppError('The claimed contractor has not purchased access to this job', 400));
+    return next(new AppError('The selected contractor has not purchased access to this job', 400));
   }
 
   // Update job: set winner, change status to IN_PROGRESS, set wonAt timestamp

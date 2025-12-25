@@ -391,6 +391,10 @@ model JobAccess {
   creditUsed    Boolean      @default(false)
   usedFreePoint Boolean      @default(false) // Track if free trial point was used
   accessedAt    DateTime     @default(now())
+  
+  // Claim tracking - allows multiple contractors to claim they won
+  claimedWon    Boolean      @default(false)
+  claimedWonAt  DateTime?
 
   // Relationships
   job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
