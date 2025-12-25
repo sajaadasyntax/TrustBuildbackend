@@ -426,14 +426,20 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get regular invoices
+  // Get regular invoices (invoices linked to payments for this contractor)
   const regularInvoices = await prisma.invoice.findMany({
     where: {
       payments: {
+        some: {
+          contractorId: contractor.id,
+        },
       },
     },
     include: {
       payments: {
+        where: {
+          contractorId: contractor.id,
+        },
         select: {
           id: true,
           status: true,
@@ -443,14 +449,13 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
       },
     },
     orderBy: { createdAt: 'desc' },
-    skip,
-    take: limit,
   });
 
-  // Get commission invoices
+  // Get commission invoices (linked to commission payments for this contractor)
   const commissionInvoices = await prisma.commissionInvoice.findMany({
     where: {
       commissionPayment: {
+        contractorId: contractor.id,
       },
     },
     include: {
@@ -470,11 +475,9 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
       },
     },
     orderBy: { createdAt: 'desc' },
-    skip,
-    take: limit,
   });
 
-  // Get manual invoices created by admin
+  // Get manual invoices created by admin for this contractor
   const manualInvoices = await prisma.manualInvoice.findMany({
     where: {
       contractorId: contractor.id,
@@ -484,8 +487,6 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
       items: true,
     },
     orderBy: { createdAt: 'desc' },
-    skip,
-    take: limit,
   });
 
   // Format invoices for consistent response
@@ -539,16 +540,21 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     })),
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
+    // Add flag to indicate if manual invoice is payable by contractor
+    isPayable: invoice.status === 'ISSUED' || invoice.status === 'OVERDUE',
   }));
 
   // Combine and sort all invoices by date
   const allInvoices = [...formattedRegularInvoices, ...formattedCommissionInvoices, ...formattedManualInvoices];
   allInvoices.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  // Count totals for pagination
+  // Count totals for pagination (using the same filters as queries)
   const totalRegularInvoices = await prisma.invoice.count({
     where: {
       payments: {
+        some: {
+          contractorId: contractor.id,
+        },
       },
     },
   });
@@ -556,6 +562,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   const totalCommissionInvoices = await prisma.commissionInvoice.count({
     where: {
       commissionPayment: {
+        contractorId: contractor.id,
       },
     },
   });
@@ -569,10 +576,13 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   
   const total = totalRegularInvoices + totalCommissionInvoices + totalManualInvoices;
 
+  // Apply pagination after combining and sorting
+  const paginatedInvoices = allInvoices.slice(skip, skip + limit);
+
   res.status(200).json({
     status: 'success',
     data: {
-      invoices: allInvoices,
+      invoices: paginatedInvoices,
       pagination: {
         page,
         limit,
