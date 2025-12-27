@@ -1638,6 +1638,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
   let leadPrice = 0;
   let hasSubscription = false;
   let subscriptionPlan = null;
+  let contractorId: string | null = null;
   
   if (req.user && req.user.role === 'CONTRACTOR') {
     const contractor = await prisma.contractor.findUnique({
@@ -1655,6 +1656,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     });
 
     if (contractor) {
+      contractorId = contractor.id;
       const existingAccess = await prisma.jobAccess.findUnique({
         where: {
           jobId_contractorId: {
@@ -1675,9 +1677,11 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         subscriptionPlan = subscriptionStatus.subscription.plan;
       }
       
-      // Access is granted ONLY if the contractor has purchased access through a JobAccess record
+      // Access is granted if:
+      // 1. Contractor has purchased access through a JobAccess record, OR
+      // 2. Contractor has won the job (wonByContractorId matches)
       // Subscription does not automatically grant access - contractor must still use a lead access point
-      hasAccess = !!existingAccess;
+      hasAccess = !!existingAccess || job.wonByContractorId === contractor.id;
 
       // Calculate lead price
       if (job.service) {
@@ -1707,8 +1711,9 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     hasAccess = true;
   }
 
-  // For contractors without access, return heavily filtered data
-  if (req.user?.role === 'CONTRACTOR' && !hasAccess) {
+  // For contractors without access (and who haven't won), return heavily filtered data
+  // Contractors who won should always have access
+  if (req.user?.role === 'CONTRACTOR' && !hasAccess && job.wonByContractorId !== contractorId) {
     const filteredJob = {
       id: job.id,
       title: 'Job Available',
