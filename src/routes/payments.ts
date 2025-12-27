@@ -1426,11 +1426,12 @@ export const createManualInvoicePaymentIntent = catchAsync(async (req: Authentic
   }
 
   // Get manual invoice
+  // Allow payment for DRAFT, ISSUED, and OVERDUE invoices
   const manualInvoice = await prisma.manualInvoice.findFirst({
     where: {
       id: manualInvoiceId,
       contractorId: contractor.id,
-      status: { in: ['ISSUED', 'OVERDUE'] }, // Only allow payment for issued or overdue invoices
+      status: { in: ['DRAFT', 'ISSUED', 'OVERDUE'] }, // Allow payment for draft, issued, or overdue invoices
     },
   });
 
@@ -1499,11 +1500,12 @@ export const payManualInvoice = catchAsync(async (req: AuthenticatedRequest, res
   }
 
   // Get manual invoice
+  // Allow payment for DRAFT, ISSUED, and OVERDUE invoices
   const manualInvoice = await prisma.manualInvoice.findFirst({
     where: {
       id: manualInvoiceId,
       contractorId: contractor.id,
-      status: { in: ['ISSUED', 'OVERDUE'] },
+      status: { in: ['DRAFT', 'ISSUED', 'OVERDUE'] }, // Allow payment for draft, issued, or overdue invoices
     },
   });
 
@@ -1527,12 +1529,20 @@ export const payManualInvoice = catchAsync(async (req: AuthenticatedRequest, res
   }
 
   // Update manual invoice as paid
+  // If it was DRAFT, also set issuedAt when paid
+  const updateData: any = {
+    status: 'PAID',
+    paidAt: new Date(),
+  };
+  
+  // If invoice was DRAFT and doesn't have issuedAt, set it now
+  if (manualInvoice.status === 'DRAFT' && !manualInvoice.issuedAt) {
+    updateData.issuedAt = new Date();
+  }
+  
   const updatedInvoice = await prisma.manualInvoice.update({
     where: { id: manualInvoiceId },
-    data: {
-      status: 'PAID',
-      paidAt: new Date(),
-    },
+    data: updateData,
   });
 
   // Create payment record

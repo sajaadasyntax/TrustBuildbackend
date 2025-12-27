@@ -478,10 +478,11 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   });
 
   // Get manual invoices created by admin for this contractor
+  // Show all statuses except CANCELED (contractors should see DRAFT, ISSUED, OVERDUE, and PAID)
   const manualInvoices = await prisma.manualInvoice.findMany({
     where: {
       contractorId: contractor.id,
-      status: { not: 'DRAFT' }, // Only show issued invoices to contractors
+      status: { not: 'CANCELED' }, // Show all invoices except canceled ones
     },
     include: {
       items: true,
@@ -541,7 +542,8 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
     // Add flag to indicate if manual invoice is payable by contractor
-    isPayable: invoice.status === 'ISSUED' || invoice.status === 'OVERDUE',
+    // DRAFT invoices can also be paid (they're just not issued yet, but contractor can still pay)
+    isPayable: invoice.status === 'DRAFT' || invoice.status === 'ISSUED' || invoice.status === 'OVERDUE',
   }));
 
   // Combine and sort all invoices by date
@@ -570,7 +572,7 @@ export const getInvoices = catchAsync(async (req: AuthenticatedRequest, res: Res
   const totalManualInvoices = await prisma.manualInvoice.count({
     where: {
       contractorId: contractor.id,
-      status: { not: 'DRAFT' },
+      status: { not: 'CANCELED' }, // Count all invoices except canceled ones
     },
   });
   
