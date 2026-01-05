@@ -451,6 +451,8 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
     return next(new AppError('Contractor profile not found', 404));
   }
 
+  console.log(`[downloadInvoice] Request for invoice ${id} by user ${userId}`);
+
   // Try to find regular invoice first
   let invoice = await prisma.invoice.findFirst({
     where: {
@@ -499,7 +501,14 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
   }
 
   if (!invoice && !manualInvoice) {
+    console.log(`[downloadInvoice] Invoice ${id} not found (regular or manual) for contractor ${contractor.id}`);
     return next(new AppError('Invoice not found or you do not have permission to view it', 404));
+  }
+
+  if (manualInvoice) {
+    console.log(`[downloadInvoice] Found manual invoice ${manualInvoice.number}, generating PDF...`);
+  } else if (invoice) {
+    console.log(`[downloadInvoice] Found regular invoice ${invoice.invoiceNumber}, generating PDF...`);
   }
 
   // Handle manual invoice
@@ -577,6 +586,8 @@ export const downloadManualInvoice = catchAsync(async (req: AuthenticatedRequest
   const { id } = req.params;
   const userId = req.user!.id;
 
+  console.log(`[downloadManualInvoice] Request for manual invoice ${id} by user ${userId}`);
+
   // Get contractor profile
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
@@ -584,8 +595,11 @@ export const downloadManualInvoice = catchAsync(async (req: AuthenticatedRequest
   });
 
   if (!contractor) {
+    console.log(`[downloadManualInvoice] Contractor profile not found for user ${userId}`);
     return next(new AppError('Contractor profile not found', 404));
   }
+
+  console.log(`[downloadManualInvoice] Looking for manual invoice ${id} for contractor ${contractor.id}`);
 
   // Get manual invoice
   const manualInvoice = await prisma.manualInvoice.findFirst({
@@ -609,8 +623,11 @@ export const downloadManualInvoice = catchAsync(async (req: AuthenticatedRequest
   });
 
   if (!manualInvoice) {
+    console.log(`[downloadManualInvoice] Manual invoice ${id} not found for contractor ${contractor.id}`);
     return next(new AppError('Manual invoice not found or you do not have permission to view it', 404));
   }
+
+  console.log(`[downloadManualInvoice] Found manual invoice ${manualInvoice.number}, generating PDF...`);
 
   try {
     // Generate PDF on the fly
