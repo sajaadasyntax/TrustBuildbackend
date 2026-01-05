@@ -505,14 +505,9 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
     return next(new AppError('Invoice not found or you do not have permission to view it', 404));
   }
 
+  // Handle manual invoice first
   if (manualInvoice) {
     console.log(`[downloadInvoice] Found manual invoice ${manualInvoice.number}, generating PDF...`);
-  } else if (invoice) {
-    console.log(`[downloadInvoice] Found regular invoice ${invoice.invoiceNumber}, generating PDF...`);
-  }
-
-  // Handle manual invoice
-  if (manualInvoice) {
     try {
       const invoiceData = {
         invoiceNumber: manualInvoice.number,
@@ -547,6 +542,13 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
       return next(new AppError('Failed to generate invoice PDF', 500));
     }
   }
+
+  // Handle regular invoice (invoice is guaranteed to be non-null here)
+  if (!invoice) {
+    return next(new AppError('Invoice not found', 404));
+  }
+
+  console.log(`[downloadInvoice] Found regular invoice ${invoice.invoiceNumber}, generating PDF...`);
 
   try {
     // Generate PDF on the fly
