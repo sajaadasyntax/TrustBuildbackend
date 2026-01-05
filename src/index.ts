@@ -58,7 +58,22 @@ const PORT = process.env.PORT || 3000;
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
-// Rate limiting
+// Rate limiting - More lenient for auth routes (login, register, etc.)
+const authLimiter = rateLimit({
+  windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS || '20', 10), // limit each IP to 20 auth requests per windowMs
+  message: {
+    error: 'Too many authentication attempts from this IP, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting in development mode for easier debugging
+    return process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true';
+  },
+});
+
+// General rate limiting for all other routes (excluding auth routes)
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10), // limit each IP to 100 requests per windowMs
@@ -67,9 +82,21 @@ const limiter = rateLimit({
   },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for auth routes (they have their own limiter)
+    if (req.path.startsWith('/api/auth') || req.path.startsWith('/api/admin-auth')) {
+      return true;
+    }
+    // Skip rate limiting in development mode if DISABLE_RATE_LIMIT is set
+    return process.env.NODE_ENV === 'development' && process.env.DISABLE_RATE_LIMIT === 'true';
+  },
 });
 
-// Apply rate limiting to all requests
+// Apply lenient rate limiting to auth routes first
+app.use('/api/auth', authLimiter);
+app.use('/api/admin-auth', authLimiter);
+
+// Apply general rate limiting to all other requests
 app.use(limiter);
 
 // Security middleware with CORS-friendly settings
