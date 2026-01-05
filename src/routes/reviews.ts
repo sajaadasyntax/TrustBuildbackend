@@ -24,9 +24,16 @@ export const getContractorReviews = catchAsync(async (req: AuthenticatedRequest,
     return next(new AppError('Contractor not found', 404));
   }
 
-  // Get reviews
+  // Get reviews - only show verified external reviews publicly
+  // Internal reviews (isExternal=false) are always verified, external reviews need admin approval
   const reviews = await prisma.review.findMany({
-    where: { contractorId },
+    where: {
+      contractorId,
+      OR: [
+        { isExternal: false }, // Internal reviews are always verified
+        { isExternal: true, isVerified: true }, // External reviews must be verified
+      ],
+    },
     include: {
       job: {
         select: {
@@ -50,7 +57,13 @@ export const getContractorReviews = catchAsync(async (req: AuthenticatedRequest,
   });
 
   const total = await prisma.review.count({
-    where: { contractorId },
+    where: {
+      contractorId,
+      OR: [
+        { isExternal: false },
+        { isExternal: true, isVerified: true },
+      ],
+    },
   });
 
   res.status(200).json({
@@ -223,7 +236,7 @@ export const addExternalReview = catchAsync(async (req: AuthenticatedRequest, re
       contractorId: contractor.id,
       rating,
       comment,
-      isVerified: false, // External reviews are not verified by default
+      isVerified: false, // External reviews require admin approval before being published
       isExternal: true,
       customerName,
       customerEmail,
@@ -232,8 +245,8 @@ export const addExternalReview = catchAsync(async (req: AuthenticatedRequest, re
     },
   });
 
-  // Update contractor rating
-  await updateContractorRating(contractor.id);
+  // Don't update contractor rating for unverified external reviews
+  // Rating will be updated when admin verifies the review
 
   res.status(201).json({
     status: 'success',
