@@ -451,8 +451,8 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get invoice with payment details
-  const invoice = await prisma.invoice.findFirst({
+  // Try to find regular invoice first
+  let invoice = await prisma.invoice.findFirst({
     where: {
       id,
       payments: {
@@ -474,8 +474,69 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
     }
   });
 
+  // If not found, try manual invoice
+  let manualInvoice = null;
   if (!invoice) {
+    manualInvoice = await prisma.manualInvoice.findFirst({
+      where: {
+        id,
+        contractorId: contractor.id,
+      },
+      include: {
+        contractor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        items: true,
+      },
+    });
+  }
+
+  if (!invoice && !manualInvoice) {
     return next(new AppError('Invoice not found or you do not have permission to view it', 404));
+  }
+
+  // Handle manual invoice
+  if (manualInvoice) {
+    try {
+      const invoiceData = {
+        invoiceNumber: manualInvoice.number,
+        recipientName: manualInvoice.contractor.businessName || manualInvoice.contractor.user.name,
+        recipientEmail: manualInvoice.contractor.user.email,
+        recipientAddress: manualInvoice.contractor.businessAddress || undefined,
+        description: manualInvoice.reason || manualInvoice.notes || 'Manual Invoice',
+        amount: (manualInvoice.subtotal || 0) / 100,
+        vatAmount: (manualInvoice.tax || 0) / 100,
+        totalAmount: (manualInvoice.total || 0) / 100,
+        issuedAt: manualInvoice.issuedAt || manualInvoice.createdAt,
+        dueAt: manualInvoice.dueDate || undefined,
+        paidAt: manualInvoice.paidAt || undefined,
+        paymentType: 'Manual Invoice',
+        vatRate: 20,
+        items: manualInvoice.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          amount: item.amount / 100,
+        })),
+      };
+
+      const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice-${manualInvoice.number}.pdf"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      
+      return res.send(pdfBuffer);
+    } catch (error) {
+      console.error('Failed to generate manual invoice PDF:', error);
+      return next(new AppError('Failed to generate invoice PDF', 500));
+    }
   }
 
   try {
@@ -509,12 +570,93 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
   }
 });
 
+// @desc    Download manual invoice PDF
+// @route   GET /api/invoices/manual/:id/download
+// @access  Private (Contractor only)
+export const downloadManualInvoice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  // Get contractor profile
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  // Get manual invoice
+  const manualInvoice = await prisma.manualInvoice.findFirst({
+    where: {
+      id,
+      contractorId: contractor.id,
+    },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      items: true,
+    },
+  });
+
+  if (!manualInvoice) {
+    return next(new AppError('Manual invoice not found or you do not have permission to view it', 404));
+  }
+
+  try {
+    // Generate PDF on the fly
+    const invoiceData = {
+      invoiceNumber: manualInvoice.number,
+      recipientName: manualInvoice.contractor.businessName || manualInvoice.contractor.user.name,
+      recipientEmail: manualInvoice.contractor.user.email,
+      recipientAddress: manualInvoice.contractor.businessAddress || undefined,
+      description: manualInvoice.reason || manualInvoice.notes || 'Manual Invoice',
+      amount: (manualInvoice.subtotal || 0) / 100,
+      vatAmount: (manualInvoice.tax || 0) / 100,
+      totalAmount: (manualInvoice.total || 0) / 100,
+      issuedAt: manualInvoice.issuedAt || manualInvoice.createdAt,
+      dueAt: manualInvoice.dueDate || undefined,
+      paidAt: manualInvoice.paidAt || undefined,
+      paymentType: 'Manual Invoice',
+      vatRate: 20,
+      items: manualInvoice.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        amount: item.amount / 100,
+      })),
+    };
+
+    const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${manualInvoice.number}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send the PDF buffer
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Failed to generate manual invoice PDF:', error);
+    return next(new AppError('Failed to generate invoice PDF', 500));
+  }
+});
+
 // Routes
 router.use(protect); // All routes require authentication
 
 router.get('/', getInvoices);
 router.get('/my', getMyInvoices); // Add the /my endpoint with the new handler
 router.get('/stats', getInvoiceStats);
+router.get('/manual/:id/download', downloadManualInvoice); // Manual invoice download route
 router.get('/:id/download', downloadInvoice);
 router.get('/:id', getInvoice);
 router.post('/:id/send', sendInvoiceEmail);
