@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { processCommissionForJob } from '../services/commissionService';
+import { getMaxContractorsPerJob } from '../services/settingsService';
 
 const router = Router();
 
@@ -174,7 +175,12 @@ export const getJob = catchAsync(async (req: AuthenticatedRequest, res: Response
     where: { id: req.params.id },
     include: {
       customer: {
-        include: {
+        select: {
+          id: true,
+          phone: true, // Include phone for contractors with access
+          address: true,
+          city: true,
+          postcode: true,
           user: {
             select: {
               id: true,
@@ -375,6 +381,9 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     finalServiceId = defaultService.id;
   }
 
+  // Get max contractors per job from global settings (default: 5)
+  const maxContractors = await getMaxContractorsPerJob();
+
   const job = await prisma.job.create({
     data: {
       customerId: customer.id,
@@ -389,7 +398,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       isUrgent: urgent || false,
       requiresQuote: false,
       status: 'POSTED', // Automatically post the job when created
-      maxContractorsPerJob: 10, // Allow up to 10 contractors to purchase access
+      maxContractorsPerJob: maxContractors, // Uses global setting (default: 5)
     },
     include: {
       customer: {
@@ -980,6 +989,84 @@ export const getMyApplications = catchAsync(async (req: AuthenticatedRequest, re
     status: 'success',
     data: {
       applications,
+    },
+  });
+});
+
+// @desc    Get all my jobs (contractor) - includes purchased access, won jobs, and applied jobs
+// @route   GET /api/jobs/my/all
+// @access  Private (Contractor only)
+export const getMyAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId: req.user!.id },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const status = req.query.status as string | undefined;
+
+  // Get jobs where contractor has purchased access
+  const jobAccesses = await prisma.jobAccess.findMany({
+    where: { contractorId: contractor.id },
+    include: {
+      job: {
+        include: {
+          service: { select: { name: true } },
+          customer: {
+            include: {
+              user: { select: { name: true, email: true } },
+            },
+          },
+          jobAccess: {
+            where: { contractorId: contractor.id },
+            select: {
+              id: true,
+              accessMethod: true,
+              paidAmount: true,
+              accessedAt: true,
+              claimedWon: true,
+              claimedWonAt: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Transform job accesses to jobs with access info
+  let jobs = jobAccesses.map(access => ({
+    ...access.job,
+    hasAccess: true,
+    accessMethod: access.accessMethod,
+    paidAmount: access.paidAmount,
+    accessedAt: access.accessedAt,
+    claimedWon: access.claimedWon,
+    claimedWonAt: access.claimedWonAt,
+    accessType: 'PURCHASED' as const,
+  }));
+
+  // Filter by status if provided
+  if (status) {
+    if (status === 'ACTIVE') {
+      // Active = POSTED, IN_PROGRESS, WON, AWAITING_FINAL_PRICE_CONFIRMATION
+      jobs = jobs.filter(job => ['POSTED', 'IN_PROGRESS', 'WON', 'AWAITING_FINAL_PRICE_CONFIRMATION'].includes(job.status));
+    } else if (status === 'COMPLETED') {
+      jobs = jobs.filter(job => job.status === 'COMPLETED');
+    } else {
+      jobs = jobs.filter(job => job.status === status);
+    }
+  }
+
+  // Sort by most recent first
+  jobs.sort((a, b) => new Date(b.accessedAt || b.createdAt).getTime() - new Date(a.accessedAt || a.createdAt).getTime());
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      jobs,
+      total: jobs.length,
     },
   });
 });
@@ -3995,11 +4082,91 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
   });
 });
 
+// @desc    Get jobs with rejected final prices (Admin only)
+// @route   GET /api/jobs/rejected-final-prices
+// @access  Private (Admin only)
+export const getJobsWithRejectedFinalPrice = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Check if user is admin
+  if (req.user!.role !== 'ADMIN' && req.user!.role !== 'SUPER_ADMIN') {
+    return next(new AppError('Not authorized to view admin data', 403));
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+
+  // Get jobs where final price was rejected (has rejection date)
+  const jobs = await prisma.job.findMany({
+    where: {
+      finalPriceRejectedAt: {
+        not: null,
+      },
+      // Only show jobs that are still in progress (not completed or cancelled)
+      status: {
+        in: ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION'],
+      },
+    },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { finalPriceRejectedAt: 'desc' }, // Most recent rejections first
+    skip,
+    take: limit,
+  });
+
+  const total = await prisma.job.count({
+    where: {
+      finalPriceRejectedAt: {
+        not: null,
+      },
+      status: {
+        in: ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION'],
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
+
 // Routes
 router.get('/', getAllJobs);
 router.get('/my/posted', protect, getMyPostedJobs);
 router.get('/my/applications', protect, getMyApplications);
+router.get('/my/all', protect, getMyAllJobs);
 router.get('/awaiting-final-price-confirmation', protect, getJobsAwaitingFinalPriceConfirmation);
+router.get('/rejected-final-prices', protect, getJobsWithRejectedFinalPrice);
 router.post('/', protect, createJob);
 router.get('/:id', getJobWithAccess);
 router.patch('/:id', protect, updateJob);

@@ -409,12 +409,78 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
     // ==================== Payment Intent Events ====================
     case 'payment_intent.succeeded': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
-
+      console.log(`💳 Payment intent succeeded: ${paymentIntent.id}, type: ${paymentIntent.metadata?.type}`);
       
       // Check what type of payment this is from metadata
       const paymentType = paymentIntent.metadata?.type;
       
-      if (paymentType === 'job_access_purchase') {
+      // Handle manual invoice payments
+      if (paymentType === 'manual_invoice_payment') {
+        const manualInvoiceId = paymentIntent.metadata?.manualInvoiceId;
+        const contractorId = paymentIntent.metadata?.contractorId;
+        
+        if (manualInvoiceId && contractorId) {
+          console.log(`Processing manual invoice payment: ${manualInvoiceId}`);
+          
+          // Check if invoice exists and isn't already paid
+          const manualInvoice = await prisma.manualInvoice.findFirst({
+            where: {
+              id: manualInvoiceId,
+              contractorId,
+              status: { not: 'PAID' },
+            },
+            include: {
+              contractor: { include: { user: true } },
+            },
+          });
+          
+          if (manualInvoice) {
+            // Update invoice as paid
+            await prisma.manualInvoice.update({
+              where: { id: manualInvoiceId },
+              data: {
+                status: 'PAID',
+                paidAt: new Date(),
+                issuedAt: manualInvoice.issuedAt || new Date(),
+              },
+            });
+            
+            // Create payment record if it doesn't exist
+            const existingPayment = await prisma.payment.findFirst({
+              where: { stripePaymentId: paymentIntent.id },
+            });
+            
+            if (!existingPayment) {
+              await prisma.payment.create({
+                data: {
+                  contractorId,
+                  amount: Number(paymentIntent.amount) / 100,
+                  type: 'MANUAL_INVOICE',
+                  status: 'COMPLETED',
+                  stripePaymentId: paymentIntent.id,
+                  description: `Manual invoice payment: ${manualInvoice.number}`,
+                },
+              });
+            }
+            
+            console.log(`✅ Manual invoice ${manualInvoice.number} marked as paid`);
+            
+            // Send notification
+            try {
+              const { createNotification } = await import('../services/notificationService');
+              await createNotification({
+                userId: manualInvoice.contractor.user.id,
+                title: 'Invoice Payment Successful',
+                message: `Your payment for invoice ${manualInvoice.number} has been processed successfully.`,
+                type: 'SUCCESS',
+                actionLink: '/dashboard/contractor/invoices',
+              });
+            } catch (err) {
+              console.error('Failed to create payment notification:', err);
+            }
+          }
+        }
+      } else if (paymentType === 'job_access_purchase') {
         const jobId = paymentIntent.metadata?.jobId;
         const contractorId = paymentIntent.metadata?.contractorId;
         

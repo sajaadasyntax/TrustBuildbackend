@@ -169,7 +169,7 @@ export const sendInvoiceEmail = async (invoiceId: string): Promise<void> => {
       <p>Please make payment by the due date to avoid any service interruption.</p>
     `,
     ctaText: 'View Invoice',
-    ctaUrl: `${process.env.FRONTEND_URL}/dashboard/invoices/${invoice.id}`,
+    ctaUrl: `${process.env.FRONTEND_URL}/dashboard/contractor/invoices`,
   });
 
   // TODO: Attach PDF to email when email service supports attachments
@@ -221,10 +221,12 @@ export const sendInvoiceReminder = async (invoiceId: string): Promise<void> => {
       <p>Please make payment as soon as possible to avoid any service interruption.</p>
     `,
     ctaText: 'View Invoice',
-    ctaUrl: `${process.env.FRONTEND_URL}/dashboard/invoices/${invoice.id}`,
+    ctaUrl: `${process.env.FRONTEND_URL}/dashboard/contractor/invoices`,
   });
 
   const emailService = createEmailService();
+  // Add emailType to options for logging
+  (emailContent as any).emailType = 'invoice_reminder';
   await emailService.sendMail(emailContent);
 
   // Update reminder count

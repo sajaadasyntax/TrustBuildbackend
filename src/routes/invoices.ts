@@ -96,6 +96,7 @@ export const getInvoice = catchAsync(async (req: AuthenticatedRequest, res: Resp
     return next(new AppError('Contractor profile not found', 404));
   }
 
+  // Try to find regular invoice first
   const invoice = await prisma.invoice.findFirst({
     where: {
       id,
@@ -126,14 +127,69 @@ export const getInvoice = catchAsync(async (req: AuthenticatedRequest, res: Resp
     },
   });
 
-  if (!invoice) {
-    return next(new AppError('Invoice not found', 404));
+  if (invoice) {
+    return res.status(200).json({
+      status: 'success',
+      data: { invoice },
+    });
   }
 
-  res.status(200).json({
-    status: 'success',
-    data: { invoice },
+  // If not found, try to find manual invoice
+  const manualInvoice = await prisma.manualInvoice.findFirst({
+    where: {
+      id,
+      contractorId: contractor.id,
+    },
+    include: {
+      contractor: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+      items: true,
+    },
   });
+
+  if (manualInvoice) {
+    // Transform manual invoice to match regular invoice format
+    const transformedInvoice = {
+      id: manualInvoice.id,
+      invoiceNumber: manualInvoice.number,
+      amount: (manualInvoice.subtotal || 0) / 100,
+      vatAmount: (manualInvoice.tax || 0) / 100,
+      totalAmount: (manualInvoice.total || 0) / 100,
+      vatRate: 20,
+      currency: 'GBP',
+      description: manualInvoice.reason || manualInvoice.notes || 'Manual Invoice',
+      recipientName: manualInvoice.contractor.businessName || manualInvoice.contractor.user.name,
+      recipientEmail: manualInvoice.contractor.user.email,
+      recipientAddress: manualInvoice.contractor.businessAddress || null,
+      issuedAt: manualInvoice.issuedAt || manualInvoice.createdAt,
+      dueAt: manualInvoice.dueDate,
+      paidAt: manualInvoice.paidAt,
+      createdAt: manualInvoice.createdAt,
+      updatedAt: manualInvoice.updatedAt,
+      type: 'manual',
+      status: manualInvoice.status,
+      items: manualInvoice.items?.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        amount: item.amount / 100,
+      })),
+    };
+
+    return res.status(200).json({
+      status: 'success',
+      data: { invoice: transformedInvoice },
+    });
+  }
+
+  return next(new AppError('Invoice not found', 404));
 });
 
 // @desc    Send invoice via email (simplified without PDF for now)
@@ -230,8 +286,14 @@ export const sendInvoiceEmail = catchAsync(async (req: AuthenticatedRequest, res
       `
     });
     
-    // Email notifications disabled - invoices are now only accessible in-app
-
+    // Send the email
+    try {
+      await emailService.sendMail(mailOptions);
+      console.log('✅ Invoice email sent successfully to:', recipientEmail);
+    } catch (emailError) {
+      console.error('❌ Failed to send invoice email:', emailError);
+      // Don't fail the request - log the error but continue
+    }
     
     // Update invoice to mark as sent
     await prisma.invoice.update({

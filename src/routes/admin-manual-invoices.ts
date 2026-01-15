@@ -131,20 +131,21 @@ router.post(
       });
     }
 
-    // Calculate totals (amounts already include VAT, no additional calculation needed)
-    // Frontend sends amounts in pence, so use directly
+    // Calculate totals - VAT is added on top (20%)
+    // Frontend sends amounts in pence (net/ex-VAT), so we add VAT on top
     let subtotal = 0;
     items.forEach((item: any) => {
       if (!item.description || item.amount === undefined || item.amount === null) {
         throw new Error('Each item must have description and amount');
       }
-      // Amount is already in pence from frontend, multiply by quantity
+      // Amount is in pence from frontend (ex-VAT), multiply by quantity
       subtotal += Math.round(item.amount) * (item.quantity || 1);
     });
 
-    // Amounts already include VAT, so tax is 0 and total equals subtotal
-    const tax = 0;
-    const total = subtotal;
+    // Add 20% VAT on top of subtotal
+    const vatRate = 0.20;
+    const tax = Math.round(subtotal * vatRate); // VAT amount in pence
+    const total = subtotal + tax; // Total including VAT
 
     // Generate invoice number
     const invoiceNumber = await generateInvoiceNumber();

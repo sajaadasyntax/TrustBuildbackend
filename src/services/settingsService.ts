@@ -79,3 +79,14 @@ export async function getFreeJobAllocation(): Promise<number> {
   return 1; // Default
 }
 
+/**
+ * Get max contractors per job from settings
+ */
+export async function getMaxContractorsPerJob(): Promise<number> {
+  const setting = await getSetting('MAX_CONTRACTORS_PER_JOB');
+  if (setting?.defaultMax !== undefined) {
+    return parseInt(setting.defaultMax.toString());
+  }
+  return 5; // Default: 5 contractors per job
+}
+

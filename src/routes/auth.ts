@@ -38,7 +38,7 @@ interface RegisterData {
 
 const signToken = (id: string): string => {
   return jwt.sign({ id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d', // Extended to 30 days for better UX
   } as jwt.SignOptions);
 };
 
@@ -46,7 +46,7 @@ const createSendToken = (user: any, statusCode: number, res: express.Response): 
   const token = signToken(user.id);
   
   const cookieOptions = {
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days for extended session
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
@@ -667,7 +667,7 @@ export const refreshToken = catchAsync(async (req: AuthenticatedRequest, res: ex
   
   // Set new cookie
   const cookieOptions = {
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days for extended session
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,

@@ -3809,6 +3809,75 @@ router.get('/contractors-search', requirePermission(AdminPermission.CONTRACTORS_
 router.get('/contractors/:id/credits', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorCredits);
 router.post('/contractors/:id/adjust-credits', requirePermission(AdminPermission.CONTRACTORS_WRITE), adjustContractorCredits);
 
+// Contractor completed jobs and reviews
+router.get('/contractors/:id/completed-jobs', requirePermission(AdminPermission.CONTRACTORS_READ), catchAsync(async (req: AdminAuthRequest, res: Response) => {
+  const { id } = req.params;
+  
+  const jobs = await prisma.job.findMany({
+    where: {
+      wonByContractorId: id,
+      status: 'COMPLETED',
+    },
+    select: {
+      id: true,
+      title: true,
+      location: true,
+      completionDate: true,
+      finalAmount: true,
+      createdAt: true,
+      customer: {
+        select: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { completionDate: 'desc' },
+    take: 50,
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    data: { jobs },
+  });
+}));
+
+router.get('/contractors/:id/reviews', requirePermission(AdminPermission.CONTRACTORS_READ), catchAsync(async (req: AdminAuthRequest, res: Response) => {
+  const { id } = req.params;
+  
+  const reviews = await prisma.review.findMany({
+    where: {
+      contractorId: id,
+    },
+    include: {
+      customer: {
+        select: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      job: {
+        select: {
+          title: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    data: { reviews },
+  });
+}));
+
 // Content Management
 router.get('/content/flagged', requirePermission(AdminPermission.CONTENT_READ), getFlaggedContent);
 router.post('/content/:type/:id/flag', requirePermission(AdminPermission.CONTENT_WRITE), flagContent);

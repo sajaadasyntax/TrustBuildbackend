@@ -319,7 +319,7 @@ export const createSubscriptionIntent = catchAsync(async (req: AuthenticatedRequ
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
       currency: 'gbp',
-      payment_method_types: ['card'],
+      // Enable automatic payment methods (supports Apple Pay, Google Pay, cards, etc.)
       automatic_payment_methods: {
         enabled: true,
         allow_redirects: 'never'
