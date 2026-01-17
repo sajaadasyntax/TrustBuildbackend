@@ -484,7 +484,9 @@ export const createServiceEmail = (options: {
       
       <div class="footer">
         <p>${footerText || 'TrustBuild - Connecting trusted contractors with customers'}</p>
-        <p>© ${new Date().getFullYear()} TrustBuild. All rights reserved.</p>
+        <p style="margin-top: 10px; font-size: 11px;">TRUSTBUILDERS LTD | 124 City Road, London, EC1V 2NX</p>
+        <p style="font-size: 11px;">Company No: 16452861 | VAT No: 496 3800 58</p>
+        <p style="margin-top: 8px;">© ${new Date().getFullYear()} TRUSTBUILDERS LTD. All rights reserved.</p>
       </div>
     </body>
     </html>
@@ -495,7 +497,7 @@ export const createServiceEmail = (options: {
     to,
     subject,
     html: htmlContent,
-    text: `TrustBuild Notification\n\n${heading}\n\n${body.replace(/<[^>]*>/g, '')}\n\n${footerText || 'TrustBuild - Connecting trusted contractors with customers'}`
+    text: `TrustBuild Notification\n\n${heading}\n\n${body.replace(/<[^>]*>/g, '')}\n\n${footerText || 'TrustBuild - Connecting trusted contractors with customers'}\n\nTRUSTBUILDERS LTD | 124 City Road, London, EC1V 2NX | Company No: 16452861 | VAT No: 496 3800 58`
   };
 };
 
