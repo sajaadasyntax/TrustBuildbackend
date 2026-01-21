@@ -17,6 +17,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:services": "tsx prisma/seed-services.ts",
     "cron:commission": "node scripts/commission-cron.js",
     "cron:final-price-timeout": "node scripts/final-price-timeout-cron.js",
     "cron:final-price-reminder": "node scripts/final-price-reminder-cron.js",
