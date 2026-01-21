@@ -262,6 +262,60 @@ async function main() {
       mediumJobPrice: 30.00,
       largeJobPrice: 50.00,
     },
+    {
+      name: 'Other',
+      description: 'Other services not listed above',
+      category: 'Other',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+    },
+    // Placeholder services that can be renamed from admin panel
+    {
+      name: 'Custom Service 1',
+      description: 'Placeholder for additional service (can be renamed from admin)',
+      category: 'Custom',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+      isActive: false,
+    },
+    {
+      name: 'Custom Service 2',
+      description: 'Placeholder for additional service (can be renamed from admin)',
+      category: 'Custom',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+      isActive: false,
+    },
+    {
+      name: 'Custom Service 3',
+      description: 'Placeholder for additional service (can be renamed from admin)',
+      category: 'Custom',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+      isActive: false,
+    },
+    {
+      name: 'Custom Service 4',
+      description: 'Placeholder for additional service (can be renamed from admin)',
+      category: 'Custom',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+      isActive: false,
+    },
+    {
+      name: 'Custom Service 5',
+      description: 'Placeholder for additional service (can be renamed from admin)',
+      category: 'Custom',
+      smallJobPrice: 15.00,
+      mediumJobPrice: 25.00,
+      largeJobPrice: 40.00,
+      isActive: false,
+    },
   ];
 
   const createdServices: any[] = [];
@@ -274,12 +328,21 @@ async function main() {
         smallJobPrice: service.smallJobPrice,
         mediumJobPrice: service.mediumJobPrice,
         largeJobPrice: service.largeJobPrice,
+        isActive: (service as any).isActive !== undefined ? (service as any).isActive : true,
       },
-      create: service,
+      create: {
+        name: service.name,
+        description: service.description,
+        category: service.category,
+        smallJobPrice: service.smallJobPrice,
+        mediumJobPrice: service.mediumJobPrice,
+        largeJobPrice: service.largeJobPrice,
+        isActive: (service as any).isActive !== undefined ? (service as any).isActive : true,
+      },
     });
     createdServices.push(created);
   }
-  console.log(`  ✅ Created ${createdServices.length} services`);
+  console.log(`  ✅ Created ${createdServices.length} services (including 5 placeholder services)`);
   console.log('');
 
   // ============================================================

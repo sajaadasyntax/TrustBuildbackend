@@ -2672,6 +2672,30 @@ export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, 
     userAgent: getClientUserAgent(req),
   });
 
+  // Send notification to contractor about credit adjustment
+  try {
+    const contractorWithUser = await prisma.contractor.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
+
+    if (contractorWithUser?.user) {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: contractorWithUser.user.id,
+        title: type === 'ADDITION' ? '🎁 Bonus Credits Added!' : 'Credits Adjusted',
+        message: type === 'ADDITION' 
+          ? `You received ${amount} bonus credit${amount > 1 ? 's' : ''}! New balance: ${newBalance} credits. Reason: ${reason}`
+          : `${amount} credit${amount > 1 ? 's' : ''} ${amount > 1 ? 'were' : 'was'} deducted from your account. New balance: ${newBalance} credits. Reason: ${reason}`,
+        type: type === 'ADDITION' ? 'SUCCESS' : 'INFO',
+        actionLink: '/dashboard/contractor',
+        actionText: 'View Dashboard',
+      });
+    }
+  } catch (error) {
+    console.error('Failed to send credit notification:', error);
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Credits adjusted successfully',
@@ -3762,6 +3786,88 @@ router.patch('/contractors/:id/approve', requirePermission(AdminPermission.CONTR
 router.get('/contractors', requirePermission(AdminPermission.CONTRACTORS_READ), getAllContractors);
 router.patch('/contractors/:id/approval', requirePermission(AdminPermission.CONTRACTORS_APPROVE), updateContractorApproval);
 router.patch('/contractors/:id/status', requirePermission(AdminPermission.CONTRACTORS_WRITE), updateContractorStatus);
+
+// Delete contractor
+router.delete('/contractors/:id', requirePermission(AdminPermission.CONTRACTORS_WRITE), catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  // Find contractor with user info
+  const contractor = await prisma.contractor.findUnique({
+    where: { id },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor not found', 404));
+  }
+
+  // Store contractor info for logging
+  const contractorName = contractor.businessName || contractor.user.name;
+  const contractorEmail = contractor.user.email;
+
+  // Delete related records first (foreign key constraints)
+  await prisma.$transaction(async (tx) => {
+    // Delete credit transactions
+    await tx.creditTransaction.deleteMany({ where: { contractorId: id } });
+    
+    // Delete job applications
+    await tx.jobApplication.deleteMany({ where: { contractorId: id } });
+    
+    // Delete job access records
+    await tx.jobAccess.deleteMany({ where: { contractorId: id } });
+    
+    // Delete portfolio items
+    await tx.portfolioItem.deleteMany({ where: { contractorId: id } });
+    
+    // Delete payments
+    await tx.payment.deleteMany({ where: { contractorId: id } });
+    
+    // Delete notifications for contractor user
+    await tx.notification.deleteMany({ where: { userId: contractor.user.id } });
+    
+    // Delete reviews where contractor is the subject
+    await tx.review.deleteMany({ where: { contractorId: id } });
+    
+    // Delete KYC records
+    await tx.contractorKyc.deleteMany({ where: { contractorId: id } });
+    
+    // Delete subscription
+    await tx.subscription.deleteMany({ where: { contractorId: id } });
+    
+    // Delete the contractor profile
+    await tx.contractor.delete({ where: { id } });
+    
+    // Optionally deactivate the user account (instead of deleting)
+    await tx.user.update({
+      where: { id: contractor.user.id },
+      data: { isActive: false },
+    });
+  });
+
+  // Log the admin action
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'CONTRACTOR_DELETED',
+    entityType: 'Contractor',
+    entityId: id,
+    description: `Deleted contractor ${contractorName} (${contractorEmail})${reason ? `: ${reason}` : ''}`,
+    diff: {
+      contractorName,
+      contractorEmail,
+      reason,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: `Contractor ${contractorName} has been deleted successfully`,
+  });
+}));
 router.patch('/contractors/:id/featured', requirePermission(AdminPermission.CONTRACTORS_WRITE), catchAsync(async (req: AdminAuthRequest, res: Response) => {
   const { id } = req.params;
   const { featuredContractor } = req.body;

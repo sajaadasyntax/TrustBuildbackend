@@ -510,6 +510,21 @@ export const sendCommissionReminder = catchAsync(async (req: AuthenticatedReques
   try {
     await emailService.sendMail(mailOptions);
     
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: commission.contractor.user.id,
+        title: '⚠️ URGENT: Commission Payment Overdue',
+        message: `Your commission payment of £${commission.totalAmount.toNumber().toFixed(2)} for "${commission.job.title}" is overdue. Please pay immediately to avoid account suspension.`,
+        type: 'ERROR',
+        actionLink: '/dashboard/contractor/commissions',
+        actionText: 'Pay Now',
+      });
+    } catch (notifError) {
+      console.error('Failed to send commission reminder notification:', notifError);
+    }
+    
     // Update reminder count
     await prisma.commissionPayment.update({
       where: { id },
@@ -521,7 +536,7 @@ export const sendCommissionReminder = catchAsync(async (req: AuthenticatedReques
 
     res.status(200).json({
       status: 'success',
-      message: 'Reminder sent successfully',
+      message: 'Reminder sent successfully (email and notification)',
     });
   } catch (error) {
     console.error('Failed to send reminder:', error);

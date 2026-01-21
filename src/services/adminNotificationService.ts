@@ -448,3 +448,31 @@ export async function notifyAdminsUserAction(
   });
 }
 
+/**
+ * Notify admins when a commission payment is due
+ */
+export async function notifyAdminsCommissionDue(
+  commissionId: string,
+  contractorId: string,
+  contractorName: string,
+  jobTitle: string,
+  amount: number,
+  dueDate: Date
+) {
+  await notifyAllAdmins({
+    title: '💰 Commission Payment Due',
+    message: `${contractorName} has a commission payment of £${amount.toFixed(2)} due for job "${jobTitle}" (Due: ${dueDate.toLocaleDateString('en-GB')})`,
+    type: 'WARNING',
+    actionLink: `/admin/commissions`,
+    actionText: 'View Commissions',
+    metadata: {
+      commissionId,
+      contractorId,
+      contractorName,
+      jobTitle,
+      amount,
+      dueDate: dueDate.toISOString(),
+      action: 'COMMISSION_DUE',
+    },
+  });
+}

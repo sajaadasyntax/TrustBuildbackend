@@ -3123,6 +3123,17 @@ export const confirmJobCompletion = catchAsync(async (req: AuthenticatedRequest,
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Due in 7 days
       );
 
+      // Notify admins about commission due
+      const { notifyAdminsCommissionDue } = await import('../services/adminNotificationService');
+      await notifyAdminsCommissionDue(
+        commissionPayment.id,
+        commissionContractorId,
+        winningContractor.businessName || winningContractor.user.name || 'Unknown Contractor',
+        job.title,
+        totalAmount,
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      );
+
     } catch (notificationError) {
       console.error('Failed to send commission notification:', notificationError);
     }
@@ -4064,7 +4075,8 @@ export const requestReview = catchAsync(async (req: AuthenticatedRequest, res: R
     await createReviewRequestNotification(
       job.customer.user.id,
       job.title,
-      contractor.user?.name || 'Your contractor'
+      contractor.user?.name || 'Your contractor',
+      job.id
     );
 
   } catch (error) {

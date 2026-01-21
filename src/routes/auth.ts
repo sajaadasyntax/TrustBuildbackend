@@ -231,6 +231,14 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       console.error('Failed to send contractor welcome email:', error);
       // Don't fail registration if email fails
     }
+
+    // Send notification to all admins about new contractor registration
+    try {
+      const { notifyAdminsNewContractor } = await import('../services/adminNotificationService');
+      await notifyAdminsNewContractor(newContractor.id, businessName || newUser.name);
+    } catch (error) {
+      console.error('Failed to notify admins of new contractor:', error);
+    }
   }
 
   createSendToken(newUser, 201, res);

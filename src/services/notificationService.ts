@@ -484,7 +484,7 @@ export async function notifyNewReview(
     title: 'New Review Received',
     message: `You received a ${rating}-star review for "${jobTitle}"`,
     type: 'SUCCESS',
-    actionLink: '/dashboard/reviews',
+    actionLink: '/dashboard/contractor/reviews',
     actionText: 'View Reviews',
   });
 }
@@ -606,14 +606,15 @@ export async function createJobStartedNotification(
 export async function createReviewRequestNotification(
   userId: string, 
   jobTitle: string, 
-  contractorName: string
+  contractorName: string,
+  jobId?: string
 ) {
   await createNotification({
     userId,
     title: 'Review Request',
     message: `Please leave a review for "${jobTitle}" with ${contractorName}`,
     type: 'INFO',
-    actionLink: '/dashboard/reviews',
+    actionLink: jobId ? `/dashboard/client/jobs/${jobId}` : '/dashboard/client/reviews',
     actionText: 'Leave Review',
   });
 }
