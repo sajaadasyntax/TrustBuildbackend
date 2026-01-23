@@ -816,8 +816,162 @@ export const sendInvoiceEmail = catchAsync(async (req: AdminAuthRequest, res: Re
   }
 });
 
+// @desc    Send commission reminder to contractor
+// @route   POST /api/admin/invoices/send-commission-reminder/:id
+// @access  Private (Admin only)
+export const sendCommissionReminder = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { message } = req.body;
+
+  // Get commission payment
+  const commission = await prisma.commissionPayment.findUnique({
+    where: { id },
+    include: {
+      contractor: {
+        include: {
+          user: true,
+        },
+      },
+      job: true,
+      invoice: true,
+    },
+  });
+
+  if (!commission) {
+    return next(new AppError('Commission payment not found', 404));
+  }
+
+  if (commission.status === 'PAID') {
+    return next(new AppError('Commission has already been paid', 400));
+  }
+
+  // Send reminder email using email service
+  const { createEmailService } = await import('../services/emailService');
+  const emailService = createEmailService();
+  
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || 'noreply@trustbuild.uk',
+    to: commission.contractor.user.email,
+    subject: `URGENT: Overdue Commission Payment - ${commission.invoice?.invoiceNumber || 'Commission Due'}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .header { background-color: #dc2626; color: white; padding: 20px; text-align: center; }
+          .content { padding: 20px; }
+          .commission-details { background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc2626; }
+          .footer { background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; }
+          .urgent { font-weight: bold; color: #dc2626; }
+          .amount { font-size: 1.2em; font-weight: bold; color: #dc2626; }
+          .admin-message { background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 20px 0; font-style: italic; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>⚠️ URGENT: OVERDUE COMMISSION PAYMENT</h1>
+        </div>
+        
+        <div class="content">
+          <p>Dear ${commission.contractor.user.name},</p>
+          
+          <p>This is an <span class="urgent">URGENT NOTICE</span> regarding your <span class="urgent">OVERDUE</span> TrustBuild commission payment.</p>
+          
+          <div class="commission-details">
+            <h3>Commission Invoice Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr><td><strong>Invoice Number:</strong></td><td>${commission.invoice?.invoiceNumber || 'N/A'}</td></tr>
+              <tr><td><strong>Job Title:</strong></td><td>${commission.job.title}</td></tr>
+              <tr><td><strong>Final Job Amount:</strong></td><td>£${Number(commission.finalJobAmount).toFixed(2)}</td></tr>
+              <tr><td><strong>Commission (${commission.commissionRate}%):</strong></td><td>£${Number(commission.commissionAmount).toFixed(2)}</td></tr>
+              <tr class="amount"><td><strong>Total Due:</strong></td><td><strong>£${Number(commission.totalAmount).toFixed(2)}</strong></td></tr>
+              <tr><td><strong>Due Date:</strong></td><td class="urgent">${commission.dueDate.toLocaleDateString('en-GB')}</td></tr>
+              <tr><td><strong>Days Overdue:</strong></td><td class="urgent">${Math.floor((Date.now() - commission.dueDate.getTime()) / (1000 * 60 * 60 * 24))}</td></tr>
+            </table>
+          </div>
+          
+          ${message ? `
+          <div class="admin-message">
+            <h3>Message from TrustBuild Admin:</h3>
+            <p>${message}</p>
+          </div>
+          ` : ''}
+          
+          <div style="background-color: #fef2f2; padding: 15px; border-radius: 5px; margin: 20px 0; border: 2px solid #dc2626;">
+            <h3 style="color: #dc2626;">🚨 ACCOUNT SUSPENSION NOTICE</h3>
+            <p><strong>Your account may be suspended due to non-payment of commission fees.</strong></p>
+            <p>To avoid account suspension:</p>
+            <ol>
+              <li>Pay the outstanding commission immediately</li>
+              <li>Contact TrustBuild support if you have any issues</li>
+            </ol>
+          </div>
+          
+          <div style="background-color: #eff6ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3>💳 Pay Now</h3>
+            <ol>
+              <li>Log into your TrustBuild dashboard</li>
+              <li>Go to "Commission Payments" section</li>
+              <li>Click "Pay Now" next to this invoice</li>
+              <li>Pay using any of our supported methods: Visa, MasterCard, Amex, Apple Pay, Google Pay</li>
+            </ol>
+          </div>
+          
+          <p><strong>PAY IMMEDIATELY to avoid account suspension.</strong></p>
+          
+          <p>TrustBuild Support Team</p>
+        </div>
+        
+        <div class="footer">
+          <p>TrustBuild - Professional Contractor Platform</p>
+          <p>Pay now: <a href="https://trustbuild.uk/dashboard/commissions">https://trustbuild.uk/dashboard/commissions</a></p>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    await emailService.sendMail(mailOptions);
+    
+    // Send in-app notification to contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: commission.contractor.user.id,
+        title: '⚠️ URGENT: Commission Payment Overdue',
+        message: `Your commission payment of £${Number(commission.totalAmount).toFixed(2)} for "${commission.job.title}" is overdue. Please pay immediately to avoid account suspension.`,
+        type: 'ERROR',
+        actionLink: '/dashboard/contractor/commissions',
+        actionText: 'Pay Now',
+      });
+    } catch (notifError) {
+      console.error('Failed to send commission reminder notification:', notifError);
+    }
+    
+    // Update reminder count
+    await prisma.commissionPayment.update({
+      where: { id },
+      data: {
+        remindersSent: { increment: 1 },
+        lastReminderSent: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Reminder sent successfully (email and notification)',
+    });
+  } catch (error) {
+    console.error('Failed to send reminder:', error);
+    return next(new AppError('Failed to send reminder email', 500));
+  }
+});
+
 router.get('/stats', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceStats);
 router.get('/', requirePermission(AdminPermission.PAYMENTS_READ), getAllInvoices);
+router.post('/send-commission-reminder/:id', requirePermission(AdminPermission.PAYMENTS_WRITE), sendCommissionReminder);
 router.get('/:id/download', requirePermission(AdminPermission.PAYMENTS_READ), downloadInvoice);
 router.post('/:id/send-email', requirePermission(AdminPermission.PAYMENTS_WRITE), sendInvoiceEmail);
 router.get('/:id', requirePermission(AdminPermission.PAYMENTS_READ), getInvoiceById);

@@ -1320,7 +1320,7 @@ export const markJobAsCompleted = catchAsync(async (req: AuthenticatedRequest, r
     title: 'Job Completion Confirmation Required',
     message: `The contractor marked the job as completed for £${finalAmount}. Please confirm if this is correct and if the job has been completed satisfactorily.`,
     type: 'JOB_COMPLETED',
-    actionLink: `/jobs/${job.id}/confirm-completion`,
+    actionLink: `/dashboard/client/jobs/${job.id}`,
     actionText: 'Review & Confirm',
   });
 

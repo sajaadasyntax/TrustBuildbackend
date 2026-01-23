@@ -2486,18 +2486,51 @@ export const updateServicePricing = catchAsync(async (req: AdminAuthRequest, res
   const { id } = req.params;
   const { smallJobPrice, mediumJobPrice, largeJobPrice } = req.body;
 
-  // Validate pricing values
-  if (smallJobPrice < 0 || mediumJobPrice < 0 || largeJobPrice < 0) {
-    return next(new AppError('Prices cannot be negative', 400));
+  // Parse and validate pricing values - handle string, number, undefined
+  const parsedSmallJobPrice = smallJobPrice !== undefined && smallJobPrice !== null && smallJobPrice !== '' 
+    ? Number(smallJobPrice) 
+    : undefined;
+  const parsedMediumJobPrice = mediumJobPrice !== undefined && mediumJobPrice !== null && mediumJobPrice !== '' 
+    ? Number(mediumJobPrice) 
+    : undefined;
+  const parsedLargeJobPrice = largeJobPrice !== undefined && largeJobPrice !== null && largeJobPrice !== '' 
+    ? Number(largeJobPrice) 
+    : undefined;
+
+  // Check if at least one price is provided
+  if (parsedSmallJobPrice === undefined && parsedMediumJobPrice === undefined && parsedLargeJobPrice === undefined) {
+    return next(new AppError('At least one price must be provided', 400));
   }
+
+  // Validate that provided prices are valid numbers and not negative
+  if (parsedSmallJobPrice !== undefined && (isNaN(parsedSmallJobPrice) || parsedSmallJobPrice < 0)) {
+    return next(new AppError('Small job price must be a valid non-negative number', 400));
+  }
+  if (parsedMediumJobPrice !== undefined && (isNaN(parsedMediumJobPrice) || parsedMediumJobPrice < 0)) {
+    return next(new AppError('Medium job price must be a valid non-negative number', 400));
+  }
+  if (parsedLargeJobPrice !== undefined && (isNaN(parsedLargeJobPrice) || parsedLargeJobPrice < 0)) {
+    return next(new AppError('Large job price must be a valid non-negative number', 400));
+  }
+
+  // Check if service exists
+  const existingService = await prisma.service.findUnique({
+    where: { id },
+  });
+
+  if (!existingService) {
+    return next(new AppError('Service not found', 404));
+  }
+
+  // Build update data - only include prices that were provided
+  const updateData: any = {};
+  if (parsedSmallJobPrice !== undefined) updateData.smallJobPrice = parsedSmallJobPrice;
+  if (parsedMediumJobPrice !== undefined) updateData.mediumJobPrice = parsedMediumJobPrice;
+  if (parsedLargeJobPrice !== undefined) updateData.largeJobPrice = parsedLargeJobPrice;
 
   const service = await prisma.service.update({
     where: { id },
-    data: {
-      smallJobPrice: parseFloat(smallJobPrice),
-      mediumJobPrice: parseFloat(mediumJobPrice),
-      largeJobPrice: parseFloat(largeJobPrice),
-    },
+    data: updateData,
     select: {
       id: true,
       name: true,
@@ -2510,6 +2543,114 @@ export const updateServicePricing = catchAsync(async (req: AdminAuthRequest, res
   res.status(200).json({
     status: 'success',
     message: 'Service pricing updated successfully',
+    data: { service },
+  });
+});
+
+// @desc    Create a new service
+// @route   POST /api/admin/services
+// @access  Private/Admin
+export const createService = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { name, description, category, isActive, smallJobPrice, mediumJobPrice, largeJobPrice } = req.body;
+
+  // Validate required fields
+  if (!name || !name.trim()) {
+    return next(new AppError('Service name is required', 400));
+  }
+
+  // Check if service already exists
+  const existingService = await prisma.service.findUnique({
+    where: { name: name.trim() },
+  });
+
+  if (existingService) {
+    return next(new AppError('Service with this name already exists', 400));
+  }
+
+  // Validate pricing values if provided
+  const finalSmallPrice = smallJobPrice !== undefined ? parseFloat(smallJobPrice) : 15.00;
+  const finalMediumPrice = mediumJobPrice !== undefined ? parseFloat(mediumJobPrice) : 30.00;
+  const finalLargePrice = largeJobPrice !== undefined ? parseFloat(largeJobPrice) : 50.00;
+
+  if (finalSmallPrice < 0 || finalMediumPrice < 0 || finalLargePrice < 0) {
+    return next(new AppError('Prices cannot be negative', 400));
+  }
+
+  const service = await prisma.service.create({
+    data: {
+      name: name.trim(),
+      description: description || '',
+      category: category || '',
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      smallJobPrice: finalSmallPrice,
+      mediumJobPrice: finalMediumPrice,
+      largeJobPrice: finalLargePrice,
+    },
+  });
+
+  res.status(201).json({
+    status: 'success',
+    message: 'Service created successfully',
+    data: { service },
+  });
+});
+
+// @desc    Update service details (name, description, category, isActive, pricing)
+// @route   PATCH /api/admin/services/:id
+// @access  Private/Admin
+export const updateService = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { name, description, category, isActive, smallJobPrice, mediumJobPrice, largeJobPrice } = req.body;
+
+  // Check if service exists
+  const existingService = await prisma.service.findUnique({
+    where: { id },
+  });
+
+  if (!existingService) {
+    return next(new AppError('Service not found', 404));
+  }
+
+  // If name is being changed, check for uniqueness
+  if (name && name !== existingService.name) {
+    const nameExists = await prisma.service.findUnique({
+      where: { name },
+    });
+
+    if (nameExists) {
+      return next(new AppError('Service name already exists', 400));
+    }
+  }
+
+  // Validate pricing values if provided
+  if (smallJobPrice !== undefined && smallJobPrice < 0) {
+    return next(new AppError('Small job price cannot be negative', 400));
+  }
+  if (mediumJobPrice !== undefined && mediumJobPrice < 0) {
+    return next(new AppError('Medium job price cannot be negative', 400));
+  }
+  if (largeJobPrice !== undefined && largeJobPrice < 0) {
+    return next(new AppError('Large job price cannot be negative', 400));
+  }
+
+  // Build update data object
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = name;
+  if (description !== undefined) updateData.description = description;
+  if (category !== undefined) updateData.category = category;
+  if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+  if (smallJobPrice !== undefined) updateData.smallJobPrice = parseFloat(smallJobPrice);
+  if (mediumJobPrice !== undefined) updateData.mediumJobPrice = parseFloat(mediumJobPrice);
+  if (largeJobPrice !== undefined) updateData.largeJobPrice = parseFloat(largeJobPrice);
+
+  const service = await prisma.service.update({
+    where: { id },
+    data: updateData,
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Service updated successfully',
     data: { service },
   });
 });
@@ -4075,8 +4216,10 @@ router.get('/unpaid-commissions', requirePermission(AdminPermission.PAYMENTS_REA
 // Pricing Management
 router.get('/services', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);
 router.get('/services-pricing', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing); // Alias for backward compatibility
+router.post('/services', requirePermission(AdminPermission.PRICING_WRITE), createService);
 router.patch('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing);
 router.put('/services/:id/pricing', requirePermission(AdminPermission.PRICING_WRITE), updateServicePricing); // Alias for backward compatibility
+router.patch('/services/:id', requirePermission(AdminPermission.PRICING_WRITE), updateService);
 
 // Reviews Management
 router.get('/reviews', requirePermission(AdminPermission.REVIEWS_READ), getAllReviewsAdmin);

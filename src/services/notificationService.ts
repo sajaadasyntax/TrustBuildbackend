@@ -531,18 +531,24 @@ export async function createJobCompletedNotification(
   userId: string, 
   jobTitle: string, 
   amount: number, 
-  isCustomer: boolean
+  isCustomer: boolean,
+  jobId?: string
 ) {
   const message = isCustomer 
     ? `The job "${jobTitle}" has been completed. Final amount: £${amount}`
     : `You completed the job "${jobTitle}". Final amount: £${amount}`;
+  
+  // Determine the correct action link based on user type
+  const actionLink = isCustomer 
+    ? (jobId ? `/dashboard/client/jobs/${jobId}` : '/dashboard/client/job-history')
+    : (jobId ? `/dashboard/contractor/jobs/${jobId}` : '/dashboard/contractor/job-history');
     
   await createNotification({
     userId,
     title: 'Job Completed',
     message,
     type: 'SUCCESS',
-    actionLink: '/dashboard/job-history',
+    actionLink,
     actionText: 'View Job',
   });
 }
