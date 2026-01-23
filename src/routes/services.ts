@@ -18,6 +18,16 @@ export const getAllServices = catchAsync(async (req: AuthenticatedRequest, res: 
   // Build filter conditions
   const where: any = {};
 
+  // Default to active services only for public endpoints (unless explicitly requested)
+  if (isActive !== undefined) {
+    // Handle both string 'true'/'false' and boolean true/false
+    const isActiveValue = typeof isActive === 'string' ? isActive === 'true' : Boolean(isActive);
+    where.isActive = isActiveValue;
+  } else {
+    // Default to active services only when not specified
+    where.isActive = true;
+  }
+
   if (category) {
     where.category = { contains: category as string, mode: 'insensitive' };
   }
@@ -28,10 +38,6 @@ export const getAllServices = catchAsync(async (req: AuthenticatedRequest, res: 
       { description: { contains: search as string, mode: 'insensitive' } },
       { category: { contains: search as string, mode: 'insensitive' } },
     ];
-  }
-
-  if (isActive !== undefined) {
-    where.isActive = isActive === 'true';
   }
 
   const services = await prisma.service.findMany({
