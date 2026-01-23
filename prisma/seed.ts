@@ -140,7 +140,7 @@ async function main() {
   // ============================================================
   // 3. CREATE SERVICES
   // ============================================================
-  await seedServices(prisma);
+  const createdServices = await seedServices(prisma);
 
   // ============================================================
   // 4. CREATE CUSTOMERS
