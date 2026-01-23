@@ -1035,8 +1035,30 @@ export const getMyAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Re
     },
   });
 
+  // Also get jobs where contractor was directly assigned via wonByContractorId
+  // This handles cases where a contractor was selected without purchasing access
+  const directlyAssignedJobs = await prisma.job.findMany({
+    where: {
+      wonByContractorId: contractor.id,
+      // Exclude jobs that already have job access (to avoid duplicates)
+      NOT: {
+        jobAccess: {
+          some: { contractorId: contractor.id }
+        }
+      }
+    },
+    include: {
+      service: { select: { name: true } },
+      customer: {
+        include: {
+          user: { select: { name: true, email: true } },
+        },
+      },
+    },
+  });
+
   // Transform job accesses to jobs with access info
-  let jobs = jobAccesses.map(access => ({
+  let jobs: any[] = jobAccesses.map(access => ({
     ...access.job,
     hasAccess: true,
     accessMethod: access.accessMethod,
@@ -1046,6 +1068,20 @@ export const getMyAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Re
     claimedWonAt: access.claimedWonAt,
     accessType: 'PURCHASED' as const,
   }));
+
+  // Add directly assigned jobs
+  const directlyAssignedWithAccess = directlyAssignedJobs.map(job => ({
+    ...job,
+    hasAccess: true,
+    accessMethod: 'DIRECT_ASSIGNMENT',
+    paidAmount: null,
+    accessedAt: job.updatedAt, // Use updatedAt as the access date
+    claimedWon: true, // These jobs were already won
+    claimedWonAt: job.updatedAt,
+    accessType: 'DIRECT' as const,
+  }));
+
+  jobs = [...jobs, ...directlyAssignedWithAccess];
 
   // Filter by status if provided
   if (status) {
