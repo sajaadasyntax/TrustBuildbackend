@@ -11,6 +11,13 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     include: {
+      customer: {
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      },
       wonByContractor: {
         include: {
           subscription: true,
@@ -112,6 +119,75 @@ export async function processCommissionForJob(jobId: string, finalAmount: number
       );
     } catch (notificationError) {
       console.error('Failed to send commission invoice notification:', notificationError);
+    }
+
+    // ──────────────────────────────────────────────────────
+    // ADMIN NOTIFICATION: New commission = incoming revenue
+    // ──────────────────────────────────────────────────────
+
+    // 1) In-app notification to all admins
+    try {
+      const { notifyAdminsNewCommission } = await import('./adminNotificationService');
+      await notifyAdminsNewCommission({
+        commissionId: commissionPayment.id,
+        contractorId: job.wonByContractorId!,
+        contractorName: job.wonByContractor.businessName || job.wonByContractor.user.name || 'Unknown',
+        jobId: job.id,
+        jobTitle: job.title,
+        customerName: job.customer?.user?.name || 'Customer',
+        finalJobAmount: finalAmount,
+        commissionAmount,
+        vatAmount,
+        totalAmount,
+        commissionRate: commissionRatePercent,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        invoiceNumber: commissionInvoice.invoiceNumber,
+      });
+    } catch (adminNotifError) {
+      console.error('Failed to send admin commission notification:', adminNotifError);
+    }
+
+    // 2) Email to admin team about new revenue
+    try {
+      const { createServiceEmail } = await import('./emailService');
+      const emailService = (await import('./emailService')).createEmailService();
+
+      const adminEmail = process.env.ADMIN_EMAIL || 'admin@trustbuild.uk';
+      const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      const mailOptions = createServiceEmail({
+        to: adminEmail,
+        subject: `💰 New Commission Revenue: £${totalAmount.toFixed(2)} — ${job.title}`,
+        heading: 'New Commission Created — Incoming Revenue',
+        body: `
+          <p>A new commission has been generated and is awaiting payment.</p>
+
+          <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #22c55e;">
+            <h3 style="margin-top: 0; color: #16a34a;">Revenue Summary</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr><td style="padding: 4px 0;"><strong>Invoice Number:</strong></td><td>${commissionInvoice.invoiceNumber}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Job Title:</strong></td><td>${job.title}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Customer Confirmed Price:</strong></td><td>£${finalAmount.toFixed(2)}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Contractor:</strong></td><td>${job.wonByContractor.businessName || job.wonByContractor.user.name || 'Unknown'}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Contractor Email:</strong></td><td>${job.wonByContractor.user.email}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Commission Rate:</strong></td><td>${commissionRatePercent}%</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Commission Amount:</strong></td><td>£${commissionAmount.toFixed(2)}</td></tr>
+              <tr><td style="padding: 4px 0;"><strong>VAT (20%):</strong></td><td>£${vatAmount.toFixed(2)}</td></tr>
+              <tr style="font-size: 1.1em;"><td style="padding: 8px 0; border-top: 2px solid #22c55e;"><strong>Total Due:</strong></td><td style="padding: 8px 0; border-top: 2px solid #22c55e;"><strong>£${totalAmount.toFixed(2)}</strong></td></tr>
+              <tr><td style="padding: 4px 0;"><strong>Due Date:</strong></td><td>${dueDate.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td></tr>
+            </table>
+          </div>
+
+          <p>The contractor has been emailed their commission invoice and has 7 days to pay.</p>
+        `,
+        ctaText: 'View Unpaid Commissions',
+        ctaUrl: 'https://trustbuild.uk/admin/unpaid-commissions',
+        footerText: 'TrustBuild Admin — Revenue Tracking',
+      });
+
+      await emailService.sendMail(mailOptions);
+    } catch (adminEmailError) {
+      console.error('Failed to send admin commission email:', adminEmailError);
     }
 
     // Update job to mark commission as paid

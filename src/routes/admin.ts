@@ -5,6 +5,7 @@ import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
 import { logActivity } from '../services/auditService';
 import * as adminNotificationService from '../services/adminNotificationService';
+import { deleteFromCloudinary } from '../config/cloudinary';
 import bcrypt from 'bcryptjs';
 import { UserRole, Message } from '@prisma/client';
 
@@ -2423,29 +2424,144 @@ export const processRefund = catchAsync(async (req: AdminAuthRequest, res: Respo
   const { amount, reason } = req.body;
   const paymentId = req.params.id;
 
-  try {
-    // Mock refund processing - replace with actual Stripe API calls
-    const refund = {
-      id: `re_${Date.now()}`,
-      paymentId,
-      amount,
-      reason,
-      status: 'succeeded',
-      createdAt: new Date().toISOString()
-    };
-
-    // Log the admin action
-
-
-    res.status(200).json({
-      status: 'success',
-      data: { refund },
-      message: 'Refund processed successfully',
-    });
-  } catch (error) {
-    console.error('Error in processRefund:', error);
-    return next(new AppError('Failed to process refund', 500));
+  if (!reason || !reason.trim()) {
+    return next(new AppError('A reason for the refund is required', 400));
   }
+
+  // 1. Look up the payment record
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      contractor: {
+        include: { user: { select: { name: true, email: true } } },
+      },
+      job: { select: { id: true, title: true } },
+    },
+  });
+
+  if (!payment) {
+    return next(new AppError('Payment not found', 404));
+  }
+
+  if (payment.status === 'REFUNDED') {
+    return next(new AppError('This payment has already been refunded', 400));
+  }
+
+  if (payment.status !== 'COMPLETED') {
+    return next(new AppError(`Cannot refund a payment with status "${payment.status}". Only completed payments can be refunded.`, 400));
+  }
+
+  if (!payment.stripePaymentId) {
+    return next(new AppError('This payment does not have a Stripe payment ID and cannot be refunded through Stripe', 400));
+  }
+
+  // 2. Determine refund amount (full or partial)
+  const paymentAmount = typeof (payment.amount as any)?.toNumber === 'function'
+    ? (payment.amount as any).toNumber()
+    : Number(payment.amount);
+
+  const refundAmount = amount && Number(amount) > 0
+    ? Math.min(Number(amount), paymentAmount)  // Partial refund capped at payment amount
+    : paymentAmount;                            // Full refund
+
+  if (refundAmount <= 0) {
+    return next(new AppError('Refund amount must be greater than zero', 400));
+  }
+
+  // 3. Call Stripe Refunds API
+  let stripeRefund;
+  try {
+    const Stripe = (await import('stripe')).default;
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (!stripeKey) {
+      return next(new AppError('Stripe is not configured', 500));
+    }
+    const stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
+
+    stripeRefund = await stripe.refunds.create({
+      payment_intent: payment.stripePaymentId,
+      amount: Math.round(refundAmount * 100), // Stripe expects pence/cents
+      reason: 'requested_by_customer',
+      metadata: {
+        adminId: req.admin!.id,
+        adminName: req.admin!.name,
+        internalReason: reason,
+        originalPaymentId: payment.id,
+      },
+    });
+  } catch (stripeError: any) {
+    console.error('Stripe refund error:', stripeError);
+    return next(new AppError(`Stripe refund failed: ${stripeError.message}`, 400));
+  }
+
+  // 4. Update the local payment record
+  const isFullRefund = refundAmount >= paymentAmount;
+
+  const updatedPayment = await prisma.payment.update({
+    where: { id: paymentId },
+    data: {
+      status: isFullRefund ? 'REFUNDED' : 'COMPLETED', // Keep COMPLETED for partial
+      description: isFullRefund
+        ? `${payment.description} [REFUNDED: ${reason}]`
+        : `${payment.description} [PARTIAL REFUND £${refundAmount.toFixed(2)}: ${reason}]`,
+    },
+  });
+
+  // 5. Log the admin action in the activity log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'PAYMENT_REFUND',
+    entityType: 'Payment',
+    entityId: payment.id,
+    description: `${isFullRefund ? 'Full' : 'Partial'} refund of £${refundAmount.toFixed(2)} processed for payment ${payment.id}. Reason: ${reason}. Stripe refund: ${stripeRefund.id}`,
+    diff: {
+      before: { status: payment.status, amount: paymentAmount },
+      after: { status: updatedPayment.status, refundAmount, stripeRefundId: stripeRefund.id },
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  // 6. Send notification to the contractor (best-effort)
+  try {
+    if (payment.contractor?.user) {
+      const { createNotification } = await import('../services/notificationService');
+      const contractorUserId = await prisma.contractor.findUnique({
+        where: { id: payment.contractorId! },
+        select: { userId: true },
+      });
+      if (contractorUserId) {
+        await createNotification({
+          userId: contractorUserId.userId,
+          title: 'Payment Refunded',
+          message: `A refund of £${refundAmount.toFixed(2)} has been issued for: ${payment.description}. Reason: ${reason}`,
+          type: 'INFO',
+          actionLink: '/dashboard/contractor/invoices',
+          actionText: 'View Invoices',
+        });
+      }
+    }
+  } catch (notifError) {
+    console.error('Failed to send refund notification:', notifError);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `${isFullRefund ? 'Full' : 'Partial'} refund of £${refundAmount.toFixed(2)} processed successfully`,
+    data: {
+      refund: {
+        id: stripeRefund.id,
+        paymentId: payment.id,
+        amount: refundAmount,
+        reason,
+        status: stripeRefund.status,
+        isFullRefund,
+        stripeRefundId: stripeRefund.id,
+        processedBy: req.admin!.name,
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
 });
 
 // @desc    Get all services with pricing
@@ -2956,37 +3072,51 @@ export const getAllReviewsAdmin = catchAsync(async (req: AdminAuthRequest, res: 
 });
 
 // Helper function to update contractor rating after review verification
+// Counts all PUBLISHED reviews (not flagged) for reviewCount and averageRating.
 async function updateContractorRating(contractorId: string) {
-  // Get all verified reviews for the contractor
-  const reviews = await prisma.review.findMany({
+  // Get all published (unflagged) reviews for the contractor
+  const publishedReviews = await prisma.review.findMany({
     where: {
       contractorId,
-      isVerified: true,
+      flagReason: null, // only published / not-flagged reviews
     },
     select: {
       rating: true,
     },
   });
 
-  // Calculate average rating
-  const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-  const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+  // Calculate average rating from published reviews
+  const totalRating = publishedReviews.reduce((sum, review) => sum + review.rating, 0);
+  const averageRating = publishedReviews.length > 0 ? totalRating / publishedReviews.length : 0;
 
-  // Count verified reviews
+  // Count verified (and published) reviews separately
   const verifiedReviews = await prisma.review.count({
     where: {
       contractorId,
       isVerified: true,
+      flagReason: null,
     },
   });
 
-  // Update contractor
+  // Also compute live completed jobs count so the stale column stays in sync
+  const completedJobs = await prisma.job.count({
+    where: {
+      status: 'COMPLETED',
+      OR: [
+        { wonByContractorId: contractorId },
+        { jobAccess: { some: { contractorId } } },
+      ],
+    },
+  });
+
+  // Update contractor aggregate columns
   await prisma.contractor.update({
     where: { id: contractorId },
     data: {
       averageRating,
-      reviewCount: reviews.length,
+      reviewCount: publishedReviews.length,
       verifiedReviews,
+      jobsCompleted: completedJobs,
     },
   });
 }
@@ -4125,6 +4255,125 @@ router.get('/contractors/:id/reviews', requirePermission(AdminPermission.CONTRAC
   });
 }));
 
+// ======================================
+// Contractor Media / Portfolio Management
+// ======================================
+
+// @desc    Get all portfolio items for a contractor
+// @route   GET /api/admin/contractors/:id/portfolio
+// @access  Private (Admin with contractors:read permission)
+router.get('/contractors/:id/portfolio', requirePermission(AdminPermission.CONTRACTORS_READ), catchAsync(async (req: AdminAuthRequest, res: Response) => {
+  const { id } = req.params;
+
+  // Verify contractor exists
+  const contractor = await prisma.contractor.findUnique({
+    where: { id },
+    select: { id: true, businessName: true },
+  });
+
+  if (!contractor) {
+    return res.status(404).json({ status: 'error', message: 'Contractor not found' });
+  }
+
+  const portfolioItems = await prisma.portfolioItem.findMany({
+    where: { contractorId: id },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      contractor: { id: contractor.id, businessName: contractor.businessName },
+      portfolioItems,
+      total: portfolioItems.length,
+    },
+  });
+}));
+
+// @desc    Delete a contractor's portfolio item (removes from Cloudinary + DB)
+// @route   DELETE /api/admin/contractors/:contractorId/portfolio/:itemId
+// @access  Private (Admin with contractors:write permission)
+router.delete('/contractors/:contractorId/portfolio/:itemId', requirePermission(AdminPermission.CONTRACTORS_WRITE), catchAsync(async (req: AdminAuthRequest, res: Response) => {
+  const { contractorId, itemId } = req.params;
+  const { reason } = req.body || {};
+
+  // Find the portfolio item
+  const portfolioItem = await prisma.portfolioItem.findFirst({
+    where: {
+      id: itemId,
+      contractorId,
+    },
+  });
+
+  if (!portfolioItem) {
+    return res.status(404).json({ status: 'error', message: 'Portfolio item not found' });
+  }
+
+  // Delete from Cloudinary if cloudinaryId exists
+  if (portfolioItem.cloudinaryId) {
+    try {
+      await deleteFromCloudinary(portfolioItem.cloudinaryId);
+    } catch (cloudinaryError) {
+      console.error('Failed to delete from Cloudinary:', cloudinaryError);
+      // Continue with DB deletion even if Cloudinary fails
+    }
+  }
+
+  // Delete from database
+  await prisma.portfolioItem.delete({
+    where: { id: itemId },
+  });
+
+  // Audit log
+  await logActivity({
+    adminId: req.admin!.id,
+    adminName: req.admin!.name,
+    action: 'DELETE_PORTFOLIO_ITEM',
+    resourceType: 'PORTFOLIO_ITEM',
+    resourceId: itemId,
+    details: {
+      contractorId,
+      title: portfolioItem.title,
+      imageUrl: portfolioItem.imageUrl,
+      cloudinaryId: portfolioItem.cloudinaryId,
+      reason: reason || 'Admin removed inappropriate/unwanted content',
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  // Notify the contractor
+  try {
+    const contractor = await prisma.contractor.findUnique({
+      where: { id: contractorId },
+      select: { userId: true, businessName: true },
+    });
+
+    if (contractor) {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: contractor.userId,
+        type: 'SYSTEM',
+        title: 'Portfolio Image Removed',
+        message: `Your portfolio image "${portfolioItem.title}" has been removed by an administrator.${reason ? ` Reason: ${reason}` : ''}`,
+      });
+    }
+  } catch (notifError) {
+    console.error('Failed to send portfolio deletion notification:', notifError);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Portfolio item deleted successfully',
+    data: {
+      deletedItem: {
+        id: portfolioItem.id,
+        title: portfolioItem.title,
+      },
+    },
+  });
+}));
+
 // Content Management
 router.get('/content/flagged', requirePermission(AdminPermission.CONTENT_READ), getFlaggedContent);
 router.post('/content/:type/:id/flag', requirePermission(AdminPermission.CONTENT_WRITE), flagContent);
@@ -4212,6 +4461,125 @@ export const getUnpaidCommissions = catchAsync(async (req: AdminAuthRequest, res
 });
 
 router.get('/unpaid-commissions', requirePermission(AdminPermission.PAYMENTS_READ), getUnpaidCommissions);
+
+// @desc    Manual override — mark a commission as Paid/Completed without a gateway transaction
+// @route   POST /api/admin/commissions/:id/manual-override
+// @access  Private (Admin with payments:write permission)
+export const manualOverrideCommission = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const commissionId = req.params.id;
+  const { reason, notes } = req.body;
+
+  if (!reason || !reason.trim()) {
+    return next(new AppError('A reason for the manual override is required', 400));
+  }
+
+  // 1. Look up the commission payment
+  const commission = await prisma.commissionPayment.findUnique({
+    where: { id: commissionId },
+    include: {
+      contractor: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+      },
+      job: { select: { id: true, title: true } },
+      invoice: { select: { invoiceNumber: true } },
+    },
+  });
+
+  if (!commission) {
+    return next(new AppError('Commission payment not found', 404));
+  }
+
+  if (commission.status === 'PAID') {
+    return next(new AppError('This commission has already been marked as paid', 400));
+  }
+
+  if (commission.status === 'WAIVED') {
+    return next(new AppError('This commission has been waived and cannot be marked as paid', 400));
+  }
+
+  // 2. Perform all DB updates in a transaction to keep data consistent
+  const totalAmount = typeof (commission.totalAmount as any)?.toNumber === 'function'
+    ? (commission.totalAmount as any).toNumber()
+    : Number(commission.totalAmount);
+
+  await prisma.$transaction(async (tx) => {
+    // 2a. Update commission payment status to PAID
+    await tx.commissionPayment.update({
+      where: { id: commissionId },
+      data: {
+        status: 'PAID',
+        paidAt: new Date(),
+        // stripePaymentId intentionally left null — this is a manual override
+      },
+    });
+
+    // 2b. Mark the related job as commission paid
+    await tx.job.update({
+      where: { id: commission.jobId },
+      data: { commissionPaid: true },
+    });
+
+    // 2c. Create a Payment record so it shows in the transactions ledger
+    await tx.payment.create({
+      data: {
+        contractorId: commission.contractorId,
+        amount: commission.totalAmount,
+        type: 'COMMISSION',
+        status: 'COMPLETED',
+        // No stripePaymentId — manual override
+        description: `Commission for job: ${commission.job.title} [MANUAL OVERRIDE by ${req.admin!.name}: ${reason}]`,
+      },
+    });
+  });
+
+  // 3. Log the admin action in the audit log
+  await logActivity({
+    adminId: req.admin!.id,
+    action: 'COMMISSION_MANUAL_OVERRIDE',
+    entityType: 'CommissionPayment',
+    entityId: commissionId,
+    description: `Commission ${commissionId} for ${commission.contractor.user.name} (${commission.contractor.businessName || 'N/A'}) manually marked as Paid by ${req.admin!.name}. Amount: £${totalAmount.toFixed(2)}. Reason: ${reason}${notes ? '. Notes: ' + notes : ''}`,
+    diff: {
+      before: { status: commission.status },
+      after: { status: 'PAID', manualOverride: true },
+      reason,
+      notes: notes || null,
+    },
+    ipAddress: getClientIp(req),
+    userAgent: getClientUserAgent(req),
+  });
+
+  // 4. Notify the contractor (best-effort)
+  try {
+    const { createNotification } = await import('../services/notificationService');
+    await createNotification({
+      userId: commission.contractor.user.id,
+      title: 'Commission Marked as Paid',
+      message: `Your commission of £${totalAmount.toFixed(2)} for "${commission.job.title}" has been marked as paid by an administrator.`,
+      type: 'SUCCESS',
+      actionLink: '/dashboard/contractor/commissions',
+      actionText: 'View Commissions',
+    });
+  } catch (notifError) {
+    console.error('Failed to send manual override notification:', notifError);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `Commission of £${totalAmount.toFixed(2)} manually marked as Paid`,
+    data: {
+      commissionId,
+      status: 'PAID',
+      amount: totalAmount,
+      processedBy: req.admin!.name,
+      reason,
+      notes: notes || null,
+      createdAt: new Date().toISOString(),
+    },
+  });
+});
+
+router.post('/commissions/:id/manual-override', requirePermission(AdminPermission.PAYMENTS_WRITE), manualOverrideCommission);
 
 // Pricing Management
 router.get('/services', requirePermission(AdminPermission.PRICING_READ), getServicesWithPricing);

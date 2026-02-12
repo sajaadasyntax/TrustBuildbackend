@@ -1207,12 +1207,12 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get commission payment
+  // Get commission payment - allow both PENDING and OVERDUE to be confirmed
   const commissionPayment = await prisma.commissionPayment.findFirst({
     where: {
       id: commissionPaymentId,
       contractorId: contractor.id,
-      status: 'PENDING',
+      status: { in: ['PENDING', 'OVERDUE'] },
     },
     include: {
       job: true,
@@ -1227,9 +1227,7 @@ export const payCommission = catchAsync(async (req: AuthenticatedRequest, res: R
   // Verify payment with Stripe
   const stripe = getStripeInstance();
   const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
-  
 
-  
   // Verify payment status
   if (paymentIntent.status !== 'succeeded') {
     return next(new AppError(`Payment not completed. Status: ${paymentIntent.status}`, 400));
@@ -1321,12 +1319,12 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get commission payment
+  // Get commission payment - allow both PENDING and OVERDUE to be paid
   const commissionPayment = await prisma.commissionPayment.findFirst({
     where: {
       id: commissionPaymentId,
       contractorId: contractor.id,
-      status: 'PENDING',
+      status: { in: ['PENDING', 'OVERDUE'] },
     },
     include: {
       job: true,
@@ -1337,21 +1335,12 @@ export const createCommissionPaymentIntent = catchAsync(async (req: Authenticate
     return next(new AppError('Commission payment not found or already paid', 404));
   }
 
-  // Check if payment is overdue
-  if (new Date() > commissionPayment.dueDate) {
-    // Mark as overdue
+  // If payment is overdue, mark it but still allow payment
+  if (commissionPayment.status === 'PENDING' && new Date() > commissionPayment.dueDate) {
     await prisma.commissionPayment.update({
       where: { id: commissionPaymentId },
       data: { status: 'OVERDUE' },
     });
-    
-    // Suspend contractor account
-    await prisma.contractor.update({
-      where: { id: contractor.id },
-      data: { status: 'SUSPENDED' },
-    });
-
-    return next(new AppError('Commission payment is overdue. Your account has been suspended. Please contact support.', 403));
   }
 
   // Create payment intent

@@ -357,37 +357,52 @@ export const verifyReview = catchAsync(async (req: AuthenticatedRequest, res: Re
 });
 
 // Helper function to update contractor rating
+// Counts all PUBLISHED reviews (not flagged) for reviewCount and averageRating.
+// Separately tracks verified review count.
 async function updateContractorRating(contractorId: string) {
-  // Get all verified reviews for the contractor
-  const reviews = await prisma.review.findMany({
+  // Get all published (unflagged) reviews for the contractor
+  const publishedReviews = await prisma.review.findMany({
     where: {
       contractorId,
-      isVerified: true,
+      flagReason: null, // only published / not-flagged reviews
     },
     select: {
       rating: true,
     },
   });
 
-  // Calculate average rating
-  const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-  const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+  // Calculate average rating from published reviews
+  const totalRating = publishedReviews.reduce((sum, review) => sum + review.rating, 0);
+  const averageRating = publishedReviews.length > 0 ? totalRating / publishedReviews.length : 0;
 
-  // Count verified reviews
+  // Count verified (and published) reviews separately
   const verifiedReviews = await prisma.review.count({
     where: {
       contractorId,
       isVerified: true,
+      flagReason: null,
     },
   });
 
-  // Update contractor
+  // Also compute live completed jobs count so the stale column stays in sync
+  const completedJobs = await prisma.job.count({
+    where: {
+      status: 'COMPLETED',
+      OR: [
+        { wonByContractorId: contractorId },
+        { jobAccess: { some: { contractorId } } },
+      ],
+    },
+  });
+
+  // Update contractor aggregate columns
   await prisma.contractor.update({
     where: { id: contractorId },
     data: {
       averageRating,
-      reviewCount: reviews.length,
+      reviewCount: publishedReviews.length,
       verifiedReviews,
+      jobsCompleted: completedJobs,
     },
   });
 }
@@ -408,9 +423,12 @@ export const getMyReceivedReviews = catchAsync(async (req: AuthenticatedRequest,
     return next(new AppError('Contractor profile not found', 404));
   }
 
-  // Get reviews
+  // Get published reviews only (not flagged by admin)
   const reviews = await prisma.review.findMany({
-    where: { contractorId: contractor.id },
+    where: {
+      contractorId: contractor.id,
+      flagReason: null, // Only published/unflagged reviews
+    },
     include: {
       job: {
         select: {

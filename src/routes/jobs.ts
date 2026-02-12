@@ -2752,9 +2752,24 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
         false // isCustomer
       );
 
-
     } catch (error) {
       console.error('Failed to send job completion notifications:', error);
+    }
+
+    // Notify admin team about the completed job and incoming revenue
+    try {
+      const { notifyAdminsJobCompletedWithRevenue } = await import('../services/adminNotificationService');
+      await notifyAdminsJobCompletedWithRevenue({
+        jobId: job.id,
+        jobTitle: job.title,
+        customerName: job.customer?.user?.name || 'Customer',
+        contractorName: job.wonByContractor?.user?.name || job.wonByContractor?.businessName || 'Contractor',
+        finalAmount: Number(job.contractorProposedAmount),
+        hasCommission: true, // commission is processed in processCommissionForJob above
+        commissionTotal: undefined, // actual amount comes from the commission service notification
+      });
+    } catch (adminNotifError) {
+      console.error('Failed to send admin job completion notification:', adminNotifError);
     }
 
   } else {

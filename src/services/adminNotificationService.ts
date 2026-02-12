@@ -449,6 +449,85 @@ export async function notifyAdminsUserAction(
 }
 
 /**
+ * Notify admins when a new commission is created (incoming revenue)
+ * Triggered when a customer confirms the final price and commission becomes payable
+ */
+export async function notifyAdminsNewCommission(data: {
+  commissionId: string;
+  contractorId: string;
+  contractorName: string;
+  jobId: string;
+  jobTitle: string;
+  customerName: string;
+  finalJobAmount: number;
+  commissionAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  commissionRate: number;
+  dueDate: Date;
+  invoiceNumber: string;
+}) {
+  await notifyAllAdmins({
+    title: '💰 New Commission Created — Incoming Revenue',
+    message: `Commission of £${data.totalAmount.toFixed(2)} (${data.commissionRate}% + VAT) created for ${data.contractorName} on job "${data.jobTitle}". Customer ${data.customerName} confirmed final price of £${data.finalJobAmount.toFixed(2)}. Due: ${data.dueDate.toLocaleDateString('en-GB')}.`,
+    type: 'SUCCESS',
+    actionLink: `/admin/unpaid-commissions`,
+    actionText: 'View Commissions',
+    metadata: {
+      commissionId: data.commissionId,
+      contractorId: data.contractorId,
+      contractorName: data.contractorName,
+      jobId: data.jobId,
+      jobTitle: data.jobTitle,
+      customerName: data.customerName,
+      finalJobAmount: data.finalJobAmount,
+      commissionAmount: data.commissionAmount,
+      vatAmount: data.vatAmount,
+      totalAmount: data.totalAmount,
+      commissionRate: data.commissionRate,
+      dueDate: data.dueDate.toISOString(),
+      invoiceNumber: data.invoiceNumber,
+      action: 'COMMISSION_CREATED',
+    },
+  });
+}
+
+/**
+ * Notify admins when a customer confirms final price and job completes
+ */
+export async function notifyAdminsJobCompletedWithRevenue(data: {
+  jobId: string;
+  jobTitle: string;
+  customerName: string;
+  contractorName: string;
+  finalAmount: number;
+  hasCommission: boolean;
+  commissionTotal?: number;
+}) {
+  const revenueNote = data.hasCommission
+    ? ` Expected commission revenue: £${data.commissionTotal?.toFixed(2)}.`
+    : ' No commission applicable for this job.';
+
+  await notifyAllAdmins({
+    title: '✅ Job Completed — Final Price Confirmed',
+    message: `${data.customerName} confirmed £${data.finalAmount.toFixed(2)} for "${data.jobTitle}" (Contractor: ${data.contractorName}).${revenueNote}`,
+    type: 'SUCCESS',
+    actionLink: `/admin/jobs`,
+    actionText: 'View Jobs',
+    metadata: {
+      jobId: data.jobId,
+      jobTitle: data.jobTitle,
+      customerName: data.customerName,
+      contractorName: data.contractorName,
+      finalAmount: data.finalAmount,
+      hasCommission: data.hasCommission,
+      commissionTotal: data.commissionTotal,
+      action: 'JOB_COMPLETED_REVENUE',
+    },
+  });
+}
+
+/**
  * Notify admins when a commission payment is due
  */
 export async function notifyAdminsCommissionDue(

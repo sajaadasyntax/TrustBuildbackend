@@ -166,12 +166,34 @@ export const getDashboardSummary = catchAsync(async (req: AuthenticatedRequest, 
     },
   });
 
-  // Calculate statistics
+  // Calculate statistics using live DB queries instead of stale aggregate columns
+  const [liveCompletedJobs, livePublishedReviewAgg, livePublishedReviewCount, liveVerifiedReviewCount] = await Promise.all([
+    prisma.job.count({
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { wonByContractorId: contractor.id },
+          { jobAccess: { some: { contractorId: contractor.id } } },
+        ],
+      },
+    }),
+    prisma.review.aggregate({
+      where: { contractorId: contractor.id, flagReason: null },
+      _avg: { rating: true },
+    }),
+    prisma.review.count({
+      where: { contractorId: contractor.id, flagReason: null },
+    }),
+    prisma.review.count({
+      where: { contractorId: contractor.id, isVerified: true, flagReason: null },
+    }),
+  ]);
+
   const statistics = {
-    jobsCompleted: contractor.jobsCompleted,
-    averageRating: contractor.averageRating,
-    reviewCount: contractor.reviewCount,
-    verifiedReviews: contractor.verifiedReviews,
+    jobsCompleted: liveCompletedJobs,
+    averageRating: livePublishedReviewAgg._avg.rating ?? 0,
+    reviewCount: livePublishedReviewCount,
+    verifiedReviews: liveVerifiedReviewCount,
     jobAccessCount,
     invoiceCount,
     commissionCount,

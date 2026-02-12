@@ -120,6 +120,7 @@ export const getContractor = catchAsync(async (req: AuthenticatedRequest, res: R
         orderBy: { createdAt: 'desc' },
       },
       reviews: {
+        where: { flagReason: null }, // Only published/unflagged reviews
         include: {
           customer: {
             include: {
@@ -141,10 +142,35 @@ export const getContractor = catchAsync(async (req: AuthenticatedRequest, res: R
     return next(new AppError('Contractor not found', 404));
   }
 
+  // ── Live counts: replace stale aggregate columns with real DB queries ──
+  const [publishedReviewAgg, publishedReviewCount, liveCompletedJobs] = await Promise.all([
+    prisma.review.aggregate({
+      where: { contractorId: contractor.id, flagReason: null },
+      _avg: { rating: true },
+    }),
+    prisma.review.count({
+      where: { contractorId: contractor.id, flagReason: null },
+    }),
+    prisma.job.count({
+      where: {
+        status: 'COMPLETED',
+        OR: [
+          { wonByContractorId: contractor.id },
+          { jobAccess: { some: { contractorId: contractor.id } } },
+        ],
+      },
+    }),
+  ]);
+
   res.status(200).json({
     status: 'success',
     data: {
-      contractor,
+      contractor: {
+        ...contractor,
+        jobsCompleted: liveCompletedJobs,
+        reviewCount: publishedReviewCount,
+        averageRating: publishedReviewAgg._avg.rating ?? 0,
+      },
     },
   });
 });
@@ -385,9 +411,51 @@ export const getMyProfile = catchAsync(async (req: AuthenticatedRequest, res: Re
     return next(new AppError('Contractor profile not found', 404));
   }
 
+  // ── Live counts: replace stale aggregate columns with real DB queries ──
+
+  // Live completed jobs: COUNT where status = 'COMPLETED' and contractor has access or was assigned
+  const liveCompletedJobs = await prisma.job.count({
+    where: {
+      status: 'COMPLETED',
+      OR: [
+        { wonByContractorId: contractor.id },
+        { jobAccess: { some: { contractorId: contractor.id } } },
+      ],
+    },
+  });
+
+  // Live review stats: only published reviews (not flagged)
+  const [publishedReviewAgg, publishedReviewCount, verifiedReviewCount] = await Promise.all([
+    prisma.review.aggregate({
+      where: {
+        contractorId: contractor.id,
+        flagReason: null, // published = not flagged
+      },
+      _avg: { rating: true },
+    }),
+    prisma.review.count({
+      where: {
+        contractorId: contractor.id,
+        flagReason: null,
+      },
+    }),
+    prisma.review.count({
+      where: {
+        contractorId: contractor.id,
+        isVerified: true,
+        flagReason: null,
+      },
+    }),
+  ]);
+
   // Filter location data for applications where contractor doesn't have access
   const contractorWithFilteredApps = {
     ...contractor,
+    // Override stale aggregate columns with live values
+    jobsCompleted: liveCompletedJobs,
+    reviewCount: publishedReviewCount,
+    averageRating: publishedReviewAgg._avg.rating ?? 0,
+    verifiedReviews: verifiedReviewCount,
     applications: contractor.applications?.map((app: any) => ({
       ...app,
       job: {
@@ -478,15 +546,15 @@ export const getMyEarnings = catchAsync(async (req: AuthenticatedRequest, res: R
       _sum: { amount: true }
     }),
     
-    // Count of completed jobs (from job applications that were accepted and jobs completed)
-    prisma.jobApplication.count({
+    // Live count of completed jobs (via access or direct assignment)
+    prisma.job.count({
       where: {
-        contractorId: contractor.id,
-        status: 'ACCEPTED',
-        job: {
-          status: 'COMPLETED'
-        }
-      }
+        status: 'COMPLETED',
+        OR: [
+          { wonByContractorId: contractor.id },
+          { jobAccess: { some: { contractorId: contractor.id } } },
+        ],
+      },
     }),
     
     // Average job value
