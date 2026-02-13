@@ -4327,11 +4327,11 @@ router.delete('/contractors/:contractorId/portfolio/:itemId', requirePermission(
   // Audit log
   await logActivity({
     adminId: req.admin!.id,
-    adminName: req.admin!.name,
     action: 'DELETE_PORTFOLIO_ITEM',
-    resourceType: 'PORTFOLIO_ITEM',
-    resourceId: itemId,
-    details: {
+    entityType: 'PORTFOLIO_ITEM',
+    entityId: itemId,
+    description: `Portfolio image "${portfolioItem.title}" removed by ${req.admin!.name}.${reason ? ` Reason: ${reason}` : ''}`,
+    diff: {
       contractorId,
       title: portfolioItem.title,
       imageUrl: portfolioItem.imageUrl,
@@ -4353,7 +4353,7 @@ router.delete('/contractors/:contractorId/portfolio/:itemId', requirePermission(
       const { createNotification } = await import('../services/notificationService');
       await createNotification({
         userId: contractor.userId,
-        type: 'SYSTEM',
+        type: 'INFO',
         title: 'Portfolio Image Removed',
         message: `Your portfolio image "${portfolioItem.title}" has been removed by an administrator.${reason ? ` Reason: ${reason}` : ''}`,
       });
