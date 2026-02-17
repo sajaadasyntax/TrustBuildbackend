@@ -284,6 +284,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 import { sendTestEmail } from './services/emailService';
 import { processCommissionReminders } from './services/commissionService';
 import { processFinalPriceReminders, processFinalPriceTimeouts } from './services/finalPriceReminderService';
+import { processCompletionConfirmationTimeouts } from './services/finalPriceTimeoutService';
 
 // Schedule recurring tasks (run every 30 minutes)
 const TASK_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -313,6 +314,14 @@ async function runScheduledTasks() {
     console.log('✅ Final price timeouts processed');
   } catch (error) {
     console.error('❌ Failed to process final price timeouts:', error);
+  }
+  
+  try {
+    // Process completed jobs where customer hasn't confirmed (auto-confirm after 7 days)
+    await processCompletionConfirmationTimeouts();
+    console.log('✅ Completion confirmation timeouts processed');
+  } catch (error) {
+    console.error('❌ Failed to process completion confirmation timeouts:', error);
   }
 }
 

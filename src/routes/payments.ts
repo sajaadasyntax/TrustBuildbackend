@@ -137,6 +137,43 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     return next(new AppError('Contractor profile not found', 404));
   }
 
+  // KYC / Account Status enforcement: block restricted contractors from purchasing
+  if (contractor.accountStatus && contractor.accountStatus !== 'ACTIVE') {
+    return next(new AppError(
+      `Your account is currently ${contractor.accountStatus.toLowerCase()}. Please complete ID verification or contact support before purchasing job access.`,
+      403
+    ));
+  }
+
+  // Check KYC status - block if overdue or rejected
+  const contractorKyc = await prisma.contractorKyc.findUnique({
+    where: { contractorId: contractor.id },
+    select: { status: true, dueBy: true },
+  });
+
+  if (contractorKyc) {
+    if (contractorKyc.status === 'REJECTED') {
+      return next(new AppError(
+        'Your ID verification was rejected. Please resubmit your documents before purchasing job access.',
+        403
+      ));
+    }
+    if (contractorKyc.status === 'OVERDUE') {
+      return next(new AppError(
+        'Your ID verification deadline has passed. Please complete verification before purchasing job access.',
+        403
+      ));
+    }
+    // Also check if deadline has passed but status hasn't been updated by the cron
+    if (contractorKyc.dueBy && new Date(contractorKyc.dueBy) < new Date() &&
+        contractorKyc.status !== 'APPROVED') {
+      return next(new AppError(
+        'Your ID verification period has expired. Please complete verification or contact support.',
+        403
+      ));
+    }
+  }
+
   // Get job details with lead price and current access count
   const job = await prisma.job.findUnique({
     where: { id: jobId },
@@ -196,14 +233,31 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const isUsingFreeTrial = !hasActiveSubscription && contractor.creditsBalance > 0;
 
   // Validate payment method based on subscription status
+  // IMPORTANT: STRIPE (card payment) is always valid regardless of subscription status.
+  // If Stripe payment has already been confirmed, we must never reject here without refunding.
+  const validPaymentMethods = ['STRIPE', 'CREDIT', 'STRIPE_SUBSCRIBER'];
+  if (!validPaymentMethods.includes(paymentMethod)) {
+    return next(new AppError('Invalid payment method', 400));
+  }
+
   if (hasActiveSubscription) {
-    // Subscribers can use CREDIT or STRIPE_SUBSCRIBER
-    if (paymentMethod !== 'CREDIT' && paymentMethod !== 'STRIPE_SUBSCRIBER') {
-      return next(new AppError('Subscribers must choose between using credits or paying lead price', 400));
+    // Subscribers can use CREDIT, STRIPE_SUBSCRIBER, or STRIPE (card is always valid)
+    if (paymentMethod !== 'CREDIT' && paymentMethod !== 'STRIPE_SUBSCRIBER' && paymentMethod !== 'STRIPE') {
+      return next(new AppError('Subscribers can use credits, pay lead price, or pay with card', 400));
     }
   } else {
-    // Non-subscribers can only use STRIPE or CREDIT (if they have free trial)
+    // Non-subscribers can use STRIPE or CREDIT (if they have free trial)
     if (paymentMethod !== 'STRIPE' && paymentMethod !== 'CREDIT') {
+      // If a Stripe payment was already processed, auto-refund before rejecting
+      if (stripePaymentIntentId) {
+        try {
+          const stripeInstance = getStripeInstance();
+          await stripeInstance.refunds.create({ payment_intent: stripePaymentIntentId });
+          console.error(`⚠️ Auto-refunded payment ${stripePaymentIntentId} due to invalid payment method for non-subscriber`);
+        } catch (refundErr) {
+          console.error(`❌ CRITICAL: Failed to auto-refund ${stripePaymentIntentId}:`, refundErr);
+        }
+      }
       return next(new AppError('Non-subscribers must pay with card or use their free trial credit', 400));
     }
     
@@ -246,7 +300,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     leadPrice = 0;
   }
 
-  const transactionResult = await prisma.$transaction(async (tx) => {
+  // Safety net: if we have a stripePaymentIntentId and anything fails from here on,
+  // we MUST auto-refund to prevent money being taken without recording the purchase.
+  let transactionResult: any;
+  try {
+
+  transactionResult = await prisma.$transaction(async (tx) => {
     let payment;
     let invoice;
     let usedFreeTrial = false;
@@ -621,6 +680,71 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       updatedCreditsBalance: updatedContractorData?.creditsBalance || contractor.creditsBalance,
     }
   });
+
+  } catch (purchaseError: any) {
+    // CRITICAL SAFETY NET: If a Stripe payment was already confirmed but something failed
+    // during our database transaction or post-processing, we must refund the payment.
+    if (stripePaymentIntentId && (paymentMethod === 'STRIPE' || paymentMethod === 'STRIPE_SUBSCRIBER')) {
+      console.error(`❌ Purchase failed AFTER Stripe payment ${stripePaymentIntentId}. Initiating auto-refund...`);
+      try {
+        const stripeInstance = getStripeInstance();
+        const refund = await stripeInstance.refunds.create({
+          payment_intent: stripePaymentIntentId,
+          reason: 'requested_by_customer',
+          metadata: {
+            autoRefundReason: 'purchase_processing_failed',
+            originalError: purchaseError.message?.substring(0, 200) || 'Unknown error',
+            contractorId: contractor.id,
+            jobId,
+          },
+        });
+        console.error(`✅ Auto-refund successful: ${refund.id} for payment ${stripePaymentIntentId}`);
+        
+        // Notify admins about the failed purchase and auto-refund
+        try {
+          const { notifyAllAdmins } = await import('../services/adminNotificationService');
+          await notifyAllAdmins({
+            title: 'Auto-Refund Issued: Purchase Failed After Payment',
+            message: `Contractor ${contractor.businessName || contractor.user.name} (${contractor.user.email}) was auto-refunded £${(Number(job.leadPrice || 0) * 1.20).toFixed(2)} for job "${job.title}". Stripe payment ${stripePaymentIntentId} was refunded (${refund.id}). Error: ${purchaseError.message}`,
+            type: 'WARNING',
+            actionLink: '/admin/payments',
+            actionText: 'View Payments',
+          });
+        } catch (notifErr) {
+          console.error('Failed to notify admins about auto-refund:', notifErr);
+        }
+
+        return next(new AppError(
+          'Your payment could not be processed and has been automatically refunded. The refund will appear in your account within 5-10 business days. Please try again or contact support.',
+          500
+        ));
+      } catch (refundError: any) {
+        console.error(`❌ CRITICAL: Auto-refund FAILED for payment ${stripePaymentIntentId}:`, refundError);
+        
+        // Notify admins about the critical failure
+        try {
+          const { notifyAllAdmins } = await import('../services/adminNotificationService');
+          await notifyAllAdmins({
+            title: 'CRITICAL: Auto-Refund Failed - Manual Action Required',
+            message: `Contractor ${contractor.businessName || contractor.user.name} (${contractor.user.email}) paid for job "${job.title}" (Stripe: ${stripePaymentIntentId}) but the purchase failed AND the auto-refund failed. MANUAL REFUND REQUIRED. Original error: ${purchaseError.message}. Refund error: ${refundError.message}`,
+            type: 'ERROR',
+            actionLink: '/admin/payments',
+            actionText: 'View Payments',
+          });
+        } catch (notifErr) {
+          console.error('Failed to notify admins about critical refund failure:', notifErr);
+        }
+
+        return next(new AppError(
+          'Your payment could not be processed. Our team has been notified and will issue a manual refund within 24 hours. Please contact support if you need immediate assistance.',
+          500
+        ));
+      }
+    }
+    
+    // For non-Stripe failures (credit payments), just pass the error through
+    throw purchaseError;
+  }
 });
 
 // @desc    Create Stripe payment intent for job access
@@ -630,13 +754,13 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
   const { jobId } = req.body;
   const userId = req.user!.id;
 
-  // Get contractor profile
+  // Get contractor profile (include accountStatus for pre-validation)
   const contractor = await prisma.contractor.findUnique({
     where: { userId },
     include: {
       user: true,
     },
-  });
+  }) as any;
 
   if (!contractor) {
     return next(new AppError('Contractor profile not found', 404));
@@ -683,6 +807,33 @@ export const createPaymentIntent = catchAsync(async (req: AuthenticatedRequest, 
 
   if (leadPrice <= 0) {
     return next(new AppError('Invalid lead price', 400));
+  }
+
+  // Pre-validate: check for issues that would cause purchaseJobAccess to fail AFTER payment
+  // This prevents money being taken and then rejected during the purchase step.
+
+  // Check if contractor already has access
+  const existingAccess = await prisma.jobAccess.findUnique({
+    where: {
+      jobId_contractorId: {
+        jobId,
+        contractorId: contractor.id,
+      },
+    },
+  });
+  if (existingAccess) {
+    return next(new AppError('You already have access to this job', 400));
+  }
+
+  // Check if max contractors reached
+  const accessCount = await prisma.jobAccess.count({ where: { jobId } });
+  if (accessCount >= job.maxContractorsPerJob) {
+    return next(new AppError(`This job has reached its contractor limit (${job.maxContractorsPerJob}). No more purchases available.`, 400));
+  }
+
+  // Check contractor account status (KYC/compliance)
+  if (contractor.accountStatus && contractor.accountStatus !== 'ACTIVE') {
+    return next(new AppError(`Your account is currently ${contractor.accountStatus.toLowerCase()}. Please complete verification before purchasing job access.`, 403));
   }
 
   // Calculate VAT (20%) on top of lead price

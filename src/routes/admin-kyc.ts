@@ -647,5 +647,203 @@ router.post(
   })
 );
 
+// Extend KYC deadline
+router.patch(
+  '/:kycId/extend-deadline',
+  protectAdmin,
+  requirePermission(AdminPermission.KYC_WRITE),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { kycId } = req.params;
+    const { days, reason } = req.body;
+
+    if (!days || days < 1 || days > 90) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Please specify a valid number of days (1-90)',
+      });
+    }
+
+    const kyc = await prisma.contractorKyc.findUnique({
+      where: { id: kycId },
+      include: {
+        contractor: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    });
+
+    if (!kyc) {
+      return res.status(404).json({ status: 'error', message: 'KYC record not found' });
+    }
+
+    // Calculate new deadline from now (not from old deadline)
+    const newDeadline = new Date();
+    newDeadline.setDate(newDeadline.getDate() + parseInt(days));
+
+    // Update the KYC record
+    await prisma.contractorKyc.update({
+      where: { id: kycId },
+      data: {
+        dueBy: newDeadline,
+        // If it was OVERDUE, reset to PENDING so the contractor can re-submit
+        ...(kyc.status === 'OVERDUE' && { status: 'PENDING' }),
+      },
+    });
+
+    // If account was paused due to overdue, reactivate to ACTIVE so contractor can submit
+    if (kyc.status === 'OVERDUE') {
+      await prisma.contractor.update({
+        where: { id: kyc.contractorId },
+        data: { accountStatus: 'ACTIVE' },
+      });
+    }
+
+    // Notify the contractor
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: kyc.contractor.user.id,
+        title: 'Verification Deadline Extended',
+        message: `Your ID verification deadline has been extended to ${newDeadline.toLocaleDateString()}. Please complete your verification before this date.${reason ? ` Note: ${reason}` : ''}`,
+        type: 'INFO',
+        actionLink: '/dashboard/kyc',
+        actionText: 'Complete Verification',
+      });
+    } catch (error) {
+      console.error('Failed to send deadline extension notification:', error);
+    }
+
+    // Send email notification
+    try {
+      const emailService = createEmailService();
+      const emailContent = createServiceEmail({
+        to: kyc.contractor.user.email,
+        subject: 'Verification Deadline Extended - TrustBuild',
+        heading: 'Your Verification Deadline Has Been Extended',
+        body: `
+          <p>Dear ${kyc.contractor.user.name},</p>
+          <p>Your ID verification deadline has been extended to <strong>${newDeadline.toLocaleDateString()}</strong>.</p>
+          ${reason ? `<p><strong>Note from admin:</strong> ${reason}</p>` : ''}
+          <p>Please complete your verification before this date to maintain access to the platform.</p>
+        `,
+        ctaText: 'Complete Verification',
+        ctaUrl: `${process.env.FRONTEND_URL}/dashboard/kyc`,
+      });
+      await emailService.sendMail(emailContent);
+    } catch (error) {
+      console.error('Failed to send deadline extension email:', error);
+    }
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'KYC_DEADLINE_EXTENDED',
+      entityType: 'ContractorKyc',
+      entityId: kycId,
+      description: `Extended KYC deadline for ${kyc.contractor.user.email} by ${days} days to ${newDeadline.toLocaleDateString()}${reason ? `. Reason: ${reason}` : ''}`,
+      diff: { oldDeadline: kyc.dueBy, newDeadline, days, reason },
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: `Deadline extended by ${days} days to ${newDeadline.toLocaleDateString()}`,
+      data: { newDeadline },
+    });
+  })
+);
+
+// Send KYC reminder to contractor
+router.post(
+  '/:kycId/send-reminder',
+  protectAdmin,
+  requirePermission(AdminPermission.KYC_WRITE),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { kycId } = req.params;
+    const { message } = req.body;
+
+    const kyc = await prisma.contractorKyc.findUnique({
+      where: { id: kycId },
+      include: {
+        contractor: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    });
+
+    if (!kyc) {
+      return res.status(404).json({ status: 'error', message: 'KYC record not found' });
+    }
+
+    if (kyc.status === 'APPROVED') {
+      return res.status(400).json({ status: 'error', message: 'This contractor is already verified' });
+    }
+
+    const daysRemaining = kyc.dueBy
+      ? Math.ceil((new Date(kyc.dueBy).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      : null;
+    const isOverdue = daysRemaining !== null && daysRemaining < 0;
+
+    // Send in-app notification
+    try {
+      const { createNotification } = await import('../services/notificationService');
+      await createNotification({
+        userId: kyc.contractor.user.id,
+        title: isOverdue ? 'Urgent: Verification Overdue' : 'Reminder: Complete Your Verification',
+        message: isOverdue
+          ? `Your ID verification is overdue by ${Math.abs(daysRemaining!)} days. Your account may be restricted until verification is complete.${message ? ` Admin message: ${message}` : ''}`
+          : `Please complete your ID verification${daysRemaining !== null ? ` within ${daysRemaining} days` : ''}.${message ? ` Admin message: ${message}` : ''}`,
+        type: isOverdue ? 'WARNING' : 'INFO',
+        actionLink: '/dashboard/kyc',
+        actionText: 'Complete Verification',
+      });
+    } catch (error) {
+      console.error('Failed to send KYC reminder notification:', error);
+    }
+
+    // Send email
+    try {
+      const emailService = createEmailService();
+      const emailContent = createServiceEmail({
+        to: kyc.contractor.user.email,
+        subject: isOverdue
+          ? 'Urgent: ID Verification Overdue - TrustBuild'
+          : 'Reminder: Complete Your ID Verification - TrustBuild',
+        heading: isOverdue ? 'Your Verification Is Overdue' : 'Verification Reminder',
+        body: `
+          <p>Dear ${kyc.contractor.user.name},</p>
+          ${isOverdue
+            ? `<p>Your ID verification was due on <strong>${kyc.dueBy ? new Date(kyc.dueBy).toLocaleDateString() : 'N/A'}</strong> and is now <strong>${Math.abs(daysRemaining!)} days overdue</strong>.</p>
+               <p>Your account access may be restricted until verification is completed.</p>`
+            : `<p>This is a reminder to complete your ID verification${daysRemaining !== null ? ` within <strong>${daysRemaining} days</strong> (due ${kyc.dueBy ? new Date(kyc.dueBy).toLocaleDateString() : 'N/A'})` : ''}.</p>`
+          }
+          ${message ? `<p><strong>Message from our team:</strong> ${message}</p>` : ''}
+          <p>Please upload your documents as soon as possible to avoid any disruption to your account.</p>
+        `,
+        ctaText: 'Complete Verification Now',
+        ctaUrl: `${process.env.FRONTEND_URL}/dashboard/kyc`,
+      });
+      await emailService.sendMail(emailContent);
+    } catch (error) {
+      console.error('Failed to send KYC reminder email:', error);
+    }
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'KYC_REMINDER_SENT',
+      entityType: 'ContractorKyc',
+      entityId: kycId,
+      description: `Sent KYC reminder to ${kyc.contractor.user.email}${message ? `. Message: ${message}` : ''}`,
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: `Verification reminder sent to ${kyc.contractor.user.email}`,
+    });
+  })
+);
+
 export default router;
 

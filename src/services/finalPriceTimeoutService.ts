@@ -74,6 +74,104 @@ export const processFinalPriceTimeouts = async (): Promise<void> => {
 
 };
 
+// Process completed jobs where customer has not confirmed completion within 7 days
+// This ensures commissions are always created even if the customer doesn't respond
+export const processCompletionConfirmationTimeouts = async (): Promise<void> => {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Find jobs that are COMPLETED, have a finalAmount, but customer hasn't confirmed
+  const unconfirmedJobs = await prisma.job.findMany({
+    where: {
+      status: 'COMPLETED',
+      customerConfirmed: false,
+      finalAmount: { not: null },
+      completionDate: {
+        lte: sevenDaysAgo, // Completed more than 7 days ago
+      },
+      commissionPaid: false, // Commission not yet processed
+    },
+    include: {
+      customer: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      },
+      wonByContractor: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      },
+    },
+  });
+
+  console.log(`🔍 Found ${unconfirmedJobs.length} completed jobs awaiting customer confirmation (>7 days)`);
+
+  for (const job of unconfirmedJobs) {
+    try {
+      const finalAmount = Number(job.finalAmount);
+      if (finalAmount <= 0 || !job.wonByContractorId) continue;
+
+      console.log(`⏰ Auto-confirming completion for job ${job.id}: ${job.title} (£${finalAmount})`);
+
+      // Auto-confirm the completion
+      await prisma.job.update({
+        where: { id: job.id },
+        data: {
+          customerConfirmed: true,
+          finalPriceConfirmedAt: new Date(),
+          adminOverrideAt: new Date(),
+          adminOverrideBy: 'SYSTEM_COMPLETION_TIMEOUT',
+        },
+      });
+
+      // Process commission
+      await processCommissionForJob(job.id, finalAmount);
+
+      // Update contractor stats
+      await prisma.contractor.update({
+        where: { id: job.wonByContractorId },
+        data: { jobsCompleted: { increment: 1 } },
+      });
+
+      // Notify both parties
+      try {
+        const { createNotification } = await import('./notificationService');
+        
+        // Notify customer
+        if (job.customer?.user?.id) {
+          await createNotification({
+            userId: job.customer.user.id,
+            title: 'Job Completion Auto-Confirmed',
+            message: `Job "${job.title}" was auto-confirmed as complete after 7 days without response. Commission has been applied to the contractor.`,
+            type: 'INFO',
+            actionLink: `/dashboard/client/jobs/${job.id}`,
+            actionText: 'View Job',
+          });
+        }
+
+        // Notify contractor
+        if (job.wonByContractor?.user?.id) {
+          await createNotification({
+            userId: job.wonByContractor.user.id,
+            title: 'Job Completion Auto-Confirmed',
+            message: `Job "${job.title}" has been auto-confirmed as complete. Commission invoice has been generated.`,
+            type: 'SUCCESS',
+            actionLink: `/dashboard/contractor/commissions`,
+            actionText: 'View Commissions',
+          });
+        }
+      } catch (notifError) {
+        console.error(`Failed to send completion timeout notifications for job ${job.id}:`, notifError);
+      }
+
+      console.log(`✅ Auto-confirmed completion and processed commission for job ${job.id}`);
+    } catch (error) {
+      console.error(`❌ Error auto-confirming completion for job ${job.id}:`, error);
+    }
+  }
+};
+
 // Send timeout notification to both customer and contractor
 async function sendTimeoutNotification(jobData: any) {
   try {

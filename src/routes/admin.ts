@@ -4399,6 +4399,37 @@ router.get('/jobs/stats', requirePermission(AdminPermission.JOBS_READ), getJobSt
 router.patch('/jobs/:id/status', requirePermission(AdminPermission.JOBS_WRITE), updateJobStatus);
 router.patch('/jobs/:id/flag', requirePermission(AdminPermission.JOBS_WRITE), toggleJobFlag);
 
+// Completed jobs missing commission records
+router.get('/jobs/missing-commissions', requirePermission(AdminPermission.JOBS_READ), catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  // Find completed jobs where a commission should exist but doesn't
+  const jobs = await prisma.job.findMany({
+    where: {
+      status: 'COMPLETED',
+      commissionPaid: false,
+      finalAmount: { not: null },
+      wonByContractorId: { not: null },
+    },
+    include: {
+      customer: { include: { user: { select: { name: true, email: true } } } },
+      wonByContractor: { include: { user: { select: { name: true, email: true } } } },
+      commissionPayment: { select: { id: true, status: true } },
+    },
+    orderBy: { completionDate: 'desc' },
+    take: 100,
+  });
+
+  // Filter to only those without any commission payment record
+  const missingCommissionJobs = jobs.filter(j => !j.commissionPayment);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      jobs: missingCommissionJobs,
+      total: missingCommissionJobs.length,
+    },
+  });
+}));
+
 // Messages/Chat Management
 router.get('/messages/conversations', requirePermission(AdminPermission.SUPPORT_READ), getAllConversations);
 router.get('/messages/conversation/:userId', requirePermission(AdminPermission.SUPPORT_READ), getConversationWithUser);
