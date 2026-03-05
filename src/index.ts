@@ -58,6 +58,51 @@ const PORT = process.env.PORT || 3000;
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
+// CORS - MUST be applied early so preflight OPTIONS get proper headers
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://trustbuild.uk',
+      'https://www.trustbuild.uk',
+      'https://api.trustbuild.uk',
+      process.env.FRONTEND_URL,
+      process.env.API_URL,
+    ]
+      .filter(Boolean)
+      .map((url) => url?.replace(/\/$/, '').toLowerCase());
+
+    const isExactMatch = allowedOrigins.some((a) => a === normalizedOrigin);
+    // Allow any trustbuild.uk subdomain (www, api, admin, etc.)
+    const host = normalizedOrigin.replace(/^https?:\/\//, '').split('/')[0] || '';
+    const isTrustbuildSubdomain =
+      host === 'trustbuild.uk' || host.endsWith('.trustbuild.uk');
+
+    if (isExactMatch || isTrustbuildSubdomain) {
+      return callback(null, true);
+    }
+
+    console.warn(`CORS blocked origin: ${origin} (allowed: ${allowedOrigins.join(', ')})`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type', 'Set-Cookie'],
+  preflightContinue: false,
+  maxAge: 86400,
+};
+app.use(cors(corsOptions));
+
+// Handle preflight OPTIONS before any other middleware that might respond
+app.options('*', cors(corsOptions));
+
 // Rate limiting - More lenient for auth routes (login, register, etc.)
 const authLimiter = rateLimit({
   windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
@@ -106,56 +151,6 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-// CORS configuration
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://trustbuild.uk',
-      'https://www.trustbuild.uk',
-      'https://api.trustbuild.uk',
-      process.env.FRONTEND_URL,
-      process.env.API_URL
-    ].filter(Boolean).map(url => {
-      // Normalize URLs - remove trailing slashes and ensure consistent format
-      return url?.replace(/\/$/, '');
-    });
-    
-    // Normalize the incoming origin (remove trailing slash)
-    const normalizedOrigin = origin.replace(/\/$/, '');
-    
-    // Check if the origin is in our allowed list (case-insensitive for protocol)
-    const isAllowed = allowedOrigins.some(allowed => {
-      const normalizedAllowed = allowed?.toLowerCase();
-      const normalizedOriginLower = normalizedOrigin.toLowerCase();
-      return normalizedAllowed === normalizedOriginLower;
-    });
-    
-    if (isAllowed) {
-      return callback(null, true);
-    }
-    
-    // Log the blocked origin for debugging
-    console.warn(`CORS blocked origin: ${origin} (normalized: ${normalizedOrigin})`);
-    console.warn(`Allowed origins: ${allowedOrigins.join(', ')}`);
-    
-    callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['Content-Length', 'Content-Type', 'Set-Cookie'],
-  preflightContinue: false,
-  maxAge: 86400, // 24 hours
-};
-
-app.use(cors(corsOptions));
-
 // CORS error handler - must be before other error handlers
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err.message === 'Not allowed by CORS') {
@@ -198,9 +193,6 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
   });
 });
-
-// Handle preflight OPTIONS requests for all routes
-app.options('*', cors(corsOptions));
 
 // Add a debug route to test CORS
 app.get('/api/cors-test', (req, res) => {
