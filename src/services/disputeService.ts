@@ -208,15 +208,19 @@ export const disputeService = {
         }
       }
 
-      // Handle job completion override
+      // Handle job completion - when admin resolves in contractor's favor
       if (data.completeJob) {
+        // Put job in IN_PROGRESS so contractor can enter final price for commission.
+        // Commission cannot be calculated without final amount. Contractor must propose
+        // final price, then customer confirms (or admin overrides) before job completes.
         await tx.job.update({
           where: { id: dispute.jobId },
           data: {
-            status: JobStatus.COMPLETED,
-            customerConfirmed: true,
-            adminOverrideAt: new Date(),
-            adminOverrideBy: data.adminId,
+            status: JobStatus.IN_PROGRESS,
+            // Clear any stale proposed amount so contractor proposes fresh
+            contractorProposedAmount: null,
+            finalPriceProposedAt: null,
+            finalPriceTimeoutAt: null,
           },
         });
       } else {
@@ -224,8 +228,8 @@ export const disputeService = {
         await tx.job.update({
           where: { id: dispute.jobId },
           data: {
-            status: dispute.job.contractorProposedAmount 
-              ? JobStatus.AWAITING_FINAL_PRICE_CONFIRMATION 
+            status: dispute.job.contractorProposedAmount
+              ? JobStatus.AWAITING_FINAL_PRICE_CONFIRMATION
               : JobStatus.IN_PROGRESS,
           },
         });
@@ -235,7 +239,7 @@ export const disputeService = {
     });
 
     // Send notifications to involved parties
-    await this.notifyDisputeResolved(dispute.id);
+    await this.notifyDisputeResolved(dispute.id, data.completeJob || false);
 
     return result;
   },
@@ -407,20 +411,24 @@ export const disputeService = {
     // Log dispute creation for admin dashboard
     console.log(`New dispute created: ${dispute.id} - ${dispute.title}`);
 
-    // Notify the other party (customer or contractor)
+    // Notify the other party (customer or contractor) with correct dashboard link
     const job = dispute.job;
-    const notifyUserId = dispute.raisedByRole === 'CUSTOMER' 
-      ? job.wonByContractor?.userId 
-      : job.customer.userId;
+    const isCustomer = dispute.raisedByRole === 'CUSTOMER';
+    const notifyUserId = isCustomer ? job.wonByContractor?.userId : job.customer.userId;
 
     if (notifyUserId) {
       try {
+        // Use correct dashboard path: customers use /dashboard/client, contractors use /dashboard/contractor
+        const actionLink = isCustomer
+          ? `/dashboard/client/disputes/${dispute.id}`
+          : `/dashboard/contractor/disputes/${dispute.id}`;
+
         await createNotification({
           userId: notifyUserId,
           title: 'Dispute Created',
           message: `A dispute has been created for job: ${job.title}`,
           type: 'WARNING',
-          actionLink: `/disputes/${dispute.id}`,
+          actionLink,
           actionText: 'View Dispute',
         });
       } catch (error) {
@@ -437,25 +445,25 @@ export const disputeService = {
     if (!dispute) return;
 
     const job = dispute.job;
-    const notifyUserIds: string[] = [];
+    const notifyUserIds: { userId: string; isCustomer: boolean }[] = [];
 
-    // Notify customer
     if (job.customer.userId !== responderId) {
-      notifyUserIds.push(job.customer.userId);
+      notifyUserIds.push({ userId: job.customer.userId, isCustomer: true });
     }
-
-    // Notify contractor
     if (job.wonByContractor && job.wonByContractor.userId !== responderId) {
-      notifyUserIds.push(job.wonByContractor.userId);
+      notifyUserIds.push({ userId: job.wonByContractor.userId, isCustomer: false });
     }
 
-    for (const userId of notifyUserIds) {
+    for (const { userId, isCustomer } of notifyUserIds) {
+      const actionLink = isCustomer
+        ? `/dashboard/client/disputes/${dispute.id}`
+        : `/dashboard/contractor/disputes/${dispute.id}`;
       await createNotification({
         userId,
         title: 'New Dispute Response',
         message: `A new response has been added to dispute: ${dispute.title}`,
         type: 'INFO',
-        actionLink: `/disputes/${dispute.id}`,
+        actionLink,
         actionText: 'View Response',
       });
     }
@@ -464,27 +472,32 @@ export const disputeService = {
   /**
    * Notify parties when dispute is resolved
    */
-  async notifyDisputeResolved(disputeId: string) {
+  async notifyDisputeResolved(disputeId: string, jobResolvedInContractorFavor = false) {
     const dispute = await this.getDisputeDetails(disputeId);
     if (!dispute) return;
 
     const job = dispute.job;
-    const notifyUserIds: string[] = [job.customer.userId];
 
-    if (job.wonByContractor) {
-      notifyUserIds.push(job.wonByContractor.userId);
+    // Only notify contractor (disputes remain internal - do not expose to customer)
+    const contractorUserId = job.wonByContractor?.userId;
+    if (contractorUserId) {
+      try {
+        const wasCompleted = jobResolvedInContractorFavor;
+        await createNotification({
+          userId: contractorUserId,
+          title: 'Dispute Resolved',
+          message: wasCompleted
+            ? `The dispute regarding "${job.title}" has been resolved. Please enter the final price for this job so we can process the commission.`
+            : `The dispute regarding "${job.title}" has been resolved. You can now continue with the job.`,
+          type: 'SUCCESS',
+          actionLink: wasCompleted ? `/dashboard/contractor/jobs/${job.id}` : `/dashboard/contractor/disputes/${dispute.id}`,
+          actionText: wasCompleted ? 'Enter Final Price' : 'View Resolution',
+        });
+      } catch (error) {
+        console.error(`Failed to notify contractor ${contractorUserId}:`, error);
+      }
     }
-
-    for (const userId of notifyUserIds) {
-      await createNotification({
-        userId,
-        title: 'Dispute Resolved',
-        message: `The dispute "${dispute.title}" has been resolved.`,
-        type: 'SUCCESS',
-        actionLink: `/disputes/${dispute.id}`,
-        actionText: 'View Resolution',
-      });
-    }
+    // Customer is not notified - keeps dispute handling internal
   },
 
   /**

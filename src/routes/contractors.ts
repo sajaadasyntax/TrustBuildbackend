@@ -76,6 +76,9 @@ export const getAllContractors = catchAsync(async (req: AuthenticatedRequest, re
         take: 3,
         orderBy: { createdAt: 'desc' },
       },
+      kyc: {
+        select: { status: true },
+      },
     },
     orderBy: [
       { featuredContractor: 'desc' },
@@ -116,6 +119,9 @@ export const getContractor = catchAsync(async (req: AuthenticatedRequest, res: R
         },
       },
       services: true,
+      kyc: {
+        select: { status: true },
+      },
       portfolio: {
         orderBy: { createdAt: 'desc' },
       },

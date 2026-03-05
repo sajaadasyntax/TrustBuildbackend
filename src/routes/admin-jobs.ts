@@ -706,5 +706,77 @@ router.patch(
   })
 );
 
+// Jobs awaiting final price confirmation (admin)
+router.get(
+  '/awaiting-final-price',
+  protectAdmin,
+  requirePermission('final_price:read'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    const jobs = await prisma.job.findMany({
+      where: { status: 'AWAITING_FINAL_PRICE_CONFIRMATION' },
+      include: {
+        customer: { include: { user: { select: { id: true, name: true, email: true } } } },
+        wonByContractor: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+      orderBy: { finalPriceProposedAt: 'asc' },
+      skip,
+      take: limit,
+    });
+
+    const total = await prisma.job.count({
+      where: { status: 'AWAITING_FINAL_PRICE_CONFIRMATION' },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: jobs,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  })
+);
+
+// Jobs with rejected final prices (admin)
+router.get(
+  '/rejected-final-prices',
+  protectAdmin,
+  requirePermission('final_price:read'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    const jobs = await prisma.job.findMany({
+      where: {
+        finalPriceRejectedAt: { not: null },
+        status: { in: ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION'] },
+      },
+      include: {
+        customer: { include: { user: { select: { id: true, name: true, email: true } } } },
+        wonByContractor: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+      orderBy: { finalPriceRejectedAt: 'desc' },
+      skip,
+      take: limit,
+    });
+
+    const total = await prisma.job.count({
+      where: {
+        finalPriceRejectedAt: { not: null },
+        status: { in: ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION'] },
+      },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: jobs,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  })
+);
+
 export default router;
 
