@@ -778,5 +778,136 @@ router.get(
   })
 );
 
+// Admin approve final price (confirms the contractor's proposed price as-is)
+router.post(
+  '/:jobId/approve-final-price',
+  protectAdmin,
+  requirePermission('final_price:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        customer: { include: { user: { select: { id: true, name: true, email: true } } } },
+        wonByContractor: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ status: 'error', message: 'Job not found' });
+    }
+
+    if (job.status !== 'AWAITING_FINAL_PRICE_CONFIRMATION') {
+      return res.status(400).json({ status: 'error', message: 'Job is not awaiting final price confirmation' });
+    }
+
+    if (!job.contractorProposedAmount) {
+      return res.status(400).json({ status: 'error', message: 'No final price has been proposed for this job' });
+    }
+
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        finalAmount: job.contractorProposedAmount,
+        finalPriceConfirmedAt: new Date(),
+        adminOverrideAt: new Date(),
+        adminOverrideBy: req.admin!.id,
+        status: 'COMPLETED',
+        completionDate: new Date(),
+        customerConfirmed: true,
+      },
+    });
+
+    await processCommissionForJob(jobId, Number(job.contractorProposedAmount));
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'FINAL_PRICE_APPROVED',
+      entityType: 'Job',
+      entityId: jobId,
+      description: `Admin approved final price of £${job.contractorProposedAmount} for job: ${job.title}`,
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Final price approved. Job marked as completed.',
+      data: { job: updatedJob },
+    });
+  })
+);
+
+// Admin override final price (force-completes with optional amount override)
+router.post(
+  '/:jobId/override-final-price',
+  protectAdmin,
+  requirePermission('final_price:write'),
+  catchAsync(async (req: AdminAuthRequest, res: Response) => {
+    const { jobId } = req.params;
+    const { reason, finalAmount } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ status: 'error', message: 'A reason is required for overriding the final price' });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        customer: { include: { user: { select: { id: true, name: true, email: true } } } },
+        wonByContractor: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ status: 'error', message: 'Job not found' });
+    }
+
+    if (job.status !== 'AWAITING_FINAL_PRICE_CONFIRMATION') {
+      return res.status(400).json({ status: 'error', message: 'Job is not awaiting final price confirmation' });
+    }
+
+    const amountToUse = finalAmount && finalAmount > 0
+      ? finalAmount
+      : job.contractorProposedAmount;
+
+    if (!amountToUse) {
+      return res.status(400).json({ status: 'error', message: 'No amount available to use for override' });
+    }
+
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: {
+        finalAmount: amountToUse,
+        finalPriceConfirmedAt: new Date(),
+        adminOverrideAt: new Date(),
+        adminOverrideBy: req.admin!.id,
+        status: 'COMPLETED',
+        completionDate: new Date(),
+        customerConfirmed: true,
+      },
+    });
+
+    await processCommissionForJob(jobId, Number(amountToUse));
+
+    await logActivity({
+      adminId: req.admin!.id,
+      action: 'FINAL_PRICE_OVERRIDE',
+      entityType: 'Job',
+      entityId: jobId,
+      description: `Admin overrode final price confirmation for job: ${job.title}. Reason: ${reason}`,
+      ipAddress: getClientIp(req),
+      userAgent: getClientUserAgent(req),
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Final price overridden. Job marked as completed.',
+      data: { job: updatedJob },
+    });
+  })
+);
+
 export default router;
 

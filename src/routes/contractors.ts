@@ -1125,6 +1125,31 @@ export const getFeaturedContractors = catchAsync(async (req: AuthenticatedReques
           title: true,
         },
       },
+      reviews: {
+        where: {
+          OR: [
+            { isExternal: false },
+            { isExternal: true, isVerified: true },
+          ],
+        },
+        orderBy: [{ rating: 'desc' }, { createdAt: 'desc' }],
+        take: 3,
+        select: {
+          id: true,
+          rating: true,
+          comment: true,
+          customerName: true,
+          isExternal: true,
+          createdAt: true,
+          customer: {
+            select: {
+              user: {
+                select: { name: true },
+              },
+            },
+          },
+        },
+      },
     },
     orderBy: [
       { averageRating: 'desc' },
@@ -1146,6 +1171,14 @@ export const getFeaturedContractors = catchAsync(async (req: AuthenticatedReques
     revenue: 0, // Revenue not tracked at contractor level
     businessName: contractor.businessName,
     avatarUrl: contractor.logoUrl,
+    reviewCount: contractor.reviewCount || 0,
+    reviews: (contractor as any).reviews?.map((r: any) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      customerName: r.isExternal ? r.customerName : r.customer?.user?.name || 'Customer',
+      createdAt: r.createdAt,
+    })) || [],
   }));
 
   res.status(200).json({

@@ -85,6 +85,46 @@ const DEFAULT_CONTENT = {
   }
 };
 
+// @desc    Get subscription pricing (public route)
+// @route   GET /api/content/pricing
+// @access  Public
+router.get(
+  '/pricing',
+  catchAsync(async (req: Request, res: Response) => {
+    const setting = await prisma.adminSettings.findUnique({
+      where: { key: 'SUBSCRIPTION_PRICING' },
+    });
+
+    const defaultPricing = {
+      monthly: 40,
+      sixMonths: 180,
+      yearly: 300,
+      currency: 'GBP',
+    };
+
+    let pricing = defaultPricing;
+
+    if (setting?.value) {
+      try {
+        const parsed = JSON.parse(setting.value);
+        pricing = {
+          monthly: parseFloat(parsed.monthly?.toString() || '40'),
+          sixMonths: parseFloat(parsed.sixMonths?.toString() || '180'),
+          yearly: parseFloat(parsed.yearly?.toString() || '300'),
+          currency: parsed.currency || 'GBP',
+        };
+      } catch (error) {
+        console.error('Failed to parse subscription pricing:', error);
+      }
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: { pricing },
+    });
+  })
+);
+
 // @desc    Get platform content (public route)
 // @route   GET /api/content/platform
 // @access  Public

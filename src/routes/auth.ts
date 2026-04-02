@@ -110,6 +110,24 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
     return next(new AppError('Password must be at least 8 characters long', 400));
   }
 
+  // Check if registration is open for this role
+  try {
+    const registrationSetting = await prisma.adminSettings.findUnique({
+      where: { key: 'REGISTRATION_OPEN' },
+    });
+    if (registrationSetting?.value) {
+      const regConfig = JSON.parse(registrationSetting.value);
+      if (role === 'CONTRACTOR' && regConfig.contractors === false) {
+        return next(new AppError('Contractor registrations are currently closed. Please check back soon.', 403));
+      }
+      if (role === 'CUSTOMER' && regConfig.customers === false) {
+        return next(new AppError('Customer registrations are currently closed. Please check back soon.', 403));
+      }
+    }
+  } catch {
+    // If setting check fails, allow registration to proceed
+  }
+
   // Check if user already exists
   const existingUser = await prisma.user.findUnique({
     where: { email },
