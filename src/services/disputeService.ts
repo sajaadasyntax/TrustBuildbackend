@@ -1,5 +1,6 @@
 import { PrismaClient, DisputeType, DisputeStatus, DisputeResolution, UserRole, JobStatus } from '@prisma/client';
 import { createNotification } from './notificationService';
+import { notifyAdminsNewDispute } from './adminNotificationService';
 
 const prisma = new PrismaClient();
 
@@ -405,14 +406,25 @@ export const disputeService = {
    * Notify admins when a dispute is created
    */
   async notifyDisputeCreated(dispute: any) {
-    // Note: Admin notifications are not sent through the user notification system
-    // as admins have separate accounts. Admins can view disputes in their dashboard.
-    
-    // Log dispute creation for admin dashboard
-    console.log(`New dispute created: ${dispute.id} - ${dispute.title}`);
+    const job = dispute.job;
+    const raisedByName =
+      dispute.raisedByRole === 'CUSTOMER'
+        ? job.customer?.user?.name
+        : job.wonByContractor?.user?.name;
+
+    // Notify admins immediately when any dispute is opened.
+    try {
+      await notifyAdminsNewDispute(
+        dispute.id,
+        job.id,
+        job.title,
+        raisedByName || 'A user'
+      );
+    } catch (error) {
+      console.error('Failed to notify admins about new dispute:', error);
+    }
 
     // Notify the other party (customer or contractor) with correct dashboard link
-    const job = dispute.job;
     const isCustomer = dispute.raisedByRole === 'CUSTOMER';
     const notifyUserId = isCustomer ? job.wonByContractor?.userId : job.customer.userId;
 

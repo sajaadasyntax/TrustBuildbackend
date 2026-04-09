@@ -5,6 +5,7 @@ import { AppError, catchAsync } from '../middleware/errorHandler';
 import Stripe from 'stripe';
 import nodemailer from 'nodemailer';
 import { createEmailService, createServiceEmail } from '../services/emailService';
+import { reconcileJobAccessFromPaymentIntent } from '../services/paymentReconciliationService';
 
 // Helper to format currency
 const formatCurrency = (amount: number | any): string => {
@@ -212,6 +213,35 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const existingAccess = job.jobAccess.find(access => access.contractorId === contractor.id);
   
   if (existingAccess) {
+    // Idempotency path: Stripe webhook may grant access before this endpoint completes.
+    if (stripePaymentIntentId && (paymentMethod === 'STRIPE' || paymentMethod === 'STRIPE_SUBSCRIBER')) {
+      const existingPayment = await prisma.payment.findFirst({
+        where: { stripePaymentId: stripePaymentIntentId, contractorId: contractor.id },
+        include: { invoice: true },
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: 'Job access already purchased',
+        data: {
+          payment: existingPayment || null,
+          invoice: existingPayment?.invoice || null,
+          jobAccess: {
+            jobId,
+            contractorId: contractor.id,
+            accessMethod: 'PAYMENT',
+          },
+          customerContact: {
+            name: job.customer?.user?.name,
+            email: job.customer?.user?.email,
+            phone: job.customer?.phone,
+          },
+          contractorsWithAccess: job.jobAccess.length,
+          maxContractors: job.maxContractorsPerJob,
+          updatedCreditsBalance: contractor.creditsBalance,
+        },
+      });
+    }
     return next(new AppError('You already have access to this job', 400));
   }
 
@@ -463,6 +493,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Verify amount matches (with tolerance for rounding)
       const expectedAmount = Math.round(totalAmount * 100);
       if (Math.abs(paymentIntent.amount - expectedAmount) > 1) { // Allow 1 cent tolerance
+        console.error(
+          `❌ Stripe amount mismatch for PI ${stripePaymentIntentId}. expected=${expectedAmount} actual=${paymentIntent.amount} job=${jobId} contractor=${contractor.id}`
+        );
         throw new AppError(`Payment amount mismatch: expected ${expectedAmount}, got ${paymentIntent.amount}`, 400);
       }
 
@@ -523,6 +556,9 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       // Verify amount matches (with tolerance for rounding)
       const expectedAmount = Math.round(totalAmount * 100);
       if (Math.abs(paymentIntent.amount - expectedAmount) > 1) { // Allow 1 cent tolerance
+        console.error(
+          `❌ Subscriber Stripe amount mismatch for PI ${stripePaymentIntentId}. expected=${expectedAmount} actual=${paymentIntent.amount} job=${jobId} contractor=${contractor.id}`
+        );
         throw new AppError(`Payment amount mismatch: expected ${expectedAmount}, got ${paymentIntent.amount}`, 400);
       }
       
@@ -743,8 +779,85 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
     }
     
     // For non-Stripe failures (credit payments), just pass the error through
+  console.error(
+    `❌ Job access purchase failed (method=${paymentMethod}, contractor=${contractor.id}, job=${jobId}, stripePI=${stripePaymentIntentId || 'n/a'})`,
+    purchaseError
+  );
     throw purchaseError;
   }
+});
+
+// @desc    Reconcile a successful Stripe payment with local records
+// @route   POST /api/payments/reconcile-payment-intent
+// @access  Private (Contractor only)
+export const reconcilePaymentIntent = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const { stripePaymentIntentId } = req.body;
+  const userId = req.user!.id;
+
+  if (!stripePaymentIntentId) {
+    return next(new AppError('stripePaymentIntentId is required', 400));
+  }
+
+  const contractor = await prisma.contractor.findUnique({
+    where: { userId },
+    include: { user: true },
+  });
+  if (!contractor) {
+    return next(new AppError('Contractor profile not found', 404));
+  }
+
+  const stripeInstance = getStripeInstance();
+  const paymentIntent = await stripeInstance.paymentIntents.retrieve(stripePaymentIntentId);
+  if (paymentIntent.metadata?.contractorId !== contractor.id) {
+    return next(new AppError('You are not authorized to reconcile this payment intent', 403));
+  }
+
+  const reconciliation = await reconcileJobAccessFromPaymentIntent(paymentIntent);
+
+  const payment = await prisma.payment.findFirst({
+    where: { stripePaymentId: stripePaymentIntentId },
+    include: { invoice: true },
+  });
+  const job = await prisma.job.findUnique({
+    where: { id: reconciliation.jobId },
+    include: {
+      customer: {
+        include: {
+          user: {
+            select: { name: true, email: true },
+          },
+        },
+      },
+      jobAccess: {
+        select: { id: true },
+      },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Payment intent reconciled successfully',
+    data: {
+      payment,
+      invoice: payment?.invoice || null,
+      jobAccess: {
+        jobId: reconciliation.jobId,
+        contractorId: reconciliation.contractorId,
+        accessMethod: 'PAYMENT',
+      },
+      customerContact: {
+        name: job?.customer?.user?.name,
+        email: job?.customer?.user?.email,
+        phone: job?.customer?.phone,
+      },
+      contractorsWithAccess: job?.jobAccess?.length || 0,
+      maxContractors: job?.maxContractorsPerJob || 0,
+      updatedCreditsBalance: contractor.creditsBalance,
+      reconciled: true,
+      createdJobAccess: reconciliation.createdJobAccess,
+      createdPayment: reconciliation.createdPayment,
+    },
+  });
 });
 
 // @desc    Create Stripe payment intent for job access
@@ -986,6 +1099,7 @@ router.use(protect); // All routes require authentication
 router.get('/job-access/:jobId', checkJobAccess);
 router.post('/purchase-job-access', purchaseJobAccess);
 router.post('/create-payment-intent', createPaymentIntent);
+router.post('/reconcile-payment-intent', reconcilePaymentIntent);
 router.get('/history', getPaymentHistory);
 router.get('/credit-history', getCreditHistory);
 

@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import { buffer } from 'micro';
 import { createEmailService } from '../services/emailService';
 import { SubscriptionPlan, CommissionStatus } from '@prisma/client';
+import { reconcileJobAccessFromPaymentIntent } from '../services/paymentReconciliationService';
 
 const router = Router();
 
@@ -481,63 +482,17 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
           }
         }
       } else if (paymentType === 'job_access_purchase') {
-        const jobId = paymentIntent.metadata?.jobId;
-        const contractorId = paymentIntent.metadata?.contractorId;
-        
-        if (jobId && contractorId) {
-          // Check if we already have processed this payment
-          const existingAccess = await prisma.jobAccess.findUnique({
-            where: {
-              jobId_contractorId: {
-                jobId,
-                contractorId,
-              },
-            },
-          });
-          
-          if (!existingAccess) {
-            // Get job and contractor details
-            const job = await prisma.job.findUnique({
-              where: { id: jobId },
-              include: { customer: { include: { user: true } } },
-            });
-            
-            const contractor = await prisma.contractor.findUnique({
-              where: { id: contractorId },
-              include: { user: true },
-            });
-            
-            if (job && contractor) {
-              // Create job access
-              await prisma.jobAccess.create({
-                data: {
-                  contractorId,
-                  jobId,
-                  accessMethod: 'PAYMENT',
-                  paidAmount: Number(paymentIntent.amount) / 100,
-                  creditUsed: false,
-                },
-              });
-              
-              // Create payment record if it doesn't exist
-              const existingPayment = await prisma.payment.findFirst({
-                where: { stripePaymentId: paymentIntent.id },
-              });
-              
-              if (!existingPayment) {
-                await prisma.payment.create({
-                  data: {
-                    contractorId,
-                    amount: Number(paymentIntent.amount) / 100,
-                    type: 'LEAD_ACCESS',
-                    status: 'COMPLETED',
-                    stripePaymentId: paymentIntent.id,
-                    description: `Job access purchased for: ${job.title}`,
-                  },
-                });
-              }
-            }
-          }
+        try {
+          const reconciliation = await reconcileJobAccessFromPaymentIntent(paymentIntent);
+          console.log(
+            `✅ Job access payment reconciled for PI ${paymentIntent.id} (jobAccessCreated=${reconciliation.createdJobAccess}, paymentCreated=${reconciliation.createdPayment})`
+          );
+        } catch (reconcileError: any) {
+          console.error(
+            `❌ Failed to reconcile job access payment intent ${paymentIntent.id}:`,
+            reconcileError?.message || reconcileError
+          );
+          throw reconcileError;
         }
       } else if (paymentType === 'commission_payment') {
         const commissionPaymentId = paymentIntent.metadata?.commissionPaymentId;

@@ -420,18 +420,15 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     },
   });
 
-  // Notify subscribed contractors about new job posting
+  // Notify active approved contractors about new job posting
   try {
     const { createBulkNotifications } = await import('../services/notificationService');
     
-    // Get all active subscribed contractors who provide this service
-    const subscribedContractors = await prisma.contractor.findMany({
+    // Notify all active + approved contractors who offer this service.
+    const eligibleContractors = await prisma.contractor.findMany({
       where: {
         accountStatus: 'ACTIVE',
         profileApproved: true,
-        subscription: {
-          status: 'ACTIVE',
-        },
         services: {
           some: {
             id: finalServiceId,
@@ -447,8 +444,8 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       },
     });
 
-    if (subscribedContractors.length > 0) {
-      const notifications = subscribedContractors.map((contractor) => ({
+    if (eligibleContractors.length > 0) {
+      const notifications = eligibleContractors.map((contractor) => ({
         userId: contractor.user.id,
         title: 'New Job Posted',
         message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}" (Budget: £${Number(budget).toFixed(2)})`,

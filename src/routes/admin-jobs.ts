@@ -710,7 +710,7 @@ router.patch(
 router.get(
   '/awaiting-final-price',
   protectAdmin,
-  requirePermission('final_price:read'),
+  requirePermission('final_price:read', 'jobs:read'),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -743,7 +743,7 @@ router.get(
 router.get(
   '/rejected-final-prices',
   protectAdmin,
-  requirePermission('final_price:read'),
+  requirePermission('final_price:read', 'jobs:read'),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -782,7 +782,7 @@ router.get(
 router.post(
   '/:jobId/approve-final-price',
   protectAdmin,
-  requirePermission('final_price:write'),
+  requirePermission('final_price:write', 'jobs:write'),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { jobId } = req.params;
 
@@ -843,7 +843,7 @@ router.post(
 router.post(
   '/:jobId/override-final-price',
   protectAdmin,
-  requirePermission('final_price:write'),
+  requirePermission('final_price:write', 'jobs:write'),
   catchAsync(async (req: AdminAuthRequest, res: Response) => {
     const { jobId } = req.params;
     const { reason, finalAmount } = req.body;
