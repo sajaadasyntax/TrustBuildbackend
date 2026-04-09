@@ -257,10 +257,13 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   const subscriptionStatus = await checkSubscriptionStatus(contractor.id);
   const hasActiveSubscription = subscriptionStatus.hasActiveSubscription;
 
-  // Check if using free trial credit
-  // If contractor is not subscribed and has credits, all credits are considered free trial credits
-  // (with SMALL job restriction) until they subscribe
-  const isUsingFreeTrial = !hasActiveSubscription && contractor.creditsBalance > 0;
+  // Free-trial restriction only applies to the initial welcome allocation.
+  // Admin-added / purchased credits must remain usable for all job sizes.
+  const isUsingRestrictedTrialCredit =
+    !hasActiveSubscription &&
+    contractor.hasUsedFreeTrial === false &&
+    contractor.creditsBalance > 0 &&
+    contractor.creditsBalance <= (contractor.freeJobAllocation || 1);
 
   // Validate payment method based on subscription status
   // IMPORTANT: STRIPE (card payment) is always valid regardless of subscription status.
@@ -297,8 +300,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         return next(new AppError('Insufficient credits. Please subscribe or pay with card.', 400));
       }
       
-      // Free trial credit can ONLY be used for SMALL jobs
-      if (isUsingFreeTrial && job.jobSize !== 'SMALL') {
+      // Only restricted welcome trial credits are limited to SMALL jobs.
+      if (isUsingRestrictedTrialCredit && job.jobSize !== 'SMALL') {
         return next(new AppError('Your free trial credit can only be used for small jobs. For medium or large jobs, you must either pay or subscribe.', 400));
       }
     }
@@ -350,7 +353,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           hasUsedFreeTrial: true, 
           subscription: true,
           weeklyCreditsLimit: true,
-          lastCreditReset: true
+          lastCreditReset: true,
+          freeJobAllocation: true,
         }
       });
       
@@ -400,8 +404,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         }
       }
       
-      // Check if this is a free trial credit (non-subscriber using credits)
-      usedFreeTrial = !isSubscribed;
+      // Restrict only the initial free-trial allocation, not admin-added/purchased credits.
+      usedFreeTrial =
+        !isSubscribed &&
+        currentContractor.hasUsedFreeTrial === false &&
+        currentContractor.creditsBalance <= (currentContractor.freeJobAllocation || 1);
       
       // CRITICAL: Use the current balance and subtract 1
       const newBalance = currentContractor.creditsBalance - 1;

@@ -459,6 +459,7 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
 
   // Subscribed contractors get 3 weekly credits
   const newWeeklyCreditsLimit = 3;
+  const preservedCreditsBalance = Math.max(contractor.creditsBalance, newWeeklyCreditsLimit);
 
   // Allocate initial credits to the contractor
   try {
@@ -467,18 +468,19 @@ export const confirmSubscription = catchAsync(async (req: AuthenticatedRequest, 
       where: { id: contractor.id },
       data: {
         weeklyCreditsLimit: newWeeklyCreditsLimit,
-        creditsBalance: newWeeklyCreditsLimit > 0 ? newWeeklyCreditsLimit : contractor.creditsBalance,
+        // Preserve any higher manually-added/purchased balance.
+        creditsBalance: preservedCreditsBalance,
         lastCreditReset: newWeeklyCreditsLimit > 0 ? now : contractor.lastCreditReset
       }
     });
 
     // Create credit transaction record only if credits were added
-    if (newWeeklyCreditsLimit > 0 && newWeeklyCreditsLimit > contractor.creditsBalance) {
+    if (newWeeklyCreditsLimit > 0 && preservedCreditsBalance > contractor.creditsBalance) {
       await prisma.creditTransaction.create({
         data: {
           contractorId: contractor.id,
           type: 'WEEKLY_ALLOCATION',
-          amount: newWeeklyCreditsLimit - contractor.creditsBalance,
+          amount: preservedCreditsBalance - contractor.creditsBalance,
           description: 'Initial credit allocation - subscription activated'
         }
       });
