@@ -1,8 +1,29 @@
 import Stripe from 'stripe';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
-import { getStripeInstance } from '../config/stripe';
-import AppError from '../utils/appError';
+import { AppError } from '../middleware/errorHandler';
+
+let stripeClient: Stripe | null = null;
+
+function getStripeInstance(): Stripe {
+  if (!stripeClient) {
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!stripeKey) {
+      throw new Error('STRIPE_SECRET_KEY is not configured');
+    }
+
+    if (!stripeKey.startsWith('sk_test_') && !stripeKey.startsWith('sk_live_')) {
+      throw new Error('Invalid Stripe API key format');
+    }
+
+    stripeClient = new Stripe(stripeKey, {
+      apiVersion: '2023-10-16',
+    });
+  }
+
+  return stripeClient;
+}
 
 interface ReconcileResult {
   jobId: string;
