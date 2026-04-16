@@ -219,19 +219,30 @@ export const adjustContractorCredits = catchAsync(async (req: AdminAuthRequest, 
 export const updateCreditLimit = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const { weeklyCreditsLimit } = req.body;
+  const parsedWeeklyLimit = Number(weeklyCreditsLimit);
 
-  if (weeklyCreditsLimit < 0) {
+  if (!Number.isFinite(parsedWeeklyLimit) || parsedWeeklyLimit < 0) {
     return next(new AppError('Weekly credits limit cannot be negative', 400));
   }
 
-  await prisma.contractor.update({
+  const contractor = await prisma.contractor.update({
     where: { id },
-    data: { weeklyCreditsLimit },
+    data: { weeklyCreditsLimit: Math.floor(parsedWeeklyLimit) },
+    select: {
+      id: true,
+      weeklyCreditsLimit: true,
+      creditsBalance: true,
+    },
   });
 
   res.status(200).json({
     status: 'success',
-    message: 'Weekly credits limit updated successfully',
+    message: contractor.weeklyCreditsLimit === 0
+      ? 'Weekly lead limit disabled for this contractor'
+      : 'Weekly lead limit updated successfully',
+    data: {
+      contractor,
+    },
   });
 });
 

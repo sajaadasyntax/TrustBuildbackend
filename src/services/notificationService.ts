@@ -2,6 +2,9 @@ import { PrismaClient, NotificationType } from '@prisma/client';
 import webpush from 'web-push';
 
 const prisma = new PrismaClient();
+const isPushConfigured = Boolean(
+  process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT
+);
 
 // Configure web-push (VAPID keys should be in environment variables)
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT) {
@@ -85,6 +88,9 @@ export async function createBulkNotifications(notifications: NotificationData[])
         expiresAt: notif.expiresAt,
       })),
     });
+    console.info(
+      `[notifications][bulk] created=${created.count} requested=${notifications.length}`
+    );
 
     // Send push notifications for all
     await Promise.all(
@@ -303,6 +309,11 @@ export async function unsubscribeFromPush(userId: string, endpoint: string) {
  */
 export async function sendPushNotification(userId: string, payload: PushNotificationPayload) {
   try {
+    if (!isPushConfigured) {
+      console.warn('[notifications][push] VAPID keys are not configured; skipping push delivery');
+      return;
+    }
+
     // Get all push subscriptions for this user
     const subscriptions = await prisma.pushSubscription.findMany({
       where: { userId },

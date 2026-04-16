@@ -34,17 +34,13 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
     });
 
     if (contractor) {
-      // Include POSTED jobs OR IN_PROGRESS jobs where this contractor won
-      where.OR = [
-        { status: 'POSTED' },
-        { 
-          AND: [
-            { status: 'IN_PROGRESS' },
-            { wonByContractorId: contractor.id }
-          ]
-        }
-      ];
-      delete where.status; // Remove the status filter since we're using OR
+      // Find Jobs should only show available jobs the contractor has not already purchased.
+      where.status = 'POSTED';
+      where.jobAccess = {
+        none: {
+          contractorId: contractor.id,
+        },
+      };
     }
   }
 
@@ -64,7 +60,7 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
     };
   }
 
-  if (status) {
+  if (status && req.user?.role !== 'CONTRACTOR') {
     where.status = status as string;
   }
 
@@ -444,11 +440,16 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       },
     });
 
+    console.info(
+      `[notifications][new-job] jobId=${job.id} serviceId=${finalServiceId} eligibleContractors=${eligibleContractors.length}`
+    );
+
     if (eligibleContractors.length > 0) {
+      const budgetLabel = Number.isFinite(Number(budget)) ? `£${Number(budget).toFixed(2)}` : 'Quote required';
       const notifications = eligibleContractors.map((contractor) => ({
         userId: contractor.user.id,
         title: 'New Job Posted',
-        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}" (Budget: £${Number(budget).toFixed(2)})`,
+        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}" (Budget: ${budgetLabel})`,
         type: (job.isUrgent ? 'WARNING' : 'INFO') as 'WARNING' | 'INFO',
         actionLink: `/dashboard/contractor/jobs/${job.id}`,
         actionText: 'View Job',
@@ -460,6 +461,11 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       }));
 
       await createBulkNotifications(notifications);
+      console.info(
+        `[notifications][new-job] queued=${notifications.length} jobId=${job.id}`
+      );
+    } else {
+      console.info(`[notifications][new-job] no eligible contractors for jobId=${job.id}`);
     }
   } catch (error) {
     console.error('Failed to notify contractors about new job:', error);

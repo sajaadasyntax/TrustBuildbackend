@@ -410,7 +410,7 @@ export const disputeService = {
     const raisedByName =
       dispute.raisedByRole === 'CUSTOMER'
         ? job.customer?.user?.name
-        : job.wonByContractor?.user?.name;
+        : job.wonByContractor?.businessName || job.wonByContractor?.user?.name;
 
     // Notify admins immediately when any dispute is opened.
     try {

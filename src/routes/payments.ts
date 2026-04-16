@@ -200,6 +200,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         select: {
           id: true,
           contractorId: true,
+          claimedWon: true,
         },
       },
     },
@@ -243,6 +244,12 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
       });
     }
     return next(new AppError('You already have access to this job', 400));
+  }
+
+  const blockedStatuses = ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION', 'COMPLETED', 'CANCELLED', 'DISPUTED', 'WON'];
+  const isInCustomerConfirmationStage = !!job.wonByContractorId || job.jobAccess.some(access => access.claimedWon);
+  if (blockedStatuses.includes(job.status) || isInCustomerConfirmationStage) {
+    return next(new AppError('This job is no longer available to purchase.', 400));
   }
 
 
@@ -391,13 +398,27 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           });
           
           const totalUsed = Math.abs(creditsUsedThisWeek._sum.amount || 0);
+          const adminAllowance = await tx.creditTransaction.aggregate({
+            where: {
+              contractorId: contractor.id,
+              type: 'ADDITION',
+              amount: { gt: 0 },
+              adminUserId: { not: null },
+              createdAt: { gte: weekStart }
+            },
+            _sum: {
+              amount: true
+            }
+          });
+          const extraWeeklyAllowance = Math.max(0, Math.floor(adminAllowance._sum.amount || 0));
+          const effectiveWeeklyLimit = currentContractor.weeklyCreditsLimit + extraWeeklyAllowance;
           
           // If they've already used all their weekly credits, prevent further usage
-          if (totalUsed >= currentContractor.weeklyCreditsLimit) {
+          if (totalUsed >= effectiveWeeklyLimit) {
             const nextResetDate = new Date(lastReset);
             nextResetDate.setDate(nextResetDate.getDate() + 7);
             throw new AppError(
-              `Maximum credits exceeded. You have used all ${currentContractor.weeklyCreditsLimit} weekly credits. Your credits will reset on ${nextResetDate.toLocaleDateString()}. Please use card payment or wait for the weekly reset.`,
+              `Maximum credits exceeded. You have used all ${effectiveWeeklyLimit} weekly credit purchases available for this week. Your credits will reset on ${nextResetDate.toLocaleDateString()}. Please use card payment or wait for the weekly reset.`,
               400
             );
           }
