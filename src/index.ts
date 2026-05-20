@@ -48,6 +48,7 @@ import adminNotificationRoutes from './routes/admin-notifications';
 import adminNotificationsApiRoutes from './routes/admin-notifications-api';
 import adminSupportTicketsRoutes from './routes/admin-support-tickets';
 import messageRoutes from './routes/messages';
+import adminPriceConfirmationsRoutes from './routes/admin-price-confirmations';
 
 // Load environment variables
 dotenv.config();
@@ -247,6 +248,7 @@ app.use('/api/admin/errors', adminErrorLogsRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes);
 app.use('/api/admin/notifications-api', adminNotificationsApiRoutes);
 app.use('/api/admin/support-tickets', adminSupportTicketsRoutes);
+app.use('/api/admin/price-confirmations', adminPriceConfirmationsRoutes);
 // General admin routes (catch-all, must be last)
 app.use('/api/admin', adminRoutes);
 

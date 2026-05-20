@@ -3,7 +3,7 @@ import { prisma } from '../config/database';
 import { protect, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { createEmailService, createServiceEmail } from '../services/emailService';
-import { generateInvoicePDF } from '../services/pdfService';
+import { generateInvoicePDF, generateCommissionInvoicePDF } from '../services/pdfService';
 
 const router = Router();
 
@@ -562,8 +562,44 @@ export const downloadInvoice = catchAsync(async (req: AuthenticatedRequest, res:
     });
   }
 
+  // Fall-through: try commission invoice
   if (!invoice && !manualInvoice) {
-    console.log(`[downloadInvoice] Invoice ${id} not found (regular or manual) for contractor ${contractor.id}`);
+    const commissionInvoice = await prisma.commissionInvoice.findFirst({
+      where: {
+        id,
+        commissionPayment: { contractorId: contractor.id },
+      },
+      include: { commissionPayment: true },
+    });
+
+    if (commissionInvoice) {
+      console.log(`[downloadInvoice] Found commission invoice ${commissionInvoice.invoiceNumber}, generating PDF...`);
+      try {
+        const pdfBuffer = await generateCommissionInvoicePDF({
+          invoiceNumber: commissionInvoice.invoiceNumber,
+          contractorName: commissionInvoice.contractorName,
+          contractorEmail: commissionInvoice.contractorEmail,
+          jobTitle: commissionInvoice.jobTitle,
+          finalJobAmount: Number(commissionInvoice.finalJobAmount),
+          commissionAmount: Number(commissionInvoice.commissionAmount),
+          vatAmount: Number(commissionInvoice.vatAmount),
+          totalAmount: Number(commissionInvoice.totalAmount),
+          dueDate: commissionInvoice.dueDate,
+          paidAt: commissionInvoice.commissionPayment.paidAt,
+          createdAt: commissionInvoice.createdAt,
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${commissionInvoice.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
+        return res.send(pdfBuffer);
+      } catch (error) {
+        console.error('Failed to generate commission invoice PDF:', error);
+        return next(new AppError('Failed to generate commission invoice PDF', 500));
+      }
+    }
+
+    console.log(`[downloadInvoice] Invoice ${id} not found (regular, manual, or commission) for contractor ${contractor.id}`);
     return next(new AppError('Invoice not found or you do not have permission to view it', 404));
   }
 

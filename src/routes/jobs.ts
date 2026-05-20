@@ -7,6 +7,39 @@ import { getMaxContractorsPerJob } from '../services/settingsService';
 
 const router = Router();
 
+// Helper: write a price confirmation log row (failures are caught and logged, never propagated)
+async function logPriceConfirmation(args: {
+  jobId: string;
+  contractorId: string;
+  customerId?: string | null;
+  action: 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'ADMIN_OVERRIDE';
+  proposedAmount?: number | null;
+  previousAmount?: number | null;
+  rejectionReason?: string | null;
+  performedByUserId: string;
+  performedByRole: 'CUSTOMER' | 'CONTRACTOR' | 'ADMIN' | 'SUPER_ADMIN';
+  metadata?: any;
+}) {
+  try {
+    await prisma.priceConfirmationLog.create({
+      data: {
+        jobId: args.jobId,
+        contractorId: args.contractorId,
+        customerId: args.customerId ?? null,
+        action: args.action,
+        proposedAmount: args.proposedAmount ?? null,
+        previousAmount: args.previousAmount ?? null,
+        rejectionReason: args.rejectionReason ?? null,
+        performedByUserId: args.performedByUserId,
+        performedByRole: args.performedByRole,
+        metadata: args.metadata ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('[logPriceConfirmation] Failed to write log:', err);
+  }
+}
+
 // @desc    Get all jobs (public)
 // @route   GET /api/jobs
 // @access  Public
@@ -34,11 +67,17 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
     });
 
     if (contractor) {
-      // Find Jobs should only show available jobs the contractor has not already purchased.
+      // Find Jobs should only show available jobs the contractor has not already purchased,
+      // and exclude jobs that have been claimed/won (wonByContractorId set) or where any
+      // purchaser has already claimed they won — those are effectively off-market.
       where.status = 'POSTED';
+      where.wonByContractorId = null;
       where.jobAccess = {
         none: {
-          contractorId: contractor.id,
+          OR: [
+            { contractorId: contractor.id },
+            { claimedWon: true },
+          ],
         },
       };
     }
@@ -2408,6 +2447,18 @@ export const proposeFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
     },
   });
 
+  // Log the price proposal
+  await logPriceConfirmation({
+    jobId,
+    contractorId: contractor.id,
+    customerId: job.customer.id,
+    action: 'PROPOSED',
+    proposedAmount: Number(finalPrice),
+    previousAmount: job.contractorProposedAmount ? Number(job.contractorProposedAmount) : null,
+    performedByUserId: userId,
+    performedByRole: 'CONTRACTOR',
+  });
+
   // Send notification to customer about final price proposal
   try {
     const { createServiceEmail } = await import('../services/emailService');
@@ -2680,6 +2731,19 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
       },
     });
 
+    // Log confirmation
+    if (job.wonByContractorId) {
+      await logPriceConfirmation({
+        jobId,
+        contractorId: job.wonByContractorId,
+        customerId: job.customer.id,
+        action: 'CONFIRMED',
+        proposedAmount: Number(job.contractorProposedAmount),
+        performedByUserId: userId,
+        performedByRole: 'CUSTOMER',
+      });
+    }
+
     // Process commission if applicable
     await processCommissionForJob(jobId, Number(job.contractorProposedAmount));
 
@@ -2788,6 +2852,20 @@ export const confirmFinalPrice = catchAsync(async (req: AuthenticatedRequest, re
         finalPriceTimeoutAt: null,
       },
     });
+
+    // Log rejection
+    if (job.wonByContractorId) {
+      await logPriceConfirmation({
+        jobId,
+        contractorId: job.wonByContractorId,
+        customerId: job.customer.id,
+        action: 'REJECTED',
+        proposedAmount: Number(job.contractorProposedAmount),
+        rejectionReason: rejectionReason,
+        performedByUserId: userId,
+        performedByRole: 'CUSTOMER',
+      });
+    }
 
     // Send rejection email to contractor
     try {
@@ -3912,6 +3990,21 @@ export const adminOverrideFinalPrice = catchAsync(async (req: AuthenticatedReque
       customerConfirmed: true,
     },
   });
+
+  // Log admin override
+  if (job.wonByContractorId) {
+    await logPriceConfirmation({
+      jobId,
+      contractorId: job.wonByContractorId,
+      customerId: job.customer.id,
+      action: 'ADMIN_OVERRIDE',
+      proposedAmount: Number(job.contractorProposedAmount),
+      rejectionReason: reason || null,
+      performedByUserId: userId,
+      performedByRole: req.user!.role as 'ADMIN' | 'SUPER_ADMIN',
+      metadata: { adminId: userId, reason: reason || 'Customer did not respond within 7 days' },
+    });
+  }
 
   // Process commission if applicable
   await processCommissionForJob(jobId, Number(job.contractorProposedAmount));

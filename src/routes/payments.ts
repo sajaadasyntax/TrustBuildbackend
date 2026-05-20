@@ -539,7 +539,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice
+      // Create invoice - billed to the contractor who is purchasing the lead
       invoice = await tx.invoice.create({
         data: {
           amount: baseAmount,  // Base amount excluding VAT
@@ -547,8 +547,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           totalAmount: totalAmount, // Total price including VAT
           description: `Job Lead Access - ${job.title}`,
           invoiceNumber: `INV-${Date.now()}-${contractor.id.slice(-6)}`,
-          recipientName: job.customer?.user?.name || 'Unknown',
-          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          recipientName: contractor.businessName || contractor.user?.name || 'Contractor',
+          recipientEmail: contractor.user?.email || 'unknown@trustbuild.uk',
         },
       });
       
@@ -602,7 +602,7 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
         },
       });
 
-      // Create invoice with VAT
+      // Create invoice with VAT - billed to the contractor who is purchasing the lead
       invoice = await tx.invoice.create({
         data: {
           amount: baseAmount, // Base amount (lead price)
@@ -610,8 +610,8 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
           totalAmount: totalAmount, // Total including VAT
           description: `Job Lead Access (Subscriber - No Commission) - ${job.title}`,
           invoiceNumber: `INV-SUB-${Date.now()}-${contractor.id.slice(-6)}`,
-          recipientName: contractor.businessName || 'Contractor',
-          recipientEmail: job.customer?.user?.email || 'unknown@trustbuild.uk',
+          recipientName: contractor.businessName || contractor.user?.name || 'Contractor',
+          recipientEmail: contractor.user?.email || 'unknown@trustbuild.uk',
         },
       });
       

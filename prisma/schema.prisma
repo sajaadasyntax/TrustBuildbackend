@@ -34,6 +34,13 @@ enum JobStatus {
   DISPUTED
 }
 
+enum PriceConfirmationAction {
+  PROPOSED
+  CONFIRMED
+  REJECTED
+  ADMIN_OVERRIDE
+}
+
 enum MilestoneStatus {
   PENDING
   IN_PROGRESS
@@ -230,11 +237,12 @@ model Contractor {
   jobAccess          JobAccess[]
   creditTransactions CreditTransaction[]
   jobsWon            Job[]                @relation("JobWonBy")
-  jobInterests       JobInterest[]
-  commissionPayments CommissionPayment[]
-  stripeCustomerInfo StripeCustomer?
-  kyc                ContractorKyc?
-  manualInvoices     ManualInvoice[]
+  jobInterests          JobInterest[]
+  commissionPayments    CommissionPayment[]
+  stripeCustomerInfo    StripeCustomer?
+  kyc                   ContractorKyc?
+  manualInvoices        ManualInvoice[]
+  priceConfirmationLogs PriceConfirmationLog[]
 
   @@map("contractors")
 }
@@ -352,10 +360,11 @@ model Job {
   jobAccess         JobAccess[]
   payments          Payment[]
   milestones        Milestone[]
-  wonByContractor   Contractor?        @relation("JobWonBy", fields: [wonByContractorId], references: [id])
-  jobInterests      JobInterest[]
-  commissionPayment CommissionPayment?
-  disputes          Dispute[]
+  wonByContractor      Contractor?             @relation("JobWonBy", fields: [wonByContractorId], references: [id])
+  jobInterests         JobInterest[]
+  commissionPayment    CommissionPayment?
+  disputes             Dispute[]
+  priceConfirmationLogs PriceConfirmationLog[]
 
   @@map("jobs")
 }
@@ -632,6 +641,30 @@ model CommissionInvoice {
   commissionPayment CommissionPayment @relation(fields: [commissionPaymentId], references: [id], onDelete: Cascade)
 
   @@map("commission_invoices")
+}
+
+model PriceConfirmationLog {
+  id                String                  @id @default(cuid())
+  jobId             String
+  contractorId      String
+  customerId        String?
+  action            PriceConfirmationAction
+  proposedAmount    Decimal?                @db.Decimal(10, 2)
+  previousAmount    Decimal?                @db.Decimal(10, 2)
+  rejectionReason   String?                 @db.Text
+  performedByUserId String
+  performedByRole   UserRole
+  metadata          Json?
+  createdAt         DateTime                @default(now())
+
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contractor Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([contractorId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("price_confirmation_logs")
 }
 
 model Notification {

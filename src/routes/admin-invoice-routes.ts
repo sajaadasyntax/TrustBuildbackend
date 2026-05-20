@@ -3,7 +3,7 @@ import { prisma } from '../config/database';
 import { protectAdmin, AdminAuthRequest, requirePermission } from '../middleware/adminAuth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { AdminPermission } from '../config/permissions';
-import { generateInvoicePDF } from '../services/pdfService';
+import { generateInvoicePDF, generateCommissionInvoicePDF } from '../services/pdfService';
 
 const router = Router();
 
@@ -675,7 +675,39 @@ export const downloadInvoice = catchAsync(async (req: AdminAuthRequest, res: Res
     });
 
     if (!manualInvoice) {
-      return next(new AppError('Invoice not found', 404));
+      // Fall-through: try commission invoice (admin can download any)
+      const commissionInvoice = await prisma.commissionInvoice.findUnique({
+        where: { id },
+        include: { commissionPayment: true },
+      });
+
+      if (!commissionInvoice) {
+        return next(new AppError('Invoice not found', 404));
+      }
+
+      try {
+        const pdfBuffer = await generateCommissionInvoicePDF({
+          invoiceNumber: commissionInvoice.invoiceNumber,
+          contractorName: commissionInvoice.contractorName,
+          contractorEmail: commissionInvoice.contractorEmail,
+          jobTitle: commissionInvoice.jobTitle,
+          finalJobAmount: Number(commissionInvoice.finalJobAmount),
+          commissionAmount: Number(commissionInvoice.commissionAmount),
+          vatAmount: Number(commissionInvoice.vatAmount),
+          totalAmount: Number(commissionInvoice.totalAmount),
+          dueDate: commissionInvoice.dueDate,
+          paidAt: commissionInvoice.commissionPayment.paidAt,
+          createdAt: commissionInvoice.createdAt,
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${commissionInvoice.invoiceNumber}.pdf"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
+        return res.send(pdfBuffer);
+      } catch (error) {
+        console.error('Failed to generate commission invoice PDF:', error);
+        return next(new AppError('Failed to generate commission invoice PDF', 500));
+      }
     }
 
     invoiceData = {

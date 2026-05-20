@@ -246,6 +246,175 @@ export async function generateInvoicePDF(invoiceData: {
 }
 
 /**
+ * Generates a commission invoice PDF
+ *
+ * @param invoiceData CommissionInvoice data
+ * @returns Buffer containing the generated PDF
+ */
+export async function generateCommissionInvoicePDF(invoiceData: {
+  invoiceNumber: string;
+  contractorName: string;
+  contractorEmail: string;
+  jobTitle: string;
+  finalJobAmount: number;
+  commissionAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  dueDate: Date;
+  paidAt?: Date | null;
+  createdAt: Date;
+}) {
+  return new Promise<Buffer>((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, bottom: 50, left: 50, right: 50 },
+        info: {
+          Title: `Commission Invoice ${invoiceData.invoiceNumber}`,
+          Author: 'TrustBuild',
+          Subject: 'Commission Invoice',
+          Keywords: 'commission, invoice, trustbuild',
+          CreationDate: new Date(),
+        },
+      });
+
+      const buffers: Buffer[] = [];
+      doc.on('data', (buffer) => buffers.push(buffer));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+      // Company header
+      doc.fontSize(18)
+        .font('Helvetica-Bold')
+        .text('TRUSTBUILDERS LTD', { align: 'left' })
+        .font('Helvetica')
+        .fontSize(10)
+        .text('124 City Road, London, United Kingdom, EC1V 2NX')
+        .text('Company Registration No: 16452861')
+        .text('VAT Registration No: 496 3800 58')
+        .moveDown(0.5);
+
+      // Invoice title
+      doc.fontSize(20)
+        .font('Helvetica-Bold')
+        .text('COMMISSION INVOICE', { align: 'right' })
+        .font('Helvetica')
+        .moveDown(0.5);
+
+      // Invoice info
+      const invoiceInfoX = 350;
+      doc.fontSize(10)
+        .text('Invoice Number:', invoiceInfoX, doc.y, { continued: true, width: 100 })
+        .font('Helvetica-Bold')
+        .text(` ${invoiceData.invoiceNumber}`, { align: 'right' })
+        .font('Helvetica')
+        .text('Invoice Date:', invoiceInfoX, doc.y, { continued: true, width: 100 })
+        .text(` ${invoiceData.createdAt.toLocaleDateString('en-GB')}`, { align: 'right' })
+        .text('Due Date:', invoiceInfoX, doc.y, { continued: true, width: 100 })
+        .text(` ${invoiceData.dueDate.toLocaleDateString('en-GB')}`, { align: 'right' })
+        .text('Status:', invoiceInfoX, doc.y, { continued: true, width: 100 })
+        .font('Helvetica-Bold')
+        .text(` ${invoiceData.paidAt ? 'PAID' : 'UNPAID'}`, { align: 'right' })
+        .font('Helvetica')
+        .moveDown(2);
+
+      // Bill To
+      doc.fontSize(11)
+        .font('Helvetica-Bold')
+        .text('BILL TO:', 50, doc.y)
+        .font('Helvetica')
+        .fontSize(10)
+        .text(invoiceData.contractorName)
+        .text(invoiceData.contractorEmail)
+        .moveDown(2);
+
+      // Items table
+      const col1X = 50;
+      const col2X = 350;
+      const col3X = 400;
+      const col4X = 500;
+      const tableWidth = 500;
+      const startY = doc.y;
+
+      doc.fontSize(14)
+        .text('Items', { underline: true })
+        .moveDown(0.5);
+
+      const tableTop = doc.y;
+      doc.fontSize(10)
+        .font('Helvetica-Bold')
+        .text('Description', col1X, tableTop, { width: 280 })
+        .text('Qty', col2X, tableTop, { width: 40, align: 'center' })
+        .text('Unit Price', col3X, tableTop, { width: 80, align: 'right' })
+        .text('Total', col4X, tableTop, { width: 50, align: 'right' })
+        .font('Helvetica');
+
+      doc.moveDown(0.3);
+      const headerBottom = doc.y;
+      doc.moveTo(col1X, headerBottom).lineTo(col1X + tableWidth, headerBottom).stroke().moveDown(0.3);
+
+      const itemY = doc.y;
+      const itemDesc = `Platform commission — ${invoiceData.jobTitle}`;
+      const truncated = itemDesc.length > 40 ? itemDesc.substring(0, 37) + '...' : itemDesc;
+      doc.text(truncated, col1X, itemY, { width: 280 })
+        .text('1', col2X, itemY, { width: 40, align: 'center' })
+        .text(`£${invoiceData.commissionAmount.toFixed(2)}`, col3X, itemY, { width: 80, align: 'right' })
+        .text(`£${invoiceData.commissionAmount.toFixed(2)}`, col4X, itemY, { width: 50, align: 'right' });
+
+      doc.moveDown(0.3);
+      const totalsStartY = doc.y;
+      doc.moveTo(col1X, totalsStartY).lineTo(col1X + tableWidth, totalsStartY).stroke().moveDown(0.3);
+
+      // Totals
+      doc.fontSize(10)
+        .text('Subtotal (excl. VAT):', col3X - 30, doc.y, { width: 110, align: 'right' })
+        .text(`£${invoiceData.commissionAmount.toFixed(2)}`, col4X, doc.y - doc.currentLineHeight(), { width: 50, align: 'right' })
+        .moveDown(0.3)
+        .text('VAT @ 20%:', col3X - 30, doc.y, { width: 110, align: 'right' })
+        .text(`£${invoiceData.vatAmount.toFixed(2)}`, col4X, doc.y - doc.currentLineHeight(), { width: 50, align: 'right' })
+        .moveDown(0.3);
+
+      doc.moveTo(col3X - 30, doc.y).lineTo(col1X + tableWidth, doc.y).stroke().moveDown(0.5);
+
+      doc.font('Helvetica-Bold')
+        .fontSize(11)
+        .text('TOTAL (incl. VAT):', col3X - 30, doc.y, { width: 110, align: 'right' })
+        .text(`£${invoiceData.totalAmount.toFixed(2)}`, col4X, doc.y - doc.currentLineHeight(), { width: 50, align: 'right' })
+        .font('Helvetica')
+        .fontSize(10)
+        .moveDown(1.5);
+
+      // Job summary note
+      doc.text(`This invoice relates to a job with a final agreed value of £${invoiceData.finalJobAmount.toFixed(2)}.`, { align: 'left' }).moveDown(0.5);
+
+      if (invoiceData.paidAt) {
+        doc.font('Helvetica-Bold')
+          .text(`Payment received on ${invoiceData.paidAt.toLocaleDateString('en-GB')}`, { align: 'center' })
+          .font('Helvetica');
+      }
+
+      // Footer
+      doc.fontSize(9)
+        .text('', 50, 720)
+        .moveTo(50, 710)
+        .lineTo(545, 710)
+        .stroke()
+        .moveDown(0.5)
+        .text('Thank you for your business', { align: 'center' })
+        .moveDown(0.3)
+        .font('Helvetica-Oblique')
+        .fontSize(8)
+        .text('TRUSTBUILDERS LTD | 124 City Road, London, EC1V 2NX', { align: 'center' })
+        .text('Company No: 16452861 | VAT No: 496 3800 58', { align: 'center' })
+        .font('Helvetica');
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+/**
  * Converts a Buffer to a Readable stream
  * 
  * @param buffer The buffer to convert to a stream
