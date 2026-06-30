@@ -62,6 +62,31 @@ router.get('/unread-count', protect, async (req: AuthenticatedRequest, res) => {
 });
 
 /**
+ * Mark all notifications as read
+ * PATCH /api/notifications/read-all
+ * Must be registered BEFORE /:id/read to avoid Express treating "read-all" as an :id param
+ */
+router.patch('/read-all', protect, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+
+    const result = await notificationService.markAllNotificationsAsRead(userId);
+
+    res.json({
+      status: 'success',
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('Error marking all notifications as read:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to mark all notifications as read',
+      error: error.message,
+    });
+  }
+});
+
+/**
  * Mark notification as read
  * PATCH /api/notifications/:id/read
  */
@@ -84,30 +109,6 @@ router.patch('/:id/read', protect, async (req: AuthenticatedRequest, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Failed to mark notification as read',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Mark all notifications as read
- * PATCH /api/notifications/read-all
- */
-router.patch('/read-all', protect, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-
-    const result = await notificationService.markAllNotificationsAsRead(userId);
-
-    res.json({
-      status: 'success',
-      data: result,
-    });
-  } catch (error: any) {
-    console.error('Error marking all notifications as read:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to mark all notifications as read',
       error: error.message,
     });
   }

@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { protect, AuthenticatedRequest } from '../middleware/auth';
+import { protect, optionalAuth, AuthenticatedRequest } from '../middleware/auth';
 import { AppError, catchAsync } from '../middleware/errorHandler';
 import { processCommissionForJob } from '../services/commissionService';
 import { getMaxContractorsPerJob } from '../services/settingsService';
@@ -455,15 +455,18 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     },
   });
 
-  // Notify active approved contractors about new job posting
+  // Notify eligible contractors about new job posting (in-app + email)
   try {
     const { createBulkNotifications } = await import('../services/notificationService');
-    
-    // Notify all active + approved contractors who offer this service.
+    const { sendNewJobPostedEmail } = await import('../services/emailNotificationService');
+
+    // Eligible = active, approved, KYC approved, active subscription, matching service
     const eligibleContractors = await prisma.contractor.findMany({
       where: {
         accountStatus: 'ACTIVE',
         profileApproved: true,
+        kyc: { status: 'APPROVED' },
+        subscription: { isActive: true },
         services: {
           some: {
             id: finalServiceId,
@@ -474,6 +477,8 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
         user: {
           select: {
             id: true,
+            name: true,
+            email: true,
           },
         },
       },
@@ -485,6 +490,8 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
 
     if (eligibleContractors.length > 0) {
       const budgetLabel = Number.isFinite(Number(budget)) ? `£${Number(budget).toFixed(2)}` : 'Quote required';
+
+      // In-app notifications (bulk)
       const notifications = eligibleContractors.map((contractor) => ({
         userId: contractor.user.id,
         title: 'New Job Posted',
@@ -500,9 +507,25 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       }));
 
       await createBulkNotifications(notifications);
-      console.info(
-        `[notifications][new-job] queued=${notifications.length} jobId=${job.id}`
+      console.info(`[notifications][new-job] in-app queued=${notifications.length} jobId=${job.id}`);
+
+      // Email notifications (fire-and-forget, non-blocking)
+      const emailPromises = eligibleContractors.map((contractor) =>
+        sendNewJobPostedEmail({
+          contractorEmail: contractor.user.email,
+          contractorName: contractor.businessName || contractor.user.name,
+          jobTitle: String(title),
+          jobId: job.id,
+          budget: Number.isFinite(Number(budget)) ? Number(budget) : null,
+          isUrgent: job.isUrgent,
+          category: category ? String(category) : undefined,
+        })
       );
+      // Run emails in background — do not await (prevents job creation latency)
+      Promise.allSettled(emailPromises).then((results) => {
+        const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
+        console.info(`[notifications][new-job] emails sent=${sent}/${eligibleContractors.length} jobId=${job.id}`);
+      });
     } else {
       console.info(`[notifications][new-job] no eligible contractors for jobId=${job.id}`);
     }
@@ -819,6 +842,9 @@ export const getJobApplications = catchAsync(async (req: AuthenticatedRequest, r
             },
           },
           services: true,
+          kyc: {
+            select: { status: true },
+          },
         },
       },
     },
@@ -1777,6 +1803,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
             },
           },
         },
+        // businessName is a direct field on Contractor, no extra include needed
       },
     },
   });
@@ -1927,7 +1954,8 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
     spotsRemaining: job.maxContractorsPerJob - (job.jobAccess?.length || 0),
     purchasedBy: job.jobAccess?.map((access: any) => ({
       contractorId: access.contractor.id,
-      contractorName: access.contractor.user.name,
+      contractorName: access.contractor.businessName || access.contractor.user.name,
+      contractorPersonalName: access.contractor.user.name,
       purchasedAt: access.accessedAt.toISOString(),
       method: access.accessMethod,
       claimedWon: access.claimedWon || false,
@@ -4320,14 +4348,14 @@ export const getJobsWithRejectedFinalPrice = catchAsync(async (req: Authenticate
 });
 
 // Routes
-router.get('/', getAllJobs);
+router.get('/', optionalAuth, getAllJobs);
 router.get('/my/posted', protect, getMyPostedJobs);
 router.get('/my/applications', protect, getMyApplications);
 router.get('/my/all', protect, getMyAllJobs);
 router.get('/awaiting-final-price-confirmation', protect, getJobsAwaitingFinalPriceConfirmation);
 router.get('/rejected-final-prices', protect, getJobsWithRejectedFinalPrice);
 router.post('/', protect, createJob);
-router.get('/:id', getJobWithAccess);
+router.get('/:id', optionalAuth, getJobWithAccess);
 router.patch('/:id', protect, updateJob);
 router.delete('/:id', protect, deleteJob);
 router.post('/:id/apply', protect, applyForJob);

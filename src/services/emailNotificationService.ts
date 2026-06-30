@@ -411,6 +411,51 @@ export const createEmailNotificationService = () => {
   };
 };
 
+// Standalone helper — sends a single new-job email to one contractor
+async function sendNewJobPostedEmail(data: {
+  contractorEmail: string;
+  contractorName: string;
+  jobTitle: string;
+  jobId: string;
+  budget?: number | null;
+  isUrgent?: boolean;
+  category?: string;
+}) {
+  const emailService = createEmailService();
+  const budgetLabel = data.budget ? `£${Number(data.budget).toFixed(2)}` : 'Quote required';
+  const urgentTag = data.isUrgent ? '🚨 URGENT — ' : '';
+
+  const mailOptions = createServiceEmail({
+    to: data.contractorEmail,
+    subject: `${urgentTag}New Job: ${data.jobTitle} — TrustBuild`,
+    heading: `${urgentTag}New Job Posted`,
+    body: `
+      <p>Hi ${data.contractorName},</p>
+      <p>A new job matching your services has just been posted on TrustBuild.</p>
+
+      <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <h3>${data.jobTitle}</h3>
+        ${data.category ? `<p><strong>Category:</strong> ${data.category}</p>` : ''}
+        <p><strong>Budget:</strong> ${budgetLabel}</p>
+        ${data.isUrgent ? '<p><strong style="color: #dc2626;">⚡ This is an urgent job</strong></p>' : ''}
+      </div>
+
+      <p>Log in to your dashboard to view the full details and purchase access before it fills up.</p>
+    `,
+    ctaText: 'View Job',
+    ctaUrl: `https://trustbuild.uk/dashboard/contractor/jobs/${data.jobId}`,
+    footerText: 'You received this because you are registered as an active contractor on TrustBuild.',
+  });
+
+  try {
+    await emailService.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error(`[new-job-email] Failed to send to ${data.contractorEmail}:`, error);
+    return false;
+  }
+}
+
 // Export individual functions for easy importing
 export const {
   sendContractorWelcomeEmail,
@@ -421,3 +466,5 @@ export const {
   sendCommissionInvoiceEmail,
   sendPaymentConfirmationEmail,
 } = createEmailNotificationService();
+
+export { sendNewJobPostedEmail };

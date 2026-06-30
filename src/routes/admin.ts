@@ -4479,7 +4479,7 @@ export const getUnpaidCommissions = catchAsync(async (req: AdminAuthRequest, res
       }
     },
     orderBy: {
-      dueDate: 'asc'
+      createdAt: 'desc'
     }
   });
 
