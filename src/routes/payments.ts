@@ -247,8 +247,11 @@ export const purchaseJobAccess = catchAsync(async (req: AuthenticatedRequest, re
   }
 
   const blockedStatuses = ['IN_PROGRESS', 'AWAITING_FINAL_PRICE_CONFIRMATION', 'COMPLETED', 'CANCELLED', 'DISPUTED', 'WON'];
-  const isInCustomerConfirmationStage = !!job.wonByContractorId || job.jobAccess.some(access => access.claimedWon);
-  if (blockedStatuses.includes(job.status) || isInCustomerConfirmationStage) {
+  // Block purchase only when a winner has been officially confirmed (wonByContractorId set),
+  // not when contractors have merely claimed — the customer still needs to select a winner
+  // and remaining spots may still be available.
+  const winnerConfirmed = !!job.wonByContractorId;
+  if (blockedStatuses.includes(job.status) || winnerConfirmed) {
     return next(new AppError('This job is no longer available to purchase.', 400));
   }
 

@@ -731,9 +731,29 @@ router.get(
       where: { status: 'AWAITING_FINAL_PRICE_CONFIRMATION' },
     });
 
+    // Attach winner-confirmation source for each job
+    const jobIds = jobs.map((j: any) => j.id);
+    const adminWinnerLogs = jobIds.length > 0
+      ? await prisma.activityLog.findMany({
+          where: { action: 'JOB_WINNER_APPROVED', entityId: { in: jobIds } },
+          select: { entityId: true, adminId: true, admin: { select: { name: true } } },
+        })
+      : [];
+    const adminWinnerMap = new Map(adminWinnerLogs.map((l: any) => [l.entityId, l]));
+
+    const jobsWithMeta = jobs.map((job: any) => {
+      const adminLog = adminWinnerMap.get(job.id);
+      return {
+        ...job,
+        winnerConfirmedBy: adminLog
+          ? { role: 'ADMIN', name: adminLog.admin?.name || 'Admin' }
+          : { role: 'CUSTOMER', name: job.customer?.user?.name || 'Customer' },
+      };
+    });
+
     res.status(200).json({
       status: 'success',
-      data: jobs,
+      data: jobsWithMeta,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   })
@@ -770,9 +790,29 @@ router.get(
       },
     });
 
+    // Attach winner-confirmation source for each job
+    const rejJobIds = jobs.map((j: any) => j.id);
+    const rejAdminLogs = rejJobIds.length > 0
+      ? await prisma.activityLog.findMany({
+          where: { action: 'JOB_WINNER_APPROVED', entityId: { in: rejJobIds } },
+          select: { entityId: true, adminId: true, admin: { select: { name: true } } },
+        })
+      : [];
+    const rejAdminMap = new Map(rejAdminLogs.map((l: any) => [l.entityId, l]));
+
+    const jobsWithMeta = jobs.map((job: any) => {
+      const adminLog = rejAdminMap.get(job.id);
+      return {
+        ...job,
+        winnerConfirmedBy: adminLog
+          ? { role: 'ADMIN', name: adminLog.admin?.name || 'Admin' }
+          : { role: 'CUSTOMER', name: job.customer?.user?.name || 'Customer' },
+      };
+    });
+
     res.status(200).json({
       status: 'success',
-      data: jobs,
+      data: jobsWithMeta,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   })

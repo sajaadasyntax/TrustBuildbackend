@@ -64,10 +64,38 @@ export const getPriceConfirmationHistory = catchAsync(async (req: AdminAuthReque
     prisma.priceConfirmationLog.count({ where }),
   ]);
 
+  // Resolve performer names: look up Admin or User depending on role
+  const adminRoles = ['ADMIN', 'SUPER_ADMIN'];
+  const adminIds = [...new Set(
+    logs.filter((l: any) => adminRoles.includes(l.performedByRole)).map((l: any) => l.performedByUserId)
+  )];
+  const userIds = [...new Set(
+    logs.filter((l: any) => !adminRoles.includes(l.performedByRole)).map((l: any) => l.performedByUserId)
+  )];
+
+  const [admins, users] = await Promise.all([
+    adminIds.length > 0
+      ? prisma.admin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true } })
+      : [],
+    userIds.length > 0
+      ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
+      : [],
+  ]);
+
+  const adminNameMap = new Map((admins as any[]).map((a) => [a.id, a.name]));
+  const userNameMap = new Map((users as any[]).map((u) => [u.id, u.name]));
+
+  const logsWithPerformer = logs.map((log: any) => ({
+    ...log,
+    performedByName: adminRoles.includes(log.performedByRole)
+      ? (adminNameMap.get(log.performedByUserId) || 'Admin')
+      : (userNameMap.get(log.performedByUserId) || 'Customer'),
+  }));
+
   res.status(200).json({
     status: 'success',
     data: {
-      logs,
+      logs: logsWithPerformer,
       pagination: {
         page,
         limit,

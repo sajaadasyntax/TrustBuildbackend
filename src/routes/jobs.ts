@@ -67,17 +67,14 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
     });
 
     if (contractor) {
-      // Find Jobs should only show available jobs the contractor has not already purchased,
-      // and exclude jobs that have been claimed/won (wonByContractorId set) or where any
-      // purchaser has already claimed they won — those are effectively off-market.
+      // Show POSTED jobs the contractor has not yet purchased and where no winner has been confirmed.
+      // Jobs stay visible to other contractors while claimedWon is true — the customer still needs to
+      // pick a winner, and remaining spots may still be purchasable up to maxContractorsPerJob.
       where.status = 'POSTED';
       where.wonByContractorId = null;
       where.jobAccess = {
         none: {
-          OR: [
-            { contractorId: contractor.id },
-            { claimedWon: true },
-          ],
+          contractorId: contractor.id,
         },
       };
     }
@@ -158,6 +155,9 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
           status: true,
         },
       },
+      _count: {
+        select: { jobAccess: true },
+      },
     },
     orderBy: [
       { isUrgent: 'desc' },
@@ -167,9 +167,14 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
 
   const total = await prisma.job.count({ where });
 
+  // For contractors, hide jobs that have already hit their contractor purchase cap
+  const visibleJobs = req.user?.role === 'CONTRACTOR'
+    ? jobs.filter((j: any) => j._count.jobAccess < j.maxContractorsPerJob)
+    : jobs;
+
   // Filter sensitive data for contractors and add application count
   const filteredJobs = req.user?.role === 'CONTRACTOR' 
-    ? jobs.map((job: any) => ({
+    ? visibleJobs.map((job: any) => ({
         ...job,
         location: job.postcode ? `${job.postcode} area` : 'Area details available after purchase',
         description: job.description.substring(0, 300) + '...',
@@ -181,11 +186,13 @@ export const getAllJobs = catchAsync(async (req: AuthenticatedRequest, res: Resp
           // Remove sensitive customer data
           phone: undefined,
         },
-        applicationCount: job.applications ? job.applications.length : 0, // Show contractors how many have applied
+        applicationCount: job.applications ? job.applications.length : 0,
+        _count: undefined, // strip internal count from response
       }))
-    : jobs.map((job: any) => ({
+    : visibleJobs.map((job: any) => ({
         ...job,
-        applicationCount: job.applications ? job.applications.length : 0, // Show application count to all users
+        applicationCount: job.applications ? job.applications.length : 0,
+        _count: undefined,
       }));
 
   res.status(200).json({
