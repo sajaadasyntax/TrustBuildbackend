@@ -34,6 +34,7 @@ interface RegisterData {
   unsatisfiedCustomers?: string;
   preferredClients?: string;
   usesContracts?: boolean;
+  services?: string[];
 }
 
 const signToken = (id: string): string => {
@@ -95,6 +96,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
     unsatisfiedCustomers,
     preferredClients,
     usesContracts,
+    services,
   }: RegisterData = req.body;
 
   // Validate required fields
@@ -183,6 +185,20 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
   } else if (role === 'CONTRACTOR') {
     // Get free job allocation from admin settings (default: 1)
     const freeCredits = await getFreeJobAllocation();
+
+    let linkedServicesProvided = servicesProvided;
+    const serviceIds = Array.isArray(services)
+      ? services.filter((id: string) => typeof id === 'string' && id.length > 0)
+      : [];
+    if (serviceIds.length > 0) {
+      const serviceRecords = await prisma.service.findMany({
+        where: { id: { in: serviceIds } },
+        select: { name: true },
+      });
+      if (serviceRecords.length > 0) {
+        linkedServicesProvided = serviceRecords.map((s) => s.name).join(', ');
+      }
+    }
     
     // Create contractor profile
     const newContractor = await prisma.contractor.create({
@@ -195,7 +211,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         postcode,
         phone,
         operatingArea,
-        servicesProvided,
+        servicesProvided: linkedServicesProvided,
         yearsExperience,
         workSetup,
         providesWarranty: providesWarranty || false,
@@ -210,6 +226,11 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
         profileApproved: false, // Requires admin approval
         accountStatus: 'PAUSED', // Start paused until KYC is completed
         hasUsedFreeTrial: false, // Track if they've used their free credits
+        ...(serviceIds.length > 0 && {
+          services: {
+            connect: serviceIds.map((serviceId: string) => ({ id: serviceId })),
+          },
+        }),
       },
     });
 

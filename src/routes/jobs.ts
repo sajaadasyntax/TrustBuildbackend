@@ -40,6 +40,53 @@ async function logPriceConfirmation(args: {
   }
 }
 
+/** Find contractors who should receive a new-job notification for the given service. */
+async function findContractorsForJobNotification(serviceId: string) {
+  const jobService = await prisma.service.findUnique({
+    where: { id: serviceId },
+    select: { id: true, name: true, category: true },
+  });
+
+  if (!jobService) {
+    return [];
+  }
+
+  const matchConditions: Array<Record<string, unknown>> = [
+    { services: { some: { id: serviceId } } },
+  ];
+
+  if (jobService.category) {
+    matchConditions.push({
+      services: { some: { category: jobService.category } },
+    });
+  }
+
+  // Legacy profiles may only have free-text servicesProvided
+  if (jobService.name) {
+    matchConditions.push({
+      servicesProvided: { contains: jobService.name, mode: 'insensitive' },
+    });
+  }
+
+  return prisma.contractor.findMany({
+    where: {
+      accountStatus: 'ACTIVE',
+      profileApproved: true,
+      user: { role: 'CONTRACTOR', isActive: true },
+      OR: matchConditions,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+}
+
 // @desc    Get all jobs (public)
 // @route   GET /api/jobs
 // @access  Public
@@ -464,71 +511,39 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
 
   // Notify eligible contractors about new job posting (in-app + email)
   try {
-    const { createBulkNotifications } = await import('../services/notificationService');
+    const { notifyContractorsOfNewJob } = await import('../services/notificationService');
     const { sendNewJobPostedEmail } = await import('../services/emailNotificationService');
 
-    // Eligible = active, approved, matching service.
-    // NOTE: no KYC/subscription requirement — any contractor who can see the job
-    // in Find Jobs should also get notified about it.
-    const eligibleContractors = await prisma.contractor.findMany({
-      where: {
-        accountStatus: 'ACTIVE',
-        profileApproved: true,
-        services: {
-          some: {
-            id: finalServiceId,
-          },
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
+    const jobService = await prisma.service.findUnique({
+      where: { id: finalServiceId },
+      select: { name: true, category: true },
     });
 
+    const eligibleContractors = await findContractorsForJobNotification(finalServiceId);
+
     console.info(
-      `[notifications][new-job] jobId=${job.id} serviceId=${finalServiceId} eligibleContractors=${eligibleContractors.length}`
+      `[notifications][new-job] jobId=${job.id} serviceId=${finalServiceId} service="${jobService?.name ?? 'unknown'}" eligibleContractors=${eligibleContractors.length}`
     );
 
     if (eligibleContractors.length > 0) {
       const budgetLabel = Number.isFinite(Number(budget)) ? `£${Number(budget).toFixed(2)}` : 'Quote required';
+      const categoryLabel = jobService?.category ? ` (${jobService.category})` : '';
 
-      // In-app notifications (bulk) — isolated so an in-app failure never blocks emails
-      const notifications = eligibleContractors.map((contractor) => ({
-        userId: contractor.user.id,
-        title: 'New Job Posted',
-        message: `A new ${job.isUrgent ? 'urgent ' : ''}job has been posted: "${title}" (Budget: ${budgetLabel})`,
-        type: (job.isUrgent ? 'WARNING' : 'INFO') as 'WARNING' | 'INFO',
-        actionLink: `/dashboard/contractor/jobs/${job.id}`,
-        actionText: 'View Job',
-        metadata: {
-          jobId: job.id,
-          jobTitle: title,
+      const { created, failed } = await notifyContractorsOfNewJob(
+        eligibleContractors.map((c) => ({ userId: c.user.id })),
+        {
+          id: job.id,
+          title: String(title),
           isUrgent: job.isUrgent,
-        },
-      }));
+          budgetLabel,
+          serviceName: jobService?.name,
+          categoryLabel,
+        }
+      );
+      console.info(
+        `[notifications][new-job] in-app created=${created} failed=${failed} jobId=${job.id}`
+      );
 
-      try {
-        await createBulkNotifications(notifications);
-        console.info(`[notifications][new-job] in-app queued=${notifications.length} jobId=${job.id}`);
-      } catch (bulkError) {
-        // Bulk insert is atomic — one bad row kills the whole batch.
-        // Retry each notification individually so the rest still go through.
-        console.error('[notifications][new-job] bulk insert failed, retrying individually:', bulkError);
-        const { createNotification } = await import('../services/notificationService');
-        const results = await Promise.allSettled(
-          notifications.map((n) => createNotification(n))
-        );
-        const ok = results.filter(r => r.status === 'fulfilled').length;
-        console.info(`[notifications][new-job] individual retry created=${ok}/${notifications.length} jobId=${job.id}`);
-      }
-
-      // Email notifications (fire-and-forget, non-blocking)
       const emailPromises = eligibleContractors.map((contractor) =>
         sendNewJobPostedEmail({
           contractorEmail: contractor.user.email,
@@ -537,16 +552,15 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
           jobId: job.id,
           budget: Number.isFinite(Number(budget)) ? Number(budget) : null,
           isUrgent: job.isUrgent,
-          category: category ? String(category) : undefined,
+          category: jobService?.category || (category ? String(category) : undefined),
         })
       );
-      // Run emails in background — do not await (prevents job creation latency)
       Promise.allSettled(emailPromises).then((results) => {
         const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
         console.info(`[notifications][new-job] emails sent=${sent}/${eligibleContractors.length} jobId=${job.id}`);
       });
     } else {
-      console.info(`[notifications][new-job] no eligible contractors for jobId=${job.id}`);
+      console.info(`[notifications][new-job] no eligible contractors for jobId=${job.id} serviceId=${finalServiceId}`);
     }
   } catch (error) {
     console.error('Failed to notify contractors about new job:', error);

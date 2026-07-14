@@ -216,6 +216,20 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
     services,
   } = req.body;
 
+  let linkedServicesProvided = servicesProvided;
+  const serviceIds = Array.isArray(services)
+    ? services.filter((id: string) => typeof id === 'string' && id.length > 0)
+    : [];
+  if (serviceIds.length > 0) {
+    const serviceRecords = await prisma.service.findMany({
+      where: { id: { in: serviceIds } },
+      select: { name: true },
+    });
+    if (serviceRecords.length > 0) {
+      linkedServicesProvided = serviceRecords.map((s) => s.name).join(', ');
+    }
+  }
+
   // Get free job allocation from admin settings (default: 1)
   const { getFreeJobAllocation } = await import('../services/settingsService');
   const freeCredits = await getFreeJobAllocation();
@@ -234,7 +248,7 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       website,
       instagramHandle,
       operatingArea,
-      servicesProvided,
+      servicesProvided: linkedServicesProvided,
       yearsExperience,
       logoUrl,
       workSetup,
@@ -247,8 +261,8 @@ export const createContractorProfile = catchAsync(async (req: AuthenticatedReque
       weeklyCreditsLimit: 0, // Non-subscribed contractors don't get weekly credits
       lastCreditReset: null,
       hasUsedFreeTrial: false, // Track if they've used their free credits
-      services: services ? {
-        connect: services.map((serviceId: string) => ({ id: serviceId })),
+      services: serviceIds.length > 0 ? {
+        connect: serviceIds.map((serviceId: string) => ({ id: serviceId })),
       } : undefined,
     },
     include: {
@@ -318,6 +332,17 @@ export const updateMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
     services,
   } = req.body;
 
+  let syncedServicesProvided = servicesProvided;
+  if (Array.isArray(services) && services.length > 0) {
+    const serviceRecords = await prisma.service.findMany({
+      where: { id: { in: services } },
+      select: { name: true },
+    });
+    if (serviceRecords.length > 0) {
+      syncedServicesProvided = serviceRecords.map((s) => s.name).join(', ');
+    }
+  }
+
   const updatedContractor = await prisma.contractor.update({
     where: { id: contractor.id },
     data: {
@@ -330,7 +355,7 @@ export const updateMyProfile = catchAsync(async (req: AuthenticatedRequest, res:
       ...(website !== undefined && { website }),
       ...(instagramHandle !== undefined && { instagramHandle }),
       ...(operatingArea !== undefined && { operatingArea }),
-      ...(servicesProvided !== undefined && { servicesProvided }),
+      ...(syncedServicesProvided !== undefined && { servicesProvided: syncedServicesProvided }),
       ...(yearsExperience !== undefined && { yearsExperience }),
       ...(logoUrl !== undefined && { logoUrl }),
       ...(workSetup !== undefined && { workSetup }),

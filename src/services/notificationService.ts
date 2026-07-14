@@ -52,17 +52,21 @@ export async function createNotification(data: NotificationData) {
       },
     });
 
-    // Also send push notification
-    await sendPushNotification(data.userId, {
-      title: data.title,
-      body: data.message,
-      icon: '/icon-192.png',
-      badge: '/badge-72.png',
-      data: {
-        url: data.actionLink,
-        notificationId: notification.id,
-      },
-    });
+    // Push is best-effort — never fail the in-app notification if push delivery fails
+    try {
+      await sendPushNotification(data.userId, {
+        title: data.title,
+        body: data.message,
+        icon: '/icon-192.png',
+        badge: '/badge-72.png',
+        data: {
+          url: data.actionLink,
+          notificationId: notification.id,
+        },
+      });
+    } catch (pushError) {
+      console.error('[notifications] Push delivery failed (in-app notification saved):', pushError);
+    }
 
     return notification;
   } catch (error) {
@@ -419,6 +423,52 @@ export async function notifyContractorApproval(userId: string, contractorName: s
     actionLink: '/dashboard/contractor',
     actionText: 'View Dashboard',
   });
+}
+
+/**
+ * Notify contractors about a newly posted job (in-app).
+ */
+export async function notifyContractorsOfNewJob(
+  contractors: Array<{ userId: string }>,
+  job: {
+    id: string;
+    title: string;
+    isUrgent: boolean;
+    budgetLabel: string;
+    serviceName?: string;
+    categoryLabel?: string;
+  }
+): Promise<{ created: number; failed: number }> {
+  if (contractors.length === 0) {
+    return { created: 0, failed: 0 };
+  }
+
+  const servicePart = job.serviceName
+    ? ` in ${job.serviceName}${job.categoryLabel ?? ''}`
+    : job.categoryLabel ?? '';
+
+  const results = await Promise.allSettled(
+    contractors.map(({ userId }) =>
+      createNotification({
+        userId,
+        title: 'New Job Posted',
+        message: `A new ${job.isUrgent ? 'urgent ' : ''}job${servicePart} has been posted: "${job.title}" (Budget: ${job.budgetLabel})`,
+        type: job.isUrgent ? 'WARNING' : 'INFO',
+        actionLink: `/jobs/${job.id}`,
+        actionText: 'View Job',
+        metadata: {
+          jobId: job.id,
+          jobTitle: job.title,
+          isUrgent: job.isUrgent,
+          serviceName: job.serviceName,
+          event: 'new_job_posted',
+        },
+      })
+    )
+  );
+
+  const created = results.filter((r) => r.status === 'fulfilled').length;
+  return { created, failed: results.length - created };
 }
 
 /**
