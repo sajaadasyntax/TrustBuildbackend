@@ -416,7 +416,7 @@ export async function notifyContractorApproval(userId: string, contractorName: s
     title: 'Profile Approved! 🎉',
     message: 'Your contractor profile has been approved. You can now start bidding on jobs!',
     type: 'SUCCESS',
-    actionLink: '/dashboard',
+    actionLink: '/dashboard/contractor',
     actionText: 'View Dashboard',
   });
 }
@@ -444,7 +444,7 @@ export async function notifyPaymentReceived(userId: string, amount: number, desc
     title: 'Payment Received',
     message: `You received £${amount.toFixed(2)} for ${description}`,
     type: 'SUCCESS',
-    actionLink: '/dashboard/payments',
+    actionLink: '/dashboard/contractor/payments',
     actionText: 'View Payments',
   });
 }
@@ -615,7 +615,7 @@ export async function createJobStartedNotification(
     title: 'Job Started',
     message,
     type: 'INFO',
-    actionLink: '/dashboard/current-jobs',
+    actionLink: isCustomer ? '/dashboard/client/current-jobs' : '/dashboard/contractor/current-jobs',
     actionText: 'View Job',
   });
 }
@@ -642,7 +642,7 @@ export async function createPaymentFailedNotification(userId: string, amount: nu
     title: 'Payment Failed',
     message: `Payment of £${amount} failed${reason ? `: ${reason}` : ''}`,
     type: 'ERROR',
-    actionLink: '/dashboard/payments',
+    actionLink: '/dashboard/contractor/payments',
     actionText: 'Retry Payment',
   });
 }

@@ -1351,7 +1351,7 @@ export const completeJob = catchAsync(async (req: AuthenticatedRequest, res: Res
         title: '💰 Commission Payment Required',
         message: `A ${commissionRate}% commission (£${commissionAmount.toFixed(2)}) is due for your completed job "${job.title}". This is part of your subscription benefits.`,
         type: 'COMMISSION_DUE',
-        actionLink: '/dashboard/commissions',
+        actionLink: '/dashboard/contractor/commissions',
         actionText: 'View Details',
         metadata: {
           jobId,

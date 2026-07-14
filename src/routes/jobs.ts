@@ -467,13 +467,13 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     const { createBulkNotifications } = await import('../services/notificationService');
     const { sendNewJobPostedEmail } = await import('../services/emailNotificationService');
 
-    // Eligible = active, approved, KYC approved, active subscription, matching service
+    // Eligible = active, approved, matching service.
+    // NOTE: no KYC/subscription requirement — any contractor who can see the job
+    // in Find Jobs should also get notified about it.
     const eligibleContractors = await prisma.contractor.findMany({
       where: {
         accountStatus: 'ACTIVE',
         profileApproved: true,
-        kyc: { status: 'APPROVED' },
-        subscription: { isActive: true },
         services: {
           some: {
             id: finalServiceId,
@@ -1352,7 +1352,7 @@ export const markJobAsWon = catchAsync(async (req: AuthenticatedRequest, res: Re
     title: 'Contractor Selected for Your Job',
     message: `${contractor.businessName || contractorWithUser?.user.name || 'A contractor'} has won your job: ${job.title}. They will mark it as completed once the work is done.`,
     type: 'CONTRACTOR_SELECTED',
-    actionLink: `/jobs/${job.id}`,
+    actionLink: `/dashboard/client/jobs/${job.id}`,
     actionText: 'View Job',
   });
 
@@ -3665,7 +3665,8 @@ export const confirmWinner = catchAsync(async (req: AuthenticatedRequest, res: R
           title: 'Job Assigned to Another Contractor',
           message: `The job "${job.title}" has been assigned to another contractor.`,
           type: 'JOB_STATUS_CHANGED',
-          actionLink: `/jobs/${job.id}`,
+          // Losing contractors can no longer view this job, so send them to browse other jobs
+          actionLink: `/jobs`,
         }).catch(err => console.error('Failed to notify contractor:', err))
       )
     );
