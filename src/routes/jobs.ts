@@ -1834,6 +1834,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
 
   // Check if user is a contractor and has access
   let hasAccess = false;
+  let hasClaimedWon = false;
   let leadPrice = 0;
   let hasSubscription = false;
   let subscriptionPlan = null;
@@ -1881,6 +1882,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
       // 2. Contractor has won the job (wonByContractorId matches)
       // Subscription does not automatically grant access - contractor must still use a lead access point
       hasAccess = !!existingAccess || job.wonByContractorId === contractor.id;
+      hasClaimedWon = !!existingAccess?.claimedWon;
 
       // Calculate lead price
       if (job.service) {
@@ -1932,6 +1934,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
         },
       },
       hasAccess,
+      hasClaimedWon,
       leadPrice,
       currentLeadPrice: leadPrice,
       accessCount: job.jobAccess?.length || 0,
@@ -1954,6 +1957,7 @@ export const getJobWithAccess = catchAsync(async (req: AuthenticatedRequest, res
   const jobWithAccess = {
     ...job,
     hasAccess,
+    hasClaimedWon,
     leadPrice,
     currentLeadPrice: leadPrice,
     accessCount: job.jobAccess?.length || 0,
