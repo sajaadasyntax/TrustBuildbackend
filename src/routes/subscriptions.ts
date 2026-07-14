@@ -617,23 +617,16 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
     },
   });
 
-  // No email sending is needed - subscription status now only accessible in-app
-  
-  // Create in-app notification (non-blocking)
+  // In-app notification for the contractor
   try {
-    import('../services/notificationService').then(({ createNotification }) => {
-      createNotification({
-        userId: contractor.userId,
-        title: 'Subscription Cancelled',
-        message: `Your subscription has been cancelled. You will have access until ${contractor.subscription?.currentPeriodEnd ? new Date(contractor.subscription.currentPeriodEnd).toLocaleDateString() : 'the end of your current period'}.`,
-        type: 'INFO',
-        actionLink: '/dashboard/contractor/payments',
-        actionText: 'View Details',
-      }).catch(err => console.log('Failed to create notification (non-critical):', err));
-    }).catch(err => console.log('Failed to import notification service:', err));
+    const { notifySubscriptionCancelled } = await import('../services/notificationService');
+    await notifySubscriptionCancelled(contractor.userId, {
+      plan: contractor.subscription.plan,
+      accessUntil: contractor.subscription.currentPeriodEnd,
+      cancelledBy: 'self',
+    });
   } catch (err) {
-    // Ignore notification errors - they should not block subscription cancellation
-
+    console.error('Failed to create subscription cancellation notification:', err);
   }
 
   res.status(200).json({

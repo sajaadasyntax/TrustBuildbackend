@@ -362,21 +362,45 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
       });
       
       if (dbSubscription) {
+        const wasCancelled = dbSubscription.status === 'cancelled' && !dbSubscription.isActive;
+        const isScheduledCancel = subscription.cancel_at_period_end === true;
+        const isNowCancelled = subscription.status === 'canceled';
+
         // Update subscription details
         await prisma.subscription.update({
           where: { id: dbSubscription.id },
           data: {
-            status: subscription.status,
-            isActive: ['active', 'trialing'].includes(subscription.status),
+            status: isNowCancelled ? 'cancelled' : subscription.status,
+            isActive: ['active', 'trialing'].includes(subscription.status) && !isScheduledCancel,
             currentPeriodStart: new Date(subscription.current_period_start * 1000),
             currentPeriodEnd: new Date(subscription.current_period_end * 1000),
             // Update plan if it's in metadata, casting to SubscriptionPlan enum
             ...(subscription.metadata?.plan ? { plan: subscription.metadata.plan as any as SubscriptionPlan } : {}),
           },
         });
-        
-        // Email notifications disabled - subscription status updates visible in dashboard
 
+        // Notify when cancellation is scheduled or takes effect via Stripe (skip if already cancelled in our DB)
+        if (!wasCancelled && dbSubscription.contractor?.userId) {
+          try {
+            const { notifySubscriptionCancelled } = await import('../services/notificationService');
+            if (isScheduledCancel && !isNowCancelled) {
+              await notifySubscriptionCancelled(dbSubscription.contractor.userId, {
+                plan: dbSubscription.plan,
+                accessUntil: new Date(subscription.current_period_end * 1000),
+                cancelledBy: 'stripe',
+                scheduled: true,
+              });
+            } else if (isNowCancelled) {
+              await notifySubscriptionCancelled(dbSubscription.contractor.userId, {
+                plan: dbSubscription.plan,
+                accessUntil: new Date(subscription.current_period_end * 1000),
+                cancelledBy: 'stripe',
+              });
+            }
+          } catch (err) {
+            console.error('Failed to create subscription cancellation notification (webhook updated):', err);
+          }
+        }
       }
       break;
     }
@@ -392,6 +416,8 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
       });
       
       if (dbSubscription) {
+        const wasAlreadyCancelled = dbSubscription.status === 'cancelled' && !dbSubscription.isActive;
+
         // Update subscription status
         await prisma.subscription.update({
           where: { id: dbSubscription.id },
@@ -400,9 +426,20 @@ export const stripeWebhook = catchAsync(async (req: Request, res: Response, next
             isActive: false,
           },
         });
-        
-        // Email notifications disabled - subscription cancellation visible in dashboard
 
+        // Notify if this webhook is the first time we learn about the cancellation
+        if (!wasAlreadyCancelled && dbSubscription.contractor?.userId) {
+          try {
+            const { notifySubscriptionCancelled } = await import('../services/notificationService');
+            await notifySubscriptionCancelled(dbSubscription.contractor.userId, {
+              plan: dbSubscription.plan,
+              accessUntil: dbSubscription.currentPeriodEnd,
+              cancelledBy: 'stripe',
+            });
+          } catch (err) {
+            console.error('Failed to create subscription cancellation notification (webhook deleted):', err);
+          }
+        }
       }
       break;
     }

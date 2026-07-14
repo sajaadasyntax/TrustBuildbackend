@@ -420,6 +420,17 @@ export const cancelSubscription = catchAsync(async (req: AuthenticatedRequest, r
     },
   });
 
+  try {
+    const { notifySubscriptionCancelled } = await import('../services/notificationService');
+    await notifySubscriptionCancelled(contractor.userId, {
+      plan: contractor.subscription.plan,
+      accessUntil: contractor.subscription.currentPeriodEnd,
+      cancelledBy: 'self',
+    });
+  } catch (err) {
+    console.error('Failed to create subscription cancellation notification:', err);
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Subscription cancelled successfully',

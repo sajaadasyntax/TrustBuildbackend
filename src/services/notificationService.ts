@@ -422,6 +422,48 @@ export async function notifyContractorApproval(userId: string, contractorName: s
 }
 
 /**
+ * Notify contractor that their subscription has been cancelled.
+ * Covers self-service, admin, and Stripe webhook cancellation paths.
+ */
+export async function notifySubscriptionCancelled(
+  userId: string,
+  options?: {
+    plan?: string;
+    accessUntil?: Date | null;
+    cancelledBy?: 'self' | 'admin' | 'stripe';
+    scheduled?: boolean;
+  }
+) {
+  const accessLabel = options?.accessUntil
+    ? new Date(options.accessUntil).toLocaleDateString('en-GB')
+    : 'the end of your current billing period';
+
+  const planLabel = options?.plan ? ` ${options.plan.replace(/_/g, ' ').toLowerCase()}` : '';
+
+  let message: string;
+  if (options?.scheduled) {
+    message = `Your${planLabel} subscription is scheduled to cancel. You will retain access until ${accessLabel}.`;
+  } else if (options?.cancelledBy === 'admin') {
+    message = `Your${planLabel} subscription has been cancelled by an administrator. Access continues until ${accessLabel}.`;
+  } else {
+    message = `Your${planLabel} subscription has been cancelled. You will retain access until ${accessLabel}.`;
+  }
+
+  await createNotification({
+    userId,
+    title: options?.scheduled ? 'Subscription Cancellation Scheduled' : 'Subscription Cancelled',
+    message,
+    type: 'WARNING',
+    actionLink: '/dashboard/contractor/payments',
+    actionText: 'View Subscription',
+    metadata: {
+      event: options?.scheduled ? 'subscription_cancel_scheduled' : 'subscription_cancelled',
+      cancelledBy: options?.cancelledBy ?? 'self',
+    },
+  });
+}
+
+/**
  * Notify contractor of rejection
  */
 export async function notifyContractorRejection(userId: string, reason?: string) {
