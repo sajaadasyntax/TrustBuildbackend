@@ -498,7 +498,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
     if (eligibleContractors.length > 0) {
       const budgetLabel = Number.isFinite(Number(budget)) ? `£${Number(budget).toFixed(2)}` : 'Quote required';
 
-      // In-app notifications (bulk)
+      // In-app notifications (bulk) — isolated so an in-app failure never blocks emails
       const notifications = eligibleContractors.map((contractor) => ({
         userId: contractor.user.id,
         title: 'New Job Posted',
@@ -513,8 +513,20 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
         },
       }));
 
-      await createBulkNotifications(notifications);
-      console.info(`[notifications][new-job] in-app queued=${notifications.length} jobId=${job.id}`);
+      try {
+        await createBulkNotifications(notifications);
+        console.info(`[notifications][new-job] in-app queued=${notifications.length} jobId=${job.id}`);
+      } catch (bulkError) {
+        // Bulk insert is atomic — one bad row kills the whole batch.
+        // Retry each notification individually so the rest still go through.
+        console.error('[notifications][new-job] bulk insert failed, retrying individually:', bulkError);
+        const { createNotification } = await import('../services/notificationService');
+        const results = await Promise.allSettled(
+          notifications.map((n) => createNotification(n))
+        );
+        const ok = results.filter(r => r.status === 'fulfilled').length;
+        console.info(`[notifications][new-job] individual retry created=${ok}/${notifications.length} jobId=${job.id}`);
+      }
 
       // Email notifications (fire-and-forget, non-blocking)
       const emailPromises = eligibleContractors.map((contractor) =>
