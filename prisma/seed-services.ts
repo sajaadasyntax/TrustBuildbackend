@@ -200,6 +200,7 @@ export const servicesData = [
   ...[
     { name: 'Heating', description: 'Boiler installation, radiator fitting, central heating repairs and servicing.', category: 'Home Systems' },
     { name: 'Gas Services', description: 'Gas appliance installation, servicing, safety inspections and certified repairs.', category: 'Home Systems' },
+    { name: 'Plumbing & Repairs', description: 'General plumbing services, including leak repairs, tap and toilet replacements, pipe repairs, bathroom plumbing installations and maintenance.', category: 'Trade Services' },
     { name: 'Bathroom Renovation', description: 'Complete bathroom refurbishment, plumbing, tiling and fixture installation.', category: 'Home Improvement' },
     { name: 'Kitchen Renovation', description: 'Complete kitchen fitting, cabinets, worktops, appliances and renovations.', category: 'Home Improvement' },
     { name: 'Home Renovation', description: 'Full property refurbishment and complete home improvement services.', category: 'Home Improvement' },
