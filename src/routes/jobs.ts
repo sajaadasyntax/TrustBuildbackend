@@ -81,6 +81,7 @@ async function findContractorsForJobNotification(serviceId: string) {
           id: true,
           name: true,
           email: true,
+          jobEmailsEnabled: true,
         },
       },
     },
@@ -544,7 +545,8 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
         `[notifications][new-job] in-app created=${created} failed=${failed} jobId=${job.id}`
       );
 
-      const emailPromises = eligibleContractors.map((contractor) =>
+      const jobEmailRecipients = eligibleContractors.filter((contractor) => contractor.user.jobEmailsEnabled);
+      const emailPromises = jobEmailRecipients.map((contractor) =>
         sendNewJobPostedEmail({
           contractorEmail: contractor.user.email,
           contractorName: contractor.businessName || contractor.user.name,
@@ -557,7 +559,7 @@ export const createJob = catchAsync(async (req: AuthenticatedRequest, res: Respo
       );
       Promise.allSettled(emailPromises).then((results) => {
         const sent = results.filter(r => r.status === 'fulfilled' && r.value).length;
-        console.info(`[notifications][new-job] emails sent=${sent}/${eligibleContractors.length} jobId=${job.id}`);
+        console.info(`[notifications][new-job] emails sent=${sent}/${jobEmailRecipients.length} optedIn=${jobEmailRecipients.length}/${eligibleContractors.length} jobId=${job.id}`);
       });
     } else {
       console.info(`[notifications][new-job] no eligible contractors for jobId=${job.id} serviceId=${finalServiceId}`);

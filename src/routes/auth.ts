@@ -15,6 +15,7 @@ interface RegisterData {
   password: string;
   confirmPassword: string;
   role: 'CUSTOMER' | 'CONTRACTOR';
+  referralSource?: string;
   // Customer fields
   phone?: string;
   address?: string;
@@ -77,6 +78,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
     password,
     confirmPassword,
     role,
+    referralSource,
     // Customer fields
     phone,
     address,
@@ -110,6 +112,10 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
 
   if (password.length < 8) {
     return next(new AppError('Password must be at least 8 characters long', 400));
+  }
+
+  if (referralSource !== undefined && (typeof referralSource !== 'string' || referralSource.length > 200)) {
+    return next(new AppError('How you heard about TrustBuild must be 200 characters or fewer', 400));
   }
 
   // Check if registration is open for this role
@@ -149,6 +155,7 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
       email,
       password: hashedPassword,
       role,
+      referralSource: referralSource?.trim() || null,
     },
     select: {
       id: true,

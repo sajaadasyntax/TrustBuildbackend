@@ -124,6 +124,8 @@ model User {
   password             String
   name                 String
   role                 UserRole @default(CUSTOMER)
+  referralSource       String?
+  jobEmailsEnabled     Boolean  @default(true)
   isActive             Boolean  @default(true)
   notificationSettings Json     @default("{\"email\": true, \"inApp\": true, \"commission\": true, \"subscription\": true, \"jobs\": true, \"reviews\": true}")
   createdAt            DateTime @default(now())

@@ -75,6 +75,7 @@ export const getMe = catchAsync(async (req: AuthenticatedRequest, res: Response,
       name: true,
       email: true,
       role: true,
+      jobEmailsEnabled: true,
       isActive: true,
       createdAt: true,
       customer: true,
@@ -103,7 +104,15 @@ export const getMe = catchAsync(async (req: AuthenticatedRequest, res: Response,
 // @route   PATCH /api/users/me
 // @access  Private
 export const updateMe = catchAsync(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const { name, email } = req.body;
+  const { name, email, jobEmailsEnabled } = req.body;
+
+  if (jobEmailsEnabled !== undefined && typeof jobEmailsEnabled !== 'boolean') {
+    return next(new AppError('Job email preference must be true or false', 400));
+  }
+
+  if (jobEmailsEnabled !== undefined && req.user!.role !== 'CONTRACTOR') {
+    return next(new AppError('Only contractors can update job email preferences', 403));
+  }
 
   // Check if email is already taken by another user
   if (email && email !== req.user!.email) {
@@ -121,12 +130,14 @@ export const updateMe = catchAsync(async (req: AuthenticatedRequest, res: Respon
     data: {
       ...(name && { name }),
       ...(email && { email }),
+      ...(jobEmailsEnabled !== undefined && { jobEmailsEnabled }),
     },
     select: {
       id: true,
       name: true,
       email: true,
       role: true,
+      jobEmailsEnabled: true,
       isActive: true,
       createdAt: true,
     },

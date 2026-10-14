@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "jobEmailsEnabled" BOOLEAN NOT NULL DEFAULT true;
