@@ -195,8 +195,7 @@ export const servicesData = [
     largeJobPrice: 40.00,
     isActive: false,
   },
-  // Expanded homeowner and commercial service catalogue. Keep this after the
-  // original entries: seed.ts uses the original service indexes for demo data.
+  // Expanded homeowner and commercial service catalogue.
   ...[
     { name: 'Heating', description: 'Boiler installation, radiator fitting, central heating repairs and servicing.', category: 'Home Systems' },
     { name: 'Gas Services', description: 'Gas appliance installation, servicing, safety inspections and certified repairs.', category: 'Home Systems' },
