@@ -34,14 +34,6 @@ export const createEmailNotificationService = () => {
             <li><strong>Choose Your Plan:</strong> Once verified, you can subscribe to a plan to start accessing jobs</li>
           </ol>
 
-          <h3>Important Information</h3>
-          <p><strong>Please note:</strong> You won't be able to access your dashboard or apply for jobs until:</p>
-          <ul>
-            <li>Your profile is approved by our admin team</li>
-            <li>You complete the KYC verification process</li>
-            <li>You subscribe to one of our contractor plans</li>
-          </ul>
-
           <h3>Need Help?</h3>
           <p>If you have any questions or need assistance, don't hesitate to reach out to our support team.</p>
         `,
