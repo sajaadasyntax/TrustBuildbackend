@@ -423,7 +423,7 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
         body: `
           <p>Hi ${contractor.user.name},</p>
           <p>Great news! Your contractor account has been manually approved by our admin team.</p>
-          <p>Your account is now fully active and you can start accessing job opportunities.</p>
+          <p>Your account has been approved and is now active. You can access your dashboard, but you must complete the identity verification (KYC) process to keep your account active.</p>
           <p>Welcome to TrustBuild!</p>
         `,
         ctaText: 'Go to Dashboard',

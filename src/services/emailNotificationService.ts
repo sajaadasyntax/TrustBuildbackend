@@ -19,19 +19,9 @@ export const createEmailNotificationService = () => {
         body: `
           <p>Thank you for registering with TrustBuild! We've received your contractor application and our team is currently reviewing it.</p>
           
-          <h3>What Happens Next?</h3>
+          <h3>Important Information</h3>
           <ol>
-            <li><strong>Profile Review:</strong> Our team will review your registration details (typically within 1-2 business days)</li>
-            <li><strong>Approval Notification:</strong> You'll receive an email once your profile is approved</li>
-            <li><strong>Identity Verification:</strong> After approval, you'll need to complete KYC verification by uploading:
-              <ul>
-                <li>Government-issued ID (passport or driver's license)</li>
-                <li>Proof of address (utility bill or bank statement)</li>
-                <li>Company registration documents (if applicable)</li>
-                <li>Insurance certificate (public liability insurance)</li>
-              </ul>
-            </li>
-            <li><strong>Choose Your Plan:</strong> Once verified, you can subscribe to a plan to start accessing jobs</li>
+            <li><strong>Profile Approval:</strong> Our admin team will review your registration details (typically within 1-2 business days).</li>
           </ol>
 
           <h3>Need Help?</h3>
