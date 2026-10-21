@@ -180,8 +180,17 @@ router.post(
     { name: 'companyDoc', maxCount: 1 },
   ]),
   catchAsync(async (req: AuthenticatedRequest, res: Response) => {
-    const { companyNumber } = req.body;
+    const companyNumber = typeof req.body.companyNumber === 'string'
+      ? req.body.companyNumber.trim()
+      : '';
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+    if (!companyNumber) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Company registration number is required',
+      });
+    }
 
     // ID document and utility bill are mandatory
     if (!files.idDocument || !files.utilityBill) {
@@ -831,4 +840,3 @@ router.post(
 );
 
 export default router;
-
