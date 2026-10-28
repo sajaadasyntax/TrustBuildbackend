@@ -20,9 +20,7 @@ export const createEmailNotificationService = () => {
           <p>Thank you for registering with TrustBuild! We've received your contractor application and our team is currently reviewing it.</p>
           
           <h3>Important Information</h3>
-          <ol>
-            <li><strong>Profile Approval:</strong> Our admin team will review your registration details (typically within 1-2 business days).</li>
-          </ol>
+          <p><strong>Profile Approval:</strong> Our admin team will review your registration details (typically within 1-2 business days). You will receive another email once a decision has been made.</p>
 
           <h3>Need Help?</h3>
           <p>If you have any questions or need assistance, don't hesitate to reach out to our support team.</p>
@@ -56,10 +54,10 @@ export const createEmailNotificationService = () => {
         subject: '✅ Your TrustBuild Contractor Profile Has Been Approved!',
         heading: `Congratulations, ${contractorData.name}!`,
         body: `
-          <p>Great news! Your contractor profile has been approved by our team. You're one step closer to accessing job opportunities on TrustBuild.</p>
+          <p>Your account has been approved and is now active. You can access your dashboard, but you must complete the identity verification (KYC) process to keep your account active.</p>
           
-          <h3>⚠️ Important: Complete Your KYC Verification</h3>
-          <p>Before you can start accessing jobs, you must complete your identity verification within <strong>${deadlineDays} days</strong> (deadline: ${contractorData.kycDeadline.toLocaleDateString()}).</p>
+          <h3>⚠️ Complete Your Identity Verification (KYC)</h3>
+          <p>Please submit your documents within <strong>${deadlineDays} days</strong> (deadline: ${contractorData.kycDeadline.toLocaleDateString()}).</p>
           
           <h3>Required Documents:</h3>
           <ul>
@@ -69,29 +67,11 @@ export const createEmailNotificationService = () => {
             <li><strong>Insurance Certificate:</strong> Valid public liability insurance</li>
           </ul>
 
-          <h3>What Happens After KYC Verification?</h3>
-          <ol>
-            <li>Our team will review your documents (typically within 24-48 hours)</li>
-            <li>Once approved, your account status will be set to ACTIVE</li>
-            <li>You can then subscribe to a plan and start accessing job leads</li>
-            <li>Upload work photos to showcase your portfolio (up to 20 images)</li>
-          </ol>
-
-          <h3>Subscription Plans</h3>
-          <p>After KYC verification, you'll need to subscribe to one of our plans to receive weekly job credits:</p>
-          <ul>
-            <li><strong>Standard Plan:</strong> 3 job leads per week</li>
-            <li><strong>Premium Plan:</strong> 6 job leads per week</li>
-            <li><strong>Enterprise Plan:</strong> Unlimited job leads</li>
-          </ul>
-
-          <p><strong>Note:</strong> Job credits are only allocated through active subscriptions. No free credits are provided automatically.</p>
-
           <h3>Need Help?</h3>
           <p>If you have any questions about the KYC process or need assistance uploading documents, please contact our support team.</p>
         `,
         ctaText: 'Complete KYC Verification',
-        ctaUrl: 'https://trustbuild.uk/dashboard/contractor/kyc',
+        ctaUrl: 'https://trustbuild.uk/dashboard/kyc',
         footerText: 'Welcome to the TrustBuild contractor community! Complete your verification to get started.'
       });
 
@@ -112,6 +92,43 @@ export const createEmailNotificationService = () => {
         console.error(`Error details: ${error.message}`);
         console.error(`Error stack: ${error.stack}`);
       }
+      return false;
+    }
+  };
+
+  // Send contractor rejection email
+  const sendContractorRejectionEmail = async (contractorData: {
+    name: string;
+    email: string;
+    businessName?: string;
+    reason?: string;
+  }) => {
+    try {
+      const reasonHtml = contractorData.reason
+        ? `<p><strong>Reason:</strong> ${contractorData.reason}</p>`
+        : '';
+
+      const mailOptions = createServiceEmail({
+        to: contractorData.email,
+        subject: 'Update on Your TrustBuild Contractor Application',
+        heading: `Hello ${contractorData.name}`,
+        body: `
+          <p>Thank you for applying to join TrustBuild as a contractor${contractorData.businessName ? ` for <strong>${contractorData.businessName}</strong>` : ''}.</p>
+          <p>After reviewing your application, we are unable to approve your registration at this time.</p>
+          ${reasonHtml}
+          <p>You can register again using the same email address. Submitting a new application will send your profile back to our team for review.</p>
+          <p>If you have questions about this decision, please contact our support team.</p>
+        `,
+        ctaText: 'Register Again',
+        ctaUrl: 'https://trustbuild.uk/register?role=contractor',
+        footerText: 'You can re-apply at any time using this email address.'
+      });
+
+      await emailService.sendMail(mailOptions);
+      console.log(`✅ Contractor rejection email sent to ${contractorData.email}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to send contractor rejection email to ${contractorData.email}:`, error);
       return false;
     }
   };
@@ -385,6 +402,7 @@ export const createEmailNotificationService = () => {
   return {
     sendContractorWelcomeEmail,
     sendContractorApprovalEmail,
+    sendContractorRejectionEmail,
     sendCustomerWelcomeEmail,
     sendSubscriptionInvoiceEmail,
     sendJobAccessInvoiceEmail,
@@ -442,6 +460,7 @@ async function sendNewJobPostedEmail(data: {
 export const {
   sendContractorWelcomeEmail,
   sendContractorApprovalEmail,
+  sendContractorRejectionEmail,
   sendCustomerWelcomeEmail,
   sendSubscriptionInvoiceEmail,
   sendJobAccessInvoiceEmail,

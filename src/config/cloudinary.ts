@@ -11,10 +11,10 @@ cloudinary.config({
 });
 
 // Verify configuration
-if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-  console.warn('⚠️  Cloudinary configuration is incomplete. File uploads may not work properly.');
-} else {
-
+if (process.env.CLOUDINARY_ENABLED === 'true') {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.warn('⚠️  CLOUDINARY_ENABLED=true but credentials are missing. Portfolio uploads will use local disk.');
+  }
 }
 
 export interface UploadOptions {

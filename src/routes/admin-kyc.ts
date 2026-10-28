@@ -95,24 +95,50 @@ const storage = multer.diskStorage({
 
 // File filter for KYC documents
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedTypes = /jpeg|jpg|png|pdf/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mime = (file.mimetype || '').toLowerCase();
+  const allowedExt = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+  const allowedMime = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+    'application/octet-stream',
+  ];
 
-  if (extname && mimetype) {
+  const extOk = allowedExt.includes(ext);
+  const mimeOk = allowedMime.includes(mime) || mime.startsWith('image/');
+
+  if (extOk || mimeOk) {
     cb(null, true);
-  } else {
-    cb(new Error('Only .png, .jpg, .jpeg, and .pdf files are allowed!'));
+    return;
   }
+
+  cb(new Error('Unsupported file format. Please upload a JPG, PNG, WEBP, or PDF file (max 15MB).'));
 };
 
 const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max file size
+    fileSize: 15 * 1024 * 1024, // 15MB max file size
   },
 });
+
+const kycUploadMiddleware = (req: any, res: any, next: any) => {
+  upload.fields([
+    { name: 'idDocument', maxCount: 1 },
+    { name: 'utilityBill', maxCount: 1 },
+    { name: 'insuranceDoc', maxCount: 1 },
+    { name: 'companyDoc', maxCount: 1 },
+  ])(req, res, (err: any) => {
+    if (err) {
+      return next(err);
+    }
+    next();
+  });
+};
 
 // Contractor gets their own KYC status
 router.get(
@@ -173,12 +199,7 @@ router.get(
 router.post(
   '/upload',
   protect,
-  upload.fields([
-    { name: 'idDocument', maxCount: 1 },
-    { name: 'utilityBill', maxCount: 1 },
-    { name: 'insuranceDoc', maxCount: 1 },
-    { name: 'companyDoc', maxCount: 1 },
-  ]),
+  kycUploadMiddleware,
   catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     const companyNumber = typeof req.body.companyNumber === 'string'
       ? req.body.companyNumber.trim()

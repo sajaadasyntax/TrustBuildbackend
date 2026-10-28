@@ -139,14 +139,138 @@ export const register = catchAsync(async (req: express.Request, res: express.Res
   // Check if user already exists
   const existingUser = await prisma.user.findUnique({
     where: { email },
+    include: {
+      contractor: true,
+    },
   });
 
-  if (existingUser) {
+  // Allow re-registration only for contractors whose application was explicitly rejected.
+  // Note: this intentionally allows overwriting the name and password on a rejected account.
+  // Suspended or active contractors must use a different email.
+  const rejectedContractor =
+    existingUser &&
+    role === 'CONTRACTOR' &&
+    existingUser.role === 'CONTRACTOR' &&
+    existingUser.contractor &&
+    existingUser.contractor.status === 'REJECTED';
+
+  if (existingUser && !rejectedContractor) {
     return next(new AppError('User with this email already exists', 400));
   }
 
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 12);
+
+  // Rejected contractors can re-register with the same email
+  if (existingUser && rejectedContractor && existingUser.contractor) {
+    const reappliedUser = await prisma.user.update({
+      where: { id: existingUser.id },
+      data: {
+        name,
+        password: hashedPassword,
+        isActive: true,
+        referralSource: referralSource?.trim() || existingUser.referralSource,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    let linkedServicesProvided = servicesProvided;
+    const serviceIds = Array.isArray(services)
+      ? services.filter((id: string) => typeof id === 'string' && id.length > 0)
+      : [];
+    if (serviceIds.length > 0) {
+      const serviceRecords = await prisma.service.findMany({
+        where: { id: { in: serviceIds } },
+        select: { name: true },
+      });
+      if (serviceRecords.length > 0) {
+        linkedServicesProvided = serviceRecords.map((s) => s.name).join(', ');
+      }
+    }
+
+    await prisma.contractor.update({
+      where: { id: existingUser.contractor.id },
+      data: {
+        businessName,
+        description,
+        businessAddress,
+        city,
+        postcode,
+        phone,
+        operatingArea,
+        servicesProvided: linkedServicesProvided,
+        yearsExperience,
+        workSetup,
+        providesWarranty: providesWarranty || false,
+        warrantyPeriod,
+        instagramHandle: websiteOrInstagram,
+        unsatisfiedCustomers,
+        preferredClients,
+        usesContracts: usesContracts || false,
+        profileApproved: false,
+        status: 'PENDING',
+        accountStatus: 'PAUSED',
+        frozenAt: null,
+        frozenBy: null,
+        frozenReason: null,
+        ...(serviceIds.length > 0 && {
+          services: {
+            set: serviceIds.map((serviceId: string) => ({ id: serviceId })),
+          },
+        }),
+      },
+    });
+
+    const kycDeadline = new Date();
+    kycDeadline.setDate(kycDeadline.getDate() + 14);
+
+    await prisma.contractorKyc.upsert({
+      where: { contractorId: existingUser.contractor.id },
+      update: {
+        status: 'PENDING',
+        dueBy: kycDeadline,
+        submittedAt: null,
+        reviewedAt: null,
+        rejectionReason: null,
+        idDocPath: null,
+        utilityDocPath: null,
+        insuranceDocPath: null,
+        companyDocPath: null,
+        companyNumber: null,
+      },
+      create: {
+        contractorId: existingUser.contractor.id,
+        status: 'PENDING',
+        dueBy: kycDeadline,
+      },
+    });
+
+    try {
+      const { sendContractorWelcomeEmail } = await import('../services/emailNotificationService');
+      await sendContractorWelcomeEmail({
+        name: reappliedUser.name,
+        email: reappliedUser.email,
+        businessName: businessName,
+      });
+    } catch (error) {
+      console.error('Failed to send contractor welcome email:', error);
+    }
+
+    try {
+      const { notifyAdminsNewContractor } = await import('../services/adminNotificationService');
+      await notifyAdminsNewContractor(existingUser.contractor.id, businessName || reappliedUser.name);
+    } catch (error) {
+      console.error('Failed to notify admins of contractor re-application:', error);
+    }
+
+    return createSendToken(reappliedUser, 200, res);
+  }
 
   // Create user
   const newUser = await prisma.user.create({
@@ -336,7 +460,7 @@ export const login = catchAsync(async (req: express.Request, res: express.Respon
     }
     
     if (user.contractor && user.contractor.status === 'REJECTED') {
-      return next(new AppError('Your contractor application has been rejected. Please contact support for more information.', 403));
+      return next(new AppError('Your contractor application was rejected. You can register again using this email address to resubmit your application.', 403));
     }
 
     if (user.contractor && user.contractor.status === 'SUSPENDED') {

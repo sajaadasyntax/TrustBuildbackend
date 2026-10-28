@@ -81,6 +81,14 @@ export const errorHandler = (
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 
+  if (err.name === 'MulterError' || err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+    const multerMessage =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'The file is too large. Please upload a JPG, PNG, WEBP, or PDF file up to 15MB. Larger photos are resized automatically on the profile page — try compressing the image if this continues.'
+        : err.message || 'File upload failed. Please check the file type and size, then try again.';
+    err = new AppError(multerMessage, 400);
+  }
+
   // Handle CORS errors specifically
   if (err.message === 'Not allowed by CORS') {
     res.status(403).json({

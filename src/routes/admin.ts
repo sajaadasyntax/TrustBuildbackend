@@ -375,10 +375,10 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
       await createNotification({
         userId: contractor.user.id,
         title: 'Profile Approved',
-        message: `Your contractor profile has been approved!${bypassKyc ? ' Your account is now active.' : ' Please complete KYC verification to activate your account.'}`,
+        message: 'Your account has been approved and is now active. You can access your dashboard, but you must complete the identity verification (KYC) process to keep your account active.',
         type: 'SUCCESS',
-        actionLink: bypassKyc ? '/dashboard/contractor' : '/dashboard/kyc',
-        actionText: bypassKyc ? 'Go to Dashboard' : 'Complete KYC',
+        actionLink: '/dashboard/kyc',
+        actionText: 'Complete KYC',
         metadata: {
           contractorId: contractor.id,
           approved: true,
@@ -388,17 +388,30 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
     } catch (error) {
       console.error('Failed to send approval notification:', error);
     }
-  } else {
-    // Contractor rejected - send notification
+  } else if (!approved) {
+    // Contractor rejected - send email and in-app notification
+    try {
+      const { sendContractorRejectionEmail } = await import('../services/emailNotificationService');
+      await sendContractorRejectionEmail({
+        name: contractor.user.name,
+        email: contractor.user.email,
+        businessName: contractor.businessName || undefined,
+        reason,
+      });
+      console.log(`✅ Sent rejection email to contractor: ${contractor.user.email}`);
+    } catch (error) {
+      console.error(`❌ Failed to send rejection email to contractor ${contractor.user.email}:`, error);
+    }
+
     try {
       const { createNotification } = await import('../services/notificationService');
       await createNotification({
         userId: contractor.user.id,
-        title: 'Profile Rejected',
-        message: `Your contractor profile has been rejected.${reason ? ` Reason: ${reason}` : ''} Please contact support for more information.`,
+        title: 'Application Rejected',
+        message: `Your contractor application has been rejected.${reason ? ` Reason: ${reason}` : ''} You can register again using the same email address to resubmit your application.`,
         type: 'ERROR',
-        actionLink: '/dashboard/contractor',
-        actionText: 'View Dashboard',
+        actionLink: '/register?role=contractor',
+        actionText: 'Register Again',
         metadata: {
           contractorId: contractor.id,
           approved: false,
@@ -422,7 +435,7 @@ export const approveContractor = catchAsync(async (req: AdminAuthRequest, res: R
         heading: 'Your Account Has Been Approved!',
         body: `
           <p>Hi ${contractor.user.name},</p>
-          <p>Great news! Your contractor account has been manually approved by our admin team.</p>
+          <p>Great news! Your contractor account has been approved by our admin team.</p>
           <p>Your account has been approved and is now active. You can access your dashboard, but you must complete the identity verification (KYC) process to keep your account active.</p>
           <p>Welcome to TrustBuild!</p>
         `,
@@ -1445,6 +1458,8 @@ export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: R
 
     return {
       ...contractor,
+      contactName: contractor.user?.name || null,
+      email: contractor.user?.email || contractor.email,
       unpaidCommissions,
       totalOutstandingAmount,
       commissionPayments: undefined, // Remove raw data
@@ -1460,6 +1475,60 @@ export const getAllContractors = catchAsync(async (req: AdminAuthRequest, res: R
         limit,
         total,
         pages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
+
+// @desc    Get a single contractor by ID
+// @route   GET /api/admin/contractors/:id
+// @access  Private/Admin
+export const getContractorById = catchAsync(async (req: AdminAuthRequest, res: Response, next: NextFunction) => {
+  const contractor = await prisma.contractor.findUnique({
+    where: { id: req.params.id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          isActive: true,
+          createdAt: true,
+        },
+      },
+      services: {
+        select: {
+          id: true,
+          name: true,
+          category: true,
+        },
+      },
+      subscription: {
+        select: {
+          id: true,
+          status: true,
+          plan: true,
+          isActive: true,
+          currentPeriodStart: true,
+          currentPeriodEnd: true,
+          monthlyPrice: true,
+          stripeSubscriptionId: true,
+        },
+      },
+    },
+  });
+
+  if (!contractor) {
+    return next(new AppError('Contractor not found', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      contractor: {
+        ...contractor,
+        contactName: contractor.user?.name || null,
+        email: contractor.user?.email,
       },
     },
   });
@@ -4055,7 +4124,7 @@ router.get('/analytics', getAnalytics);
 router.get('/contractors/pending', requirePermission(AdminPermission.CONTRACTORS_READ), getPendingContractors);
 router.patch('/contractors/:id/approve', requirePermission(AdminPermission.CONTRACTORS_APPROVE), approveContractor);
 router.get('/contractors', requirePermission(AdminPermission.CONTRACTORS_READ), getAllContractors);
-router.patch('/contractors/:id/approval', requirePermission(AdminPermission.CONTRACTORS_APPROVE), updateContractorApproval);
+router.patch('/contractors/:id/approval', requirePermission(AdminPermission.CONTRACTORS_APPROVE), approveContractor);
 router.patch('/contractors/:id/status', requirePermission(AdminPermission.CONTRACTORS_WRITE), updateContractorStatus);
 
 // Delete contractor
@@ -4182,6 +4251,7 @@ router.patch('/contractors/:id/featured', requirePermission(AdminPermission.CONT
   });
 }));
 router.get('/contractors/stats', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorStats);
+router.get('/contractors/:id', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorById);
 router.get('/contractors-search', requirePermission(AdminPermission.CONTRACTORS_READ), searchContractorsForCredits);
 router.get('/contractors/:id/credits', requirePermission(AdminPermission.CONTRACTORS_READ), getContractorCredits);
 router.post('/contractors/:id/adjust-credits', requirePermission(AdminPermission.CONTRACTORS_WRITE), adjustContractorCredits);
